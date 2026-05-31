@@ -1,0 +1,515 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../models/score_item.dart';
+import '../../providers/group_provider.dart';
+import '../../providers/student_provider.dart';
+import '../../providers/score_provider.dart';
+import '../../providers/score_item_provider.dart';
+import '../../providers/auth_provider.dart';
+
+class ScoreInputPage extends StatefulWidget {
+  const ScoreInputPage({super.key});
+
+  @override
+  State<ScoreInputPage> createState() => _ScoreInputPageState();
+}
+
+class _ScoreInputPageState extends State<ScoreInputPage> {
+  final _scoreController = TextEditingController();
+  final _reasonController = TextEditingController();
+  final _customNameController = TextEditingController();
+
+  int? _selectedGroupId; // 用于筛选学生
+  int? _selectedItemId; // preset score item
+  bool _loading = false;
+  // 已选择的学生ID列表
+  final Set<int> _selectedStudentIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<GroupProvider>().loadGroups();
+      context.read<StudentProvider>().loadStudents();
+      context.read<ScoreItemProvider>().loadItems();
+    });
+  }
+
+  @override
+  void dispose() {
+    _scoreController.dispose();
+    _reasonController.dispose();
+    _customNameController.dispose();
+    super.dispose();
+  }
+
+  void _onSelectPreset(ScoreItem? item) {
+    if (item == null) {
+      setState(() {
+        _selectedItemId = null;
+        _scoreController.clear();
+        _customNameController.clear();
+      });
+    } else {
+      setState(() {
+        _selectedItemId = item.id;
+        _scoreController.text = item.defaultScore.toString();
+        _customNameController.clear();
+      });
+    }
+  }
+
+  void _toggleStudentSelection(int studentId) {
+    setState(() {
+      if (_selectedStudentIds.contains(studentId)) {
+        _selectedStudentIds.remove(studentId);
+      } else {
+        _selectedStudentIds.add(studentId);
+      }
+    });
+  }
+
+  void _selectAllStudents() {
+    setState(() {
+      final students = context.read<StudentProvider>().students;
+      final filtered = _selectedGroupId == null
+          ? students
+          : students.where((s) => s.groupId == _selectedGroupId);
+      final allSelected = filtered.every(
+        (s) => _selectedStudentIds.contains(s.id),
+      );
+      if (allSelected) {
+        _selectedStudentIds.clear();
+      } else {
+        for (final s in filtered) {
+          _selectedStudentIds.add(s.id!);
+        }
+      }
+    });
+  }
+
+  Future<void> _submit() async {
+    final scoreText = _scoreController.text.trim();
+    if (scoreText.isEmpty) {
+      _showMsg('请输入分值');
+      return;
+    }
+    final score = double.tryParse(scoreText);
+    if (score == null) {
+      _showMsg('请输入有效的数值');
+      return;
+    }
+
+    if (_selectedStudentIds.isEmpty) {
+      _showMsg('请至少选择一名学生');
+      return;
+    }
+
+    // 获取已选择的学生信息
+    final students = context.read<StudentProvider>().students;
+    final selectedStudents = students
+        .where((s) => _selectedStudentIds.contains(s.id))
+        .toList();
+
+    // 确认对话框
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认评分'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('即将为以下 ${selectedStudents.length} 名学生评分：'),
+            const SizedBox(height: 8),
+            ...selectedStudents.map(
+              (s) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Text(
+                  s.studentNumber.isNotEmpty
+                      ? '${s.name} (${s.studentNumber})'
+                      : s.name,
+                ),
+              ),
+            ),
+            const Divider(),
+            Text('分值：$score'),
+            Text(
+              '原因：${_reasonController.text.trim().isEmpty ? '（无）' : _reasonController.text.trim()}',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认提交'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _loading = true);
+    final count = await context.read<ScoreProvider>().batchAddScoreRecords(
+      targetIds: selectedStudents.map((s) => s.id!).toList(),
+      score: score,
+      reason: _reasonController.text.trim(),
+      scoreItemId: _selectedItemId,
+      customName: _customNameController.text.trim(),
+    );
+    setState(() => _loading = false);
+
+    _scoreController.clear();
+    _reasonController.clear();
+    _customNameController.clear();
+    setState(() {
+      _selectedItemId = null;
+      _selectedStudentIds.clear();
+    });
+    if (!context.mounted) return;
+    _showMsg('评分完成，成功录入 $count 条记录');
+  }
+
+  void _showMsg(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isUnlocked = context.watch<AuthProvider>().isUnlocked;
+
+    if (!isUnlocked) {
+      return Scaffold(
+        appBar: AppBar(toolbarHeight: 0),
+        body: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.lock, size: 64, color: Colors.grey),
+              SizedBox(height: 16),
+              Text(
+                '请先解锁以使用评分录入功能',
+                style: TextStyle(color: Colors.grey, fontSize: 16),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final groups = context.watch<GroupProvider>().groups;
+    final students = context.watch<StudentProvider>().students;
+    final scoreItems = context.watch<ScoreItemProvider>().items;
+
+    final filteredStudents = _selectedGroupId == null
+        ? students
+        : students.where((s) => s.groupId == _selectedGroupId).toList();
+
+    // 已选择的学生数
+    final selectedCount = _selectedStudentIds.length;
+
+    return Scaffold(
+      appBar: AppBar(toolbarHeight: 0),
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 筛选小组
+                const Text(
+                  '筛选小组（可选）',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<int?>(
+                  value: _selectedGroupId,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    hintText: '不选择则显示所有学生',
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('全部小组')),
+                    ...groups.map(
+                      (g) => DropdownMenuItem(value: g.id, child: Text(g.name)),
+                    ),
+                  ],
+                  onChanged: (v) => setState(() {
+                    _selectedGroupId = v;
+                    // 筛选变化时，清除不在新范围内的已选学生
+                    final filtered = v == null
+                        ? students
+                        : students.where((s) => s.groupId == v);
+                    _selectedStudentIds.retainWhere(
+                      (id) => filtered.any((s) => s.id == id),
+                    );
+                  }),
+                ),
+
+                const SizedBox(height: 16),
+
+                // 学生选择区域
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      '选择学生',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Row(
+                      children: [
+                        TextButton(
+                          onPressed: _selectAllStudents,
+                          child: const Text('全选/取消'),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: selectedCount > 0
+                                ? Colors.green.shade50
+                                : Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '已选 $selectedCount 人',
+                            style: TextStyle(
+                              color: selectedCount > 0
+                                  ? Colors.green.shade700
+                                  : Colors.grey.shade700,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (filteredStudents.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      '该范围内没有学生',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                else
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: CheckboxListTile(
+                      dense: true,
+                      visualDensity: VisualDensity.compact,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      value:
+                          filteredStudents.every(
+                            (s) => _selectedStudentIds.contains(s.id),
+                          ) &&
+                          filteredStudents.isNotEmpty,
+                      onChanged: (_) => _selectAllStudents(),
+                      title: const Text('全选当前筛选的学生'),
+                      subtitle: Text('共 ${filteredStudents.length} 人'),
+                      controlAffinity: ListTileControlAffinity.trailing,
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                // 根据容器宽度动态计算每行显示的学生数量
+                LayoutBuilder(
+                  builder: (ctx, constraints) {
+                    // 使用 IntrinsicWidth 让每个卡片根据其内容自适应宽度
+                    // Wrap 会自动计算每行能放多少个卡片
+                    return Wrap(
+                      spacing: 8.0,
+                      runSpacing: 8.0,
+                      children: filteredStudents.map((s) {
+                        final isSelected = _selectedStudentIds.contains(s.id);
+                        // 学号和姓名在同一行显示
+                        final displayName = s.studentNumber.isNotEmpty
+                            ? '${s.name}  ${s.studentNumber}'
+                            : s.name;
+                        return GestureDetector(
+                          onTap: () => _toggleStudentSelection(s.id!),
+                          child: IntrinsicWidth(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? Colors.green.shade50
+                                    : Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? Colors.green
+                                      : Colors.grey.shade300,
+                                  width: isSelected ? 1.5 : 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    isSelected
+                                        ? Icons.check_circle
+                                        : Icons.circle_outlined,
+                                    size: 16,
+                                    color: isSelected
+                                        ? Colors.green
+                                        : Colors.grey.shade600,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    displayName,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w600
+                                          : FontWeight.normal,
+                                      color: isSelected
+                                          ? Colors.green.shade700
+                                          : Colors.black87,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+
+                const SizedBox(height: 16),
+
+                // 预设评分项
+                const Text(
+                  '预设评分项（可选）',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<int?>(
+                  value: _selectedItemId,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    hintText: '选择预设（自动填充分值）',
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('自定义')),
+                    ...scoreItems.map(
+                      (item) => DropdownMenuItem(
+                        value: item.id,
+                        child: Text(
+                          '${item.name} (${item.defaultScore.toStringAsFixed(1)})',
+                        ),
+                      ),
+                    ),
+                  ],
+                  onChanged: (v) {
+                    final item = v == null
+                        ? null
+                        : scoreItems.firstWhere((i) => i.id == v);
+                    _onSelectPreset(item);
+                  },
+                ),
+
+                const SizedBox(height: 12),
+
+                // 评分项名称和分值输入
+                if (_selectedItemId == null)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _customNameController,
+                          decoration: const InputDecoration(
+                            labelText: '评分项名称',
+                            border: OutlineInputBorder(),
+                            hintText: '如：考勤扣分、作业加分',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _scoreController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                            signed: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: '分值',
+                            border: OutlineInputBorder(),
+                            hintText: '请输入分值（支持小数，如 0.5 或 -1）',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                const SizedBox(height: 16),
+
+                // 变动原因
+                const Text(
+                  '变动原因',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _reasonController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    hintText: '请输入评分原因（可选）',
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
+          ),
+          // 底部提交按钮
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 16,
+            child: SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: _loading ? null : _submit,
+                child: _loading
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(
+                        '提交（$selectedCount人）',
+                        style: const TextStyle(fontSize: 16),
+                      ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
