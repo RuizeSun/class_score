@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 import '../../providers/auth_provider.dart';
 import '../score/score_input_page.dart';
 import '../score/score_records_page.dart';
@@ -17,7 +18,10 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage>
-    with SingleTickerProviderStateMixin {
+    with
+        SingleTickerProviderStateMixin,
+        WidgetsBindingObserver,
+        WindowListener {
   int _currentIndex = 0;
   int? _previousIndex;
 
@@ -37,6 +41,51 @@ class _HomePageState extends State<HomePage>
     _slideController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
+    );
+
+    // Prevent the window from being closed/minimized normally
+    windowManager.setPreventClose(true);
+    windowManager.addListener(this);
+  }
+
+  @override
+  void onWindowClose() {
+    final auth = context.read<AuthProvider>();
+    if (auth.isUnlocked) return;
+
+    // Show lock message and prevent close
+    _showLockMessage();
+
+    // Restore window visibility immediately
+    windowManager.show();
+  }
+
+  @override
+  void onWindowMinimize() {
+    final auth = context.read<AuthProvider>();
+    if (auth.isUnlocked) return;
+
+    // Show lock message and prevent minimize
+    _showLockMessage();
+
+    // Restore window visibility immediately
+    windowManager.show();
+  }
+
+  void _showLockMessage() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.lock_outline, color: Colors.white),
+            SizedBox(width: 12),
+            Text('需要先解锁才能操作程序'),
+          ],
+        ),
+        backgroundColor: Colors.red,
+        duration: Duration(seconds: 3),
+      ),
     );
   }
 
