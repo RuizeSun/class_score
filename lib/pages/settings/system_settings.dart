@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:file_picker/file_picker.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../providers/student_provider.dart';
@@ -12,8 +13,37 @@ import '../../services/backup_service.dart';
 import 'pin_dialogs.dart';
 
 /// System settings card widget for use in SettingsHubPage.
-class SystemSettingsCard extends StatelessWidget {
+class SystemSettingsCard extends StatefulWidget {
   const SystemSettingsCard({super.key});
+
+  @override
+  State<SystemSettingsCard> createState() => _SystemSettingsCardState();
+}
+
+class _SystemSettingsCardState extends State<SystemSettingsCard> {
+  String _version = '加载中...';
+  String _buildNumber = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      setState(() {
+        _version = packageInfo.version;
+        _buildNumber = packageInfo.buildNumber;
+      });
+    } catch (e) {
+      setState(() {
+        _version = '获取失败';
+        _buildNumber = '';
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,6 +87,24 @@ class SystemSettingsCard extends StatelessWidget {
               leading: const Icon(Icons.settings_backup_restore),
               title: const Text('重置全部设置（数据库和设置）'),
               onTap: () => resetAllSettings(context),
+            ),
+            const Divider(),
+            Row(
+              children: [
+                const Icon(Icons.info_outline, size: 20),
+                const SizedBox(width: 12),
+                Text(
+                  '版本号：$_version',
+                  style: const TextStyle(color: Colors.grey),
+                ),
+                if (_buildNumber.isNotEmpty) ...[
+                  const Text('  |  ', style: TextStyle(color: Colors.grey)),
+                  Text(
+                    'build $_buildNumber',
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                ],
+              ],
             ),
           ],
         ),

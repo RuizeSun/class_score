@@ -109,6 +109,12 @@ class _DashboardPageState extends State<DashboardPage> {
       for (final s in allStudents) {
         studentGroupMap[s['id'] as int] = s['group_id'] as int;
       }
+      // 获取每个小组的成员数量
+      final groupMemberCount = <int, int>{};
+      for (final s in allStudents) {
+        final groupId = s['group_id'] as int;
+        groupMemberCount[groupId] = (groupMemberCount[groupId] ?? 0) + 1;
+      }
       // 计算每个小组今日总分（成员今日分数之和）
       final groupTodayScores = <int, double>{};
       for (final g in groupScores) {
@@ -136,9 +142,20 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           );
 
+      // 过滤：如果"未分组"中没有成员，则隐藏该组
+      final filteredGroupRanking = groupRanking.where((group) {
+        final groupName = group['name'] as String;
+        final groupId = group['id'] as int;
+        if (groupName == '未分组') {
+          final memberCount = groupMemberCount[groupId] ?? 0;
+          return memberCount > 0;
+        }
+        return true;
+      }).toList();
+
       if (mounted) {
         setState(() {
-          _groupRanking = groupRanking;
+          _groupRanking = filteredGroupRanking;
         });
       }
 

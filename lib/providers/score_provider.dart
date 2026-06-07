@@ -95,7 +95,22 @@ class ScoreProvider extends ChangeNotifier {
 
   // Statistics
   Future<void> loadStatistics({int? groupId}) async {
-    _groupTotalScores = await DatabaseHelper.instance.getGroupTotalScores();
+    final rawGroupScores = await DatabaseHelper.instance.getGroupTotalScores();
+    // 获取每个小组的成员数量，过滤掉"未分组"且没有成员的组
+    final allStudents = await DatabaseHelper.instance.getStudents();
+    final groupMemberCount = <int, int>{};
+    for (final s in allStudents) {
+      final gid = s['group_id'] as int;
+      groupMemberCount[gid] = (groupMemberCount[gid] ?? 0) + 1;
+    }
+    _groupTotalScores = rawGroupScores.where((g) {
+      final name = g['name'] as String;
+      final id = g['id'] as int;
+      if (name == '未分组') {
+        return (groupMemberCount[id] ?? 0) > 0;
+      }
+      return true;
+    }).toList();
     _studentTotalScores = await DatabaseHelper.instance.getStudentTotalScores(
       groupId: groupId,
     );

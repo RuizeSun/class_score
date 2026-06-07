@@ -43,33 +43,44 @@ class _HomePageState extends State<HomePage>
       vsync: this,
     );
 
-    // Prevent the window from being closed/minimized normally
-    windowManager.setPreventClose(true);
+    // Disable maximize button since window size is fixed
+    windowManager.setMaximumSize(const Size(1200, 800));
+    windowManager.setMinimumSize(const Size(1200, 800));
+
+    // Listen to auth state changes to toggle prevent close
+    _updatePreventClose();
+    context.read<AuthProvider>().addListener(_onAuthStateChanged);
     windowManager.addListener(this);
+  }
+
+  void _onAuthStateChanged() {
+    _updatePreventClose();
+  }
+
+  void _updatePreventClose() {
+    final auth = context.read<AuthProvider>();
+    windowManager.setPreventClose(!auth.isUnlocked);
   }
 
   @override
   void onWindowClose() {
     final auth = context.read<AuthProvider>();
-    if (auth.isUnlocked) return;
-
-    // Show lock message and prevent close
-    _showLockMessage();
-
-    // Restore window visibility immediately
-    windowManager.show();
+    if (!auth.isUnlocked) {
+      // Show lock message
+      _showLockMessage();
+    }
+    // If unlocked, allow close (setPreventClose(false) is already set)
   }
 
   @override
   void onWindowMinimize() {
     final auth = context.read<AuthProvider>();
-    if (auth.isUnlocked) return;
-
-    // Show lock message and prevent minimize
-    _showLockMessage();
-
-    // Restore window visibility immediately
-    windowManager.show();
+    if (!auth.isUnlocked) {
+      // Show lock message and restore window
+      _showLockMessage();
+      windowManager.show();
+    }
+    // If unlocked, allow minimize
   }
 
   void _showLockMessage() {
@@ -91,6 +102,7 @@ class _HomePageState extends State<HomePage>
 
   @override
   void dispose() {
+    context.read<AuthProvider>().removeListener(_onAuthStateChanged);
     _slideController.dispose();
     super.dispose();
   }
