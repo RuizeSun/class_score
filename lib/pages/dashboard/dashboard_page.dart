@@ -59,7 +59,7 @@ class _DashboardPageState extends State<DashboardPage> {
       final currentTime =
           '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
       final todaySchedules = schedules.where((s) {
-        final endTime = s['end_time'] as String;
+        final endTime = _normalizeTime(s['end_time'] as String);
         return endTime.compareTo(currentTime) >= 0;
       }).toList();
 
@@ -775,6 +775,15 @@ class _CardWidget extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Normalize a time string to HH:MM format (with leading zeros).
+/// E.g. "8:0" -> "08:00", "9:30" -> "09:30"
+String _normalizeTime(String time) {
+  final parts = time.split(':');
+  final hour = int.tryParse(parts[0]) ?? 0;
+  final minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+  return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
 }
 
 // ========== 工具函数 ==========

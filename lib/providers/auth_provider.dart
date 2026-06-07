@@ -90,7 +90,7 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> loadCourseSchedules() async {
     _courseSchedules = await DatabaseHelper.instance.getCourseSchedules();
-    notifyListeners();
+    _updateCurrentCourseName();
   }
 
   // ---- Course Schedule Management ----
@@ -195,10 +195,51 @@ class AuthProvider extends ChangeNotifier {
     });
   }
 
+  /// Normalize a time string to HH:MM format (with leading zeros).
+  /// E.g. "8:0" -> "08:00", "9:30" -> "09:30"
+  static String _normalizeTime(String time) {
+    final parts = time.split(':');
+    final hour = int.tryParse(parts[0]) ?? 0;
+    final minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+    return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+  }
+
+  /// Always update the current course name based on schedule, regardless of
+  /// lock/unlock state. This ensures the status bar always shows the correct
+  /// course name even when the app is locked or manually unlocked.
+  void _updateCurrentCourseName() {
+    final now = DateTime.now();
+    final weekday = now.weekday; // 1=Mon ... 7=Sun
+    final currentTimeStr =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
+    String? matchedCourse;
+
+    for (final schedule in _courseSchedules) {
+      if (schedule['weekday'] as int == weekday) {
+        final start = _normalizeTime(schedule['start_time'] as String);
+        final end = _normalizeTime(schedule['end_time'] as String);
+        if (currentTimeStr.compareTo(start) >= 0 &&
+            currentTimeStr.compareTo(end) < 0) {
+          matchedCourse = schedule['course_name'] as String;
+          break;
+        }
+      }
+    }
+
+    if (_currentCourseName != matchedCourse) {
+      _currentCourseName = matchedCourse;
+      notifyListeners();
+    }
+  }
+
   /// Check current time against course schedule and set unlock/lock accordingly.
   /// If manually unlocked, the manual timer takes precedence; after timer expires,
   /// this rule re-applies.
   void _applyScheduleRule() {
+    // Always update the course name display regardless of lock state
+    _updateCurrentCourseName();
+
     if (!_isPinSet) return;
 
     // If manually unlocked or USB unlocked, don't override; let manual timer expire first
@@ -209,23 +250,20 @@ class AuthProvider extends ChangeNotifier {
     final currentTimeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
-    String? matchedCourse;
     bool inClass = false;
 
     for (final schedule in _courseSchedules) {
       if (schedule['weekday'] as int == weekday) {
-        final start = schedule['start_time'] as String;
-        final end = schedule['end_time'] as String;
+        final start = _normalizeTime(schedule['start_time'] as String);
+        final end = _normalizeTime(schedule['end_time'] as String);
         if (currentTimeStr.compareTo(start) >= 0 &&
             currentTimeStr.compareTo(end) < 0) {
-          matchedCourse = schedule['course_name'] as String;
           inClass = true;
           break;
         }
       }
     }
 
-    _currentCourseName = matchedCourse;
     _isUnlocked = inClass;
     notifyListeners();
   }

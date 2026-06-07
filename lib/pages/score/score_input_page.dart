@@ -332,54 +332,74 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                 // 根据容器宽度动态计算每行显示的学生数量
                 LayoutBuilder(
                   builder: (ctx, constraints) {
-                    // 使用 IntrinsicWidth 让每个卡片根据其内容自适应宽度
-                    // Wrap 会自动计算每行能放多少个卡片
+                    // 预计算所有卡片内容的最大宽度，实现统一宽度对齐
+                    final textStyle = const TextStyle(fontSize: 12);
+                    double maxCardWidth = 0;
+                    for (final s in filteredStudents) {
+                      final displayName = s.studentNumber.isNotEmpty
+                          ? '${s.name}  ${s.studentNumber}'
+                          : s.name;
+                      final textPainter = TextPainter(
+                        text: TextSpan(text: displayName, style: textStyle),
+                        textDirection: TextDirection.ltr,
+                      )..layout();
+                      // 卡片内容宽度 = 图标(16) + 间距(6) + 文本宽度 + 水平内边距(16)
+                      final cardWidth = 16.0 + 6.0 + textPainter.width + 16.0;
+                      if (cardWidth > maxCardWidth) {
+                        maxCardWidth = cardWidth;
+                      }
+                    }
+                    // 限制最大宽度不超过可用宽度的 45%（保留 spacing 余量）
+                    final maxAllowedWidth = (constraints.maxWidth - 8.0) * 0.45;
+                    if (maxCardWidth > maxAllowedWidth) {
+                      maxCardWidth = maxAllowedWidth;
+                    }
+
                     return Wrap(
                       spacing: 8.0,
                       runSpacing: 8.0,
                       children: filteredStudents.map((s) {
                         final isSelected = _selectedStudentIds.contains(s.id);
-                        // 学号和姓名在同一行显示
                         final displayName = s.studentNumber.isNotEmpty
                             ? '${s.name}  ${s.studentNumber}'
                             : s.name;
                         return GestureDetector(
                           onTap: () => _toggleStudentSelection(s.id!),
-                          child: IntrinsicWidth(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
+                          child: Container(
+                            width: maxCardWidth,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? Colors.green.shade50
+                                  : Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
                                 color: isSelected
-                                    ? Colors.green.shade50
-                                    : Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
+                                    ? Colors.green
+                                    : Colors.grey.shade300,
+                                width: isSelected ? 1.5 : 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  isSelected
+                                      ? Icons.check_circle
+                                      : Icons.circle_outlined,
+                                  size: 16,
                                   color: isSelected
                                       ? Colors.green
-                                      : Colors.grey.shade300,
-                                  width: isSelected ? 1.5 : 1,
+                                      : Colors.grey.shade600,
                                 ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    isSelected
-                                        ? Icons.check_circle
-                                        : Icons.circle_outlined,
-                                    size: 16,
-                                    color: isSelected
-                                        ? Colors.green
-                                        : Colors.grey.shade600,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
                                     displayName,
-                                    style: TextStyle(
-                                      fontSize: 12,
+                                    style: textStyle.copyWith(
                                       fontWeight: isSelected
                                           ? FontWeight.w600
                                           : FontWeight.normal,
@@ -387,9 +407,10 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                                           ? Colors.green.shade700
                                           : Colors.black87,
                                     ),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                           ),
                         );
@@ -412,16 +433,71 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                     border: OutlineInputBorder(),
                     hintText: '选择预设（自动填充分值）',
                   ),
+                  isExpanded: true,
                   items: [
-                    const DropdownMenuItem(value: null, child: Text('自定义')),
-                    ...scoreItems.map(
-                      (item) => DropdownMenuItem(
-                        value: item.id,
-                        child: Text(
-                          '${item.name} (${item.defaultScore.toStringAsFixed(1)})',
+                    const DropdownMenuItem(
+                      value: null,
+                      child: SizedBox(
+                        height: 38,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('自定义'),
                         ),
                       ),
                     ),
+                    ...scoreItems.map((item) {
+                      final score = item.defaultScore;
+                      final Color scoreColor;
+                      final String scoreLabel;
+                      if (score > 0) {
+                        scoreColor = Colors.green.shade700;
+                        scoreLabel = '+${score.toStringAsFixed(1)}';
+                      } else if (score < 0) {
+                        scoreColor = Colors.red.shade700;
+                        scoreLabel = score.toStringAsFixed(1);
+                      } else {
+                        scoreColor = Colors.grey.shade600;
+                        scoreLabel = '0.0';
+                      }
+                      return DropdownMenuItem(
+                        value: item.id,
+                        child: SizedBox(
+                          height: 38,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  item.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: scoreColor.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  scoreLabel,
+                                  style: TextStyle(
+                                    color: scoreColor,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
                   ],
                   onChanged: (v) {
                     final item = v == null

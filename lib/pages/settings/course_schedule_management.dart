@@ -88,8 +88,8 @@ void showCourseScheduleDialog(
           TextButton(
             onPressed: () {
               final name = nameController.text.trim();
-              final start = startController.text.trim();
-              final end = endController.text.trim();
+              final start = _normalizeTime(startController.text.trim());
+              final end = _normalizeTime(endController.text.trim());
               if (name.isNotEmpty && start.isNotEmpty && end.isNotEmpty) {
                 final map = {
                   'weekday': selectedWeekday,
@@ -114,6 +114,15 @@ void showCourseScheduleDialog(
       ),
     ),
   );
+}
+
+/// Normalize a time string to HH:MM format (with leading zeros).
+/// E.g. "8:0" -> "08:00", "9:30" -> "09:30"
+String _normalizeTime(String time) {
+  final parts = time.split(':');
+  final hour = int.tryParse(parts[0]) ?? 0;
+  final minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+  return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
 }
 
 /// 可嵌入 SettingsHubPage 的课程表管理视图（不包含 Scaffold/AppBar）。
