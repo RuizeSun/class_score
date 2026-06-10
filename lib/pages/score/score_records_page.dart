@@ -97,13 +97,25 @@ class _ScoreRecordsPageState extends State<ScoreRecordsPage> {
                       final customName = r['custom_name'] as String? ?? '';
                       final reason = r['reason'] as String? ?? '';
 
-                      // 优先显示评分项名称或原因
+                      // 构建显示文本：同时显示评分项和变动原因
                       String? displayReason;
-                      if (scoreItemName.isNotEmpty) {
-                        displayReason = scoreItemName;
-                      } else if (customName.isNotEmpty) {
-                        displayReason = customName;
-                      } else if (reason.isNotEmpty) {
+                      final hasScoreItem =
+                          scoreItemName.isNotEmpty || customName.isNotEmpty;
+                      final hasReason = reason.isNotEmpty;
+
+                      if (hasScoreItem && hasReason) {
+                        // 两者都有时，显示：评分项 - 变动原因
+                        final itemText = scoreItemName.isNotEmpty
+                            ? scoreItemName
+                            : customName;
+                        displayReason = '$itemText · $reason';
+                      } else if (hasScoreItem) {
+                        // 只有评分项
+                        displayReason = scoreItemName.isNotEmpty
+                            ? scoreItemName
+                            : customName;
+                      } else if (hasReason) {
+                        // 只有变动原因
                         displayReason = reason;
                       }
 
