@@ -55,6 +55,13 @@ class _DashboardPageState extends State<DashboardPage> {
       final weekday = now.weekday; // 1-7 (Monday=1, Sunday=7)
       final schedules = await db.getCourseSchedulesByWeekday(weekday);
 
+      // 按开始时间排序（正确处理时间格式如 "8:0", "9:30", "10:00" 等）
+      schedules.sort((a, b) {
+        final timeA = _parseTime(a['start_time'] as String);
+        final timeB = _parseTime(b['start_time'] as String);
+        return timeA.compareTo(timeB);
+      });
+
       // 根据当前时间过滤，只显示还未结束的课程
       final currentTime =
           '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
@@ -801,6 +808,15 @@ String _normalizeTime(String time) {
   final hour = int.tryParse(parts[0]) ?? 0;
   final minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
   return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+}
+
+/// Parse a time string to total minutes for sorting.
+/// E.g. "8:0" -> 480, "9:30" -> 570, "10:00" -> 600
+int _parseTime(String time) {
+  final parts = time.split(':');
+  final hour = int.tryParse(parts[0]) ?? 0;
+  final minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+  return hour * 60 + minute;
 }
 
 // ========== 工具函数 ==========
