@@ -57,7 +57,7 @@ void showStudentDialog(BuildContext context, {Student? student}) {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<int?>(
-              value: selectedGroupId,
+              initialValue: selectedGroupId,
               decoration: const InputDecoration(labelText: '所属小组'),
               items: [
                 const DropdownMenuItem<int?>(value: null, child: Text('未分组')),
@@ -226,7 +226,7 @@ class _StudentManagementViewState extends State<StudentManagementView> {
                   // Filter by group dropdown
                   Expanded(
                     child: DropdownButtonFormField<int?>(
-                      value: filterGroupId,
+                      initialValue: filterGroupId,
                       decoration: const InputDecoration(
                         labelText: '筛选小组',
                         border: OutlineInputBorder(),
@@ -421,8 +421,8 @@ class _StudentManagementViewState extends State<StudentManagementView> {
                   onPressed: () {
                     context.read<StudentProvider>().loadStudents(groupId: null);
                   },
-                  child: const Icon(Icons.filter_list),
                   tooltip: '查看未分组学生',
+                  child: const Icon(Icons.filter_list),
                 ),
                 const SizedBox(height: 8),
                 FloatingActionButton(

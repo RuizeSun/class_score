@@ -21,7 +21,7 @@ void showWriteKeyDialog(BuildContext context) {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   DropdownButtonFormField<String>(
-                    value: selectedDrive,
+                    initialValue: selectedDrive,
                     decoration: const InputDecoration(
                       labelText: '选择 U 盘驱动器',
                       border: OutlineInputBorder(),

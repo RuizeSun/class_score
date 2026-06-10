@@ -27,7 +27,7 @@ void showCourseScheduleDialog(
           mainAxisSize: MainAxisSize.min,
           children: [
             DropdownButtonFormField<int>(
-              value: selectedWeekday,
+              initialValue: selectedWeekday,
               decoration: const InputDecoration(
                 labelText: '星期',
                 border: OutlineInputBorder(),

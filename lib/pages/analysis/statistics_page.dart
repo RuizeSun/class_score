@@ -93,7 +93,7 @@ class _StatisticsViewState extends State<StatisticsView> {
           // 学生模式下显示按小组筛选
           if (!_showGroup) ...[
             DropdownButtonFormField<int?>(
-              value: context.watch<ScoreProvider>().filterGroupId,
+              initialValue: context.watch<ScoreProvider>().filterGroupId,
               decoration: const InputDecoration(
                 labelText: '筛选小组',
                 border: OutlineInputBorder(),

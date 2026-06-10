@@ -230,7 +230,7 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<int?>(
-                  value: _selectedGroupId,
+                  initialValue: _selectedGroupId,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     hintText: '不选择则显示所有学生',
@@ -428,7 +428,7 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<int?>(
-                  value: _selectedItemId,
+                  initialValue: _selectedItemId,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     hintText: '选择预设（自动填充分值）',

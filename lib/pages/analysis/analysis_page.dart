@@ -155,7 +155,7 @@ class _AnalysisViewState extends State<AnalysisView> {
                     ),
                     isDense: true,
                   ),
-                  value: _filterStudentId,
+                  initialValue: _filterStudentId,
                   items: [
                     const DropdownMenuItem(value: null, child: Text('全部学生')),
                     ...students.map(
@@ -185,7 +185,7 @@ class _AnalysisViewState extends State<AnalysisView> {
                     ),
                     isDense: true,
                   ),
-                  value: _filterGroupId,
+                  initialValue: _filterGroupId,
                   items: [
                     const DropdownMenuItem(value: null, child: Text('全部小组')),
                     ...groups.map(
@@ -327,7 +327,10 @@ class _AnalysisViewState extends State<AnalysisView> {
                           child: Column(
                             children: [
                               Text(
-                                '${((_dailyAverages['avg_positive'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(1)}',
+                                ((_dailyAverages['avg_positive'] as num?)
+                                            ?.toDouble() ??
+                                        0.0)
+                                    .toStringAsFixed(1),
                                 style: const TextStyle(
                                   fontSize: 24,
                                   fontWeight: FontWeight.bold,
@@ -343,7 +346,10 @@ class _AnalysisViewState extends State<AnalysisView> {
                           child: Column(
                             children: [
                               Text(
-                                '${((_dailyAverages['avg_negative'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(1)}',
+                                ((_dailyAverages['avg_negative'] as num?)
+                                            ?.toDouble() ??
+                                        0.0)
+                                    .toStringAsFixed(1),
                                 style: const TextStyle(
                                   fontSize: 24,
                                   fontWeight: FontWeight.bold,

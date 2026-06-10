@@ -94,10 +94,10 @@ class ScoreItemsManagementView extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.list_alt, size: 64, color: Colors.grey),
-                    const SizedBox(height: 16),
-                    const Text('暂无预设评分项'),
-                    const SizedBox(height: 8),
-                    const Text('点击右下角添加', style: TextStyle(color: Colors.grey)),
+                    SizedBox(height: 16),
+                    Text('暂无预设评分项'),
+                    SizedBox(height: 8),
+                    Text('点击右下角添加', style: TextStyle(color: Colors.grey)),
                   ],
                 ),
               )

@@ -37,7 +37,7 @@ class _ScoreRecordsPageState extends State<ScoreRecordsPage> {
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: DropdownButtonFormField<int?>(
-              value: _filterStudentId,
+              initialValue: _filterStudentId,
               decoration: const InputDecoration(
                 labelText: '筛选学生',
                 border: OutlineInputBorder(),

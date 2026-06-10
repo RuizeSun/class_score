@@ -201,7 +201,7 @@ class StudentProvider extends ChangeNotifier {
 
     // 使用 nullable int? 作为值类型：非 null 表示小组 ID
     int? selectedGroupId;
-    String _getGroupName(int? groupId) {
+    String getGroupName(int? groupId) {
       if (groupId == null) return '未分组';
       final group = groups.firstWhere(
         (g) => g.id == groupId,
@@ -299,7 +299,7 @@ class StudentProvider extends ChangeNotifier {
             TextButton(
               onPressed: () {
                 final studentProvider = context.read<StudentProvider>();
-                final groupName = _getGroupName(selectedGroupId);
+                final groupName = getGroupName(selectedGroupId);
 
                 // 获取学生ID列表
                 final studentIds = students.map((s) => s.id!).toList();
