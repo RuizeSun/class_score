@@ -30,12 +30,7 @@ class _CourseSchedulePageState extends State<CourseSchedulePage> {
             showCourseScheduleDialog(context, schedule: schedule),
         isUnlocked: isUnlocked,
       ),
-      floatingActionButton: isUnlocked
-          ? FloatingActionButton(
-              onPressed: () => showCourseScheduleDialog(context),
-              child: const Icon(Icons.add),
-            )
-          : null,
+      // FAB is already included in CourseScheduleManagementView, no need to duplicate
     );
   }
 }

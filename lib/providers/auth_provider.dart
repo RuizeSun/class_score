@@ -90,17 +90,68 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> loadCourseSchedules() async {
     _courseSchedules = await DatabaseHelper.instance.getCourseSchedules();
+    // Migrate legacy data: normalize time format if needed
+    await _migrateTimeFormats();
     _updateCurrentCourseName();
+    notifyListeners();
+  }
+
+  /// Migrate time formats in database to standard HH:mm format.
+  /// This ensures backward compatibility with legacy data.
+  Future<void> _migrateTimeFormats() async {
+    bool hasChanges = false;
+    for (final schedule in _courseSchedules) {
+      final id = schedule['id'] as int;
+      final startTime = schedule['start_time'] as String;
+      final endTime = schedule['end_time'] as String;
+      final normalizedStart = normalizeTime(startTime);
+      final normalizedEnd = normalizeTime(endTime);
+      if (normalizedStart != startTime || normalizedEnd != endTime) {
+        await DatabaseHelper.instance.updateCourseSchedule(id, {
+          'start_time': normalizedStart,
+          'end_time': normalizedEnd,
+        });
+        hasChanges = true;
+      }
+    }
+    // Reload if any changes were made
+    if (hasChanges) {
+      _courseSchedules = await DatabaseHelper.instance.getCourseSchedules();
+    }
   }
 
   // ---- Course Schedule Management ----
   Future<void> addCourseSchedule(Map<String, dynamic> map) async {
-    await DatabaseHelper.instance.insertCourseSchedule(map);
+    // Normalize time format before saving to database
+    final normalizedMap = Map<String, dynamic>.from(map);
+    if (normalizedMap.containsKey('start_time')) {
+      normalizedMap['start_time'] = normalizeTime(
+        normalizedMap['start_time'] as String,
+      );
+    }
+    if (normalizedMap.containsKey('end_time')) {
+      normalizedMap['end_time'] = normalizeTime(
+        normalizedMap['end_time'] as String,
+      );
+    }
+    await DatabaseHelper.instance.insertCourseSchedule(normalizedMap);
     await loadCourseSchedules();
   }
 
   Future<void> updateCourseSchedule(int id, Map<String, dynamic> map) async {
-    await DatabaseHelper.instance.updateCourseSchedule(id, map);
+    // Normalize time format before saving to database
+    final normalizedMap = Map<String, dynamic>.from(map);
+    if (normalizedMap.containsKey('start_time')) {
+      normalizedMap['start_time'] = normalizeTime(
+        normalizedMap['start_time'] as String,
+      );
+    }
+    if (normalizedMap.containsKey('end_time')) {
+      normalizedMap['end_time'] = normalizeTime(
+        normalizedMap['end_time'] as String,
+      );
+    }
+    await DatabaseHelper.instance.updateCourseSchedule(id, normalizedMap);
     await loadCourseSchedules();
   }
 
@@ -197,7 +248,7 @@ class AuthProvider extends ChangeNotifier {
 
   /// Normalize a time string to HH:MM format (with leading zeros).
   /// E.g. "8:0" -> "08:00", "9:30" -> "09:30"
-  static String _normalizeTime(String time) {
+  static String normalizeTime(String time) {
     final parts = time.split(':');
     final hour = int.tryParse(parts[0]) ?? 0;
     final minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
@@ -217,8 +268,8 @@ class AuthProvider extends ChangeNotifier {
 
     for (final schedule in _courseSchedules) {
       if (schedule['weekday'] as int == weekday) {
-        final start = _normalizeTime(schedule['start_time'] as String);
-        final end = _normalizeTime(schedule['end_time'] as String);
+        final start = normalizeTime(schedule['start_time'] as String);
+        final end = normalizeTime(schedule['end_time'] as String);
         if (currentTimeStr.compareTo(start) >= 0 &&
             currentTimeStr.compareTo(end) < 0) {
           matchedCourse = schedule['course_name'] as String;
@@ -254,8 +305,8 @@ class AuthProvider extends ChangeNotifier {
 
     for (final schedule in _courseSchedules) {
       if (schedule['weekday'] as int == weekday) {
-        final start = _normalizeTime(schedule['start_time'] as String);
-        final end = _normalizeTime(schedule['end_time'] as String);
+        final start = normalizeTime(schedule['start_time'] as String);
+        final end = normalizeTime(schedule['end_time'] as String);
         if (currentTimeStr.compareTo(start) >= 0 &&
             currentTimeStr.compareTo(end) < 0) {
           inClass = true;
