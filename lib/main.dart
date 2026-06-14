@@ -64,6 +64,7 @@ class _AppEntryState extends State<AppEntry> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AuthProvider>().init();
+      context.read<ScoreProvider>().init();
     });
   }
 

@@ -11,6 +11,7 @@ import 'score_items_management.dart';
 import 'course_schedule_management.dart';
 import 'usb_key_management.dart';
 import 'system_settings.dart';
+import 'period_management.dart';
 import '../../models/group.dart';
 import '../../models/student.dart';
 import '../../models/score_item.dart';
@@ -27,6 +28,7 @@ enum SettingsSection {
   student,
   scoreItems,
   courseSchedule,
+  period,
   usbKey,
   system,
 }
@@ -102,6 +104,7 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
           item(Icons.person, '学生管理', SettingsSection.student),
           item(Icons.list_alt, '预设评分项', SettingsSection.scoreItems),
           item(Icons.calendar_month, '课程表管理', SettingsSection.courseSchedule),
+          item(Icons.calendar_today, '评分周期', SettingsSection.period),
           item(Icons.usb, '物理密钥', SettingsSection.usbKey),
           const Divider(),
           item(Icons.settings, '系统设置', SettingsSection.system),
@@ -210,6 +213,8 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
               showCourseScheduleDialog(context, schedule: schedule),
           isUnlocked: context.watch<AuthProvider>().isUnlocked,
         );
+      case SettingsSection.period:
+        return const PeriodManagementView();
       case SettingsSection.usbKey:
         return UsbKeyManagementView(
           onWriteKey: () => showWriteKeyDialog(context),
@@ -234,6 +239,8 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
         return '预设评分项';
       case SettingsSection.courseSchedule:
         return '课程表管理';
+      case SettingsSection.period:
+        return '评分周期';
       case SettingsSection.usbKey:
         return '物理密钥管理';
       case SettingsSection.system:

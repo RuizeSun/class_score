@@ -27,17 +27,18 @@ class _HomePageState extends State<HomePage>
 
   late final AnimationController _slideController;
 
-  final List<Widget> _pages = [
-    const DashboardPage(),
-    const ScoreInputPage(),
-    const ScoreRecordsPage(),
-    const StatisticsAnalysisPage(),
-    const SettingsHubPage(),
-  ];
+  late final List<Widget> _pages;
 
   @override
   void initState() {
     super.initState();
+    _pages = [
+      DashboardPage(onNavigateToRecords: () => _switchTab(2)),
+      const ScoreInputPage(),
+      const ScoreRecordsPage(),
+      const StatisticsAnalysisPage(),
+      const SettingsHubPage(),
+    ];
     _slideController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,

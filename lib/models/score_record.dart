@@ -5,6 +5,7 @@ class ScoreRecord {
   final double score;
   final String? reason;
   final String createTime;
+  final int period; // 评分周期，默认从1开始
 
   ScoreRecord({
     this.id,
@@ -13,6 +14,7 @@ class ScoreRecord {
     required this.score,
     this.reason,
     required this.createTime,
+    this.period = 1,
   });
 
   Map<String, dynamic> toMap() {
@@ -23,6 +25,7 @@ class ScoreRecord {
       'score': score,
       'reason': reason,
       'create_time': createTime,
+      'period': period,
     };
   }
 
@@ -34,6 +37,7 @@ class ScoreRecord {
       score: (map['score'] as num).toDouble(),
       reason: map['reason'] as String?,
       createTime: map['create_time'] as String,
+      period: (map['period'] as int?) ?? 1,
     );
   }
 }

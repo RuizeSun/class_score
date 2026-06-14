@@ -32,7 +32,7 @@ class DatabaseHelper {
     final db = await databaseFactoryFfi.openDatabase(
       dbPath,
       options: OpenDatabaseOptions(
-        version: 5,
+        version: 6,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       ),
@@ -101,6 +101,31 @@ class DatabaseHelper {
     if (oldVersion < 5) {
       await _createV5Tables(db);
     }
+    if (oldVersion < 6) {
+      await _createV6Tables(db);
+    }
+  }
+
+  Future<void> _createV6Tables(Database db) async {
+    // 为 score_records 表添加 period 字段
+    try {
+      await db.execute(
+        'ALTER TABLE score_records ADD COLUMN period INTEGER NOT NULL DEFAULT 1',
+      );
+    } catch (_) {}
+    // 为已有的记录设置 period = 1（这些是旧数据）
+    try {
+      await db.execute(
+        'UPDATE score_records SET period = 1 WHERE period IS NULL',
+      );
+    } catch (_) {}
+    // 初始化默认周期设置为 1
+    try {
+      await db.insert('app_settings', {
+        'key': 'current_period',
+        'value': '1',
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    } catch (_) {}
   }
 
   Future<void> _createV2Tables(Database db) async {
@@ -351,6 +376,7 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getScoreRecords({
     String? targetType,
     int? targetId,
+    int? period,
   }) async {
     final db = await database;
     String query = '''
@@ -369,14 +395,27 @@ class DatabaseHelper {
        LEFT JOIN score_items ON score_records.score_item_id = score_items.id
      ''';
     List<dynamic> whereArgs = [];
+    List<String> conditions = [];
+
+    // 按周期过滤
+    if (period != null) {
+      conditions.add('score_records.period = ?');
+      whereArgs.add(period);
+    }
+
     if (targetType != null) {
-      query += ' WHERE score_records.target_type = ?';
+      conditions.add('score_records.target_type = ?');
       whereArgs.add(targetType);
       if (targetId != null) {
-        query += ' AND score_records.target_id = ?';
+        conditions.add('score_records.target_id = ?');
         whereArgs.add(targetId);
       }
     }
+
+    if (conditions.isNotEmpty) {
+      query += ' WHERE ${conditions.join(' AND ')}';
+    }
+
     query += ' ORDER BY score_records.create_time DESC';
     return db.rawQuery(query, whereArgs);
   }
@@ -434,10 +473,11 @@ class DatabaseHelper {
     int? targetId,
     String? startDate,
     String? endDate,
+    int? period,
   }) async {
     final db = await database;
     String query;
-    List<dynamic> whereArgs;
+    List<dynamic> whereArgs = [];
     List<String> conditions = [];
 
     // 当查询小组数据且指定了具体小组时，通过 students 表关联获取小组成员的评分记录
@@ -461,6 +501,11 @@ class DatabaseHelper {
         )
       ''';
       whereArgs = [targetId];
+      // 周期条件追加到 WHERE 子句后面
+      if (period != null) {
+        query += ' AND score_records.period = ?';
+        whereArgs.add(period);
+      }
     } else {
       query = '''
         SELECT score_records.*,
@@ -477,7 +522,11 @@ class DatabaseHelper {
         LEFT JOIN students ON score_records.target_type = 'student' AND score_records.target_id = students.id
         LEFT JOIN score_items ON score_records.score_item_id = score_items.id
       ''';
-      whereArgs = [];
+      // 按周期过滤
+      if (period != null) {
+        conditions.add('score_records.period = ?');
+        whereArgs.add(period);
+      }
       // 当 targetType = 'group' 但 targetId = null（选择"全部小组"）时，不添加 target_type 过滤
       // 因为用户的评分记录都是 target_type = 'student'
       if (targetType != null && targetType != 'group') {
@@ -511,9 +560,10 @@ class DatabaseHelper {
     int? targetId,
     String? startDate,
     String? endDate,
+    int? period,
   }) async {
     final db = await database;
-    List<dynamic> whereArgs;
+    List<dynamic> whereArgs = [];
     List<String> conditions = [];
 
     // 当查询小组数据时，通过 students 表关联获取小组成员的评分记录
@@ -530,6 +580,11 @@ class DatabaseHelper {
         )
       ''';
       whereArgs = [targetId];
+      // 周期过滤
+      if (period != null) {
+        query += ' AND score_records.period = ?';
+        whereArgs.add(period);
+      }
       if (startDate != null) {
         conditions.add('score_records.create_time >= ?');
         whereArgs.add(startDate);
@@ -552,7 +607,11 @@ class DatabaseHelper {
         FROM score_records
         LEFT JOIN score_items ON score_records.score_item_id = score_items.id
       ''';
-      whereArgs = [];
+      // 周期过滤
+      if (period != null) {
+        conditions.add('score_records.period = ?');
+        whereArgs.add(period);
+      }
       // 当 targetType = 'group' 但 targetId = null（选择"全部小组"）时，不添加 target_type 过滤
       // 因为用户的评分记录都是 target_type = 'student'
       if (targetType != null && targetType != 'group') {
@@ -583,13 +642,13 @@ class DatabaseHelper {
   Future<Map<String, dynamic>> getAverageDailyScores({
     String? targetType,
     int? targetId,
+    int? period,
   }) async {
     final db = await database;
 
     // 当查询小组数据时，通过 students 表关联获取小组成员的评分记录
     if (targetType == 'group' && targetId != null) {
-      final result = await db.rawQuery(
-        '''
+      String query = '''
         SELECT
           COALESCE(SUM(CASE WHEN score > 0 THEN score ELSE 0 END), 0) as total_positive,
           COALESCE(SUM(CASE WHEN score < 0 THEN score ELSE 0 END), 0) as total_negative,
@@ -598,9 +657,14 @@ class DatabaseHelper {
         WHERE score_records.target_type = 'student' AND score_records.target_id IN (
           SELECT id FROM students WHERE group_id = ?
         )
-      ''',
-        [targetId],
-      );
+      ''';
+      List<dynamic> whereArgs = [targetId];
+      // 周期过滤
+      if (period != null) {
+        query += ' AND score_records.period = ?';
+        whereArgs.add(period);
+      }
+      final result = await db.rawQuery(query, whereArgs);
 
       if (result.isNotEmpty) {
         final r = result.first;
@@ -617,17 +681,25 @@ class DatabaseHelper {
     }
 
     List<dynamic> whereArgs = [];
-    String extraWhere = '';
+    List<String> conditions = [];
+    // 周期过滤
+    if (period != null) {
+      conditions.add('score_records.period = ?');
+      whereArgs.add(period);
+    }
     // 当 targetType = 'group' 但 targetId = null（选择"全部小组"）时，不添加 target_type 过滤
     // 因为用户的评分记录都是 target_type = 'student'
     if (targetType != null && targetType != 'group') {
-      extraWhere = 'WHERE score_records.target_type = ?';
+      conditions.add('score_records.target_type = ?');
       whereArgs.add(targetType);
       if (targetId != null) {
-        extraWhere += ' AND score_records.target_id = ?';
+        conditions.add('score_records.target_id = ?');
         whereArgs.add(targetId);
       }
     }
+    final whereClause = conditions.isNotEmpty
+        ? 'WHERE ${conditions.join(' AND ')}'
+        : '';
 
     final result = await db.rawQuery('''
       SELECT
@@ -635,7 +707,7 @@ class DatabaseHelper {
         COALESCE(SUM(CASE WHEN score < 0 THEN score ELSE 0 END), 0) as total_negative,
         COUNT(DISTINCT DATE(create_time)) as scored_days
       FROM score_records
-      $extraWhere
+      $whereClause
     ''', whereArgs);
 
     if (result.isNotEmpty) {
@@ -653,20 +725,31 @@ class DatabaseHelper {
   }
 
   // ---- Statistics ----
-  Future<List<Map<String, dynamic>>> getGroupTotalScores() async {
+  Future<List<Map<String, dynamic>>> getGroupTotalScores({int? period}) async {
     final db = await database;
-    return db.rawQuery('''
+    String query = '''
       SELECT groups.id, groups.name, COALESCE(SUM(score_records.score), 0) as total_score
       FROM groups
       LEFT JOIN students ON students.group_id = groups.id
       LEFT JOIN score_records ON score_records.target_type = 'student' AND score_records.target_id = students.id
-      GROUP BY groups.id
-      ORDER BY total_score DESC
-    ''');
+    ''';
+    List<dynamic> whereArgs = [];
+    if (period != null) {
+      // period 条件必须放在 LEFT JOIN ON 子句中，而非 WHERE 子句，
+      // 否则会过滤掉没有当前周期评分记录的小组（LEFT JOIN 降级为 INNER JOIN）。
+      query = query.replaceFirst(
+        'LEFT JOIN score_records ON score_records.target_type = \'student\' AND score_records.target_id = students.id',
+        'LEFT JOIN score_records ON score_records.target_type = \'student\' AND score_records.target_id = students.id AND score_records.period = ?',
+      );
+      whereArgs.add(period);
+    }
+    query += ' GROUP BY groups.id ORDER BY total_score DESC';
+    return db.rawQuery(query, whereArgs);
   }
 
   Future<List<Map<String, dynamic>>> getStudentTotalScores({
     int? groupId,
+    int? period,
   }) async {
     final db = await database;
     String query = '''
@@ -676,10 +759,26 @@ class DatabaseHelper {
       LEFT JOIN groups ON students.group_id = groups.id
       LEFT JOIN score_records ON score_records.target_type = 'student' AND score_records.target_id = students.id
     ''';
-    List<dynamic>? whereArgs;
+    List<dynamic> whereArgs = [];
+    List<String> conditions = [];
+
+    // period 条件必须放在 LEFT JOIN ON 子句中，而非 WHERE 子句，
+    // 否则会过滤掉没有当前周期评分记录的学生（LEFT JOIN 降级为 INNER JOIN）。
+    if (period != null) {
+      query = query.replaceFirst(
+        'LEFT JOIN score_records ON score_records.target_type = \'student\' AND score_records.target_id = students.id',
+        'LEFT JOIN score_records ON score_records.target_type = \'student\' AND score_records.target_id = students.id AND score_records.period = ?',
+      );
+      whereArgs.add(period);
+    }
+
     if (groupId != null) {
-      query += ' WHERE students.group_id = ?';
-      whereArgs = [groupId];
+      conditions.add('students.group_id = ?');
+      whereArgs.add(groupId);
+    }
+
+    if (conditions.isNotEmpty) {
+      query += ' WHERE ${conditions.join(' AND ')}';
     }
     query += ' GROUP BY students.id ORDER BY total_score DESC';
     return db.rawQuery(query, whereArgs);

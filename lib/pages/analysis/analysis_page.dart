@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart';
 import '../../database/database_helper.dart';
 import '../../providers/student_provider.dart';
 import '../../providers/group_provider.dart';
+import '../../providers/score_provider.dart';
 
 class AnalysisView extends StatefulWidget {
   const AnalysisView({super.key});
@@ -74,11 +75,14 @@ class _AnalysisViewState extends State<AnalysisView> {
         ? _filterStudentId
         : _filterGroupId;
 
+    final currentPeriod = context.read<ScoreProvider>().currentPeriod;
+
     _records = await db.getScoreRecordsAdvanced(
       targetType: _targetType,
       targetId: targetId,
       startDate: _startDate,
       endDate: _endDate,
+      period: currentPeriod,
     );
 
     _distribution = await db.getScoreDistributionByItem(
@@ -86,11 +90,13 @@ class _AnalysisViewState extends State<AnalysisView> {
       targetId: targetId,
       startDate: _startDate,
       endDate: _endDate,
+      period: currentPeriod,
     );
 
     _dailyAverages = await db.getAverageDailyScores(
       targetType: _targetType,
       targetId: targetId,
+      period: currentPeriod,
     );
 
     if (!mounted) return;

@@ -5,7 +5,8 @@ import '../../database/database_helper.dart';
 import '../../providers/score_provider.dart';
 
 class DashboardPage extends StatefulWidget {
-  const DashboardPage({super.key});
+  final VoidCallback? onNavigateToRecords;
+  const DashboardPage({super.key, this.onNavigateToRecords});
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -69,8 +70,10 @@ class _DashboardPageState extends State<DashboardPage> {
         });
       }
 
+      final currentPeriod = _scoreProvider?.currentPeriod;
+
       // 2. 获取今日所有评分记录
-      final allRecords = await db.getScoreRecords();
+      final allRecords = await db.getScoreRecords(period: currentPeriod);
       final todayRecords = allRecords.where((record) {
         final createTime = record['create_time'] as String;
         return createTime.startsWith(startTimestamp.substring(0, 10));
@@ -83,7 +86,7 @@ class _DashboardPageState extends State<DashboardPage> {
       }
 
       // 3. 获取最近5条评分记录
-      final recent = await db.getScoreRecords();
+      final recent = await db.getScoreRecords(period: currentPeriod);
       final recentRecords = recent.take(5).toList();
       if (mounted) {
         setState(() {
@@ -92,7 +95,7 @@ class _DashboardPageState extends State<DashboardPage> {
       }
 
       // 4. 获取小组排名（今日）- 使用数据库计算的成员分数总和
-      final groupScores = await db.getGroupTotalScores();
+      final groupScores = await db.getGroupTotalScores(period: currentPeriod);
       // 从今日记录中提取每个学生的分数
       final studentTodayScores = <int, double>{};
       for (final r in _todayScores) {
@@ -164,6 +167,7 @@ class _DashboardPageState extends State<DashboardPage> {
         targetType: 'student',
         startDate: startTimestamp,
         endDate: endTimestamp,
+        period: currentPeriod,
       );
       final positiveData = positiveDist
           .where((d) => (d['total_score'] as num).toDouble() > 0)
@@ -243,7 +247,10 @@ class _DashboardPageState extends State<DashboardPage> {
                         schedules: _todaySchedules,
                       );
                     case 1:
-                      return _RecentScoresCard(records: _recentRecords);
+                      return _RecentScoresCard(
+                        records: _recentRecords,
+                        onTap: widget.onNavigateToRecords,
+                      );
                     case 2:
                       return _TotalScoresCard(
                         positive: totalPositive,
@@ -374,12 +381,13 @@ class _DateScheduleCard extends StatelessWidget {
 // ========== 卡片2: 最近评分 ==========
 class _RecentScoresCard extends StatelessWidget {
   final List<Map<String, dynamic>> records;
+  final VoidCallback? onTap;
 
-  const _RecentScoresCard({required this.records});
+  const _RecentScoresCard({required this.records, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return _CardWidget(
+    final card = _CardWidget(
       icon: Icons.history,
       iconColor: Colors.purple,
       title: '最近评分',
@@ -451,6 +459,11 @@ class _RecentScoresCard extends StatelessWidget {
               }).toList(),
             ),
     );
+
+    if (onTap != null) {
+      return GestureDetector(onTap: onTap, child: card);
+    }
+    return card;
   }
 }
 

@@ -32,7 +32,41 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
       context.read<GroupProvider>().loadGroups();
       context.read<StudentProvider>().loadStudents();
       context.read<ScoreItemProvider>().loadItems();
+      context.read<ScoreProvider>().loadRecords(targetType: 'student');
     });
+  }
+
+  Future<void> _switchToNextPeriod() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('切换到下一周期'),
+        content: const Text(
+          '即将切换到下一评分周期，当前周期的评分记录将保留，但下一周期的评分记录将被清空。\n\n确认切换吗？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认切换'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await context.read<ScoreProvider>().switchToNextPeriod();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('已切换到下一评分周期'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   @override
@@ -213,6 +247,9 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
 
     // 已选择的学生数
     final selectedCount = _selectedStudentIds.length;
+
+    // 当前周期
+    final currentPeriod = context.watch<ScoreProvider>().currentPeriod;
 
     return Scaffold(
       appBar: AppBar(toolbarHeight: 0),

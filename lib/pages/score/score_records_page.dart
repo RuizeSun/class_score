@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/score_provider.dart';
 import '../../providers/student_provider.dart';
+import '../../providers/group_provider.dart';
 import '../../providers/auth_provider.dart';
 
 class ScoreRecordsPage extends StatefulWidget {
@@ -12,61 +13,130 @@ class ScoreRecordsPage extends StatefulWidget {
 }
 
 class _ScoreRecordsPageState extends State<ScoreRecordsPage> {
+  int? _filterGroupId;
   int? _filterStudentId;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<GroupProvider>().loadGroups();
       context.read<StudentProvider>().loadStudents();
-      context.read<ScoreProvider>().loadRecords(targetType: 'student');
+      _loadRecords();
     });
+  }
+
+  void _loadRecords() {
+    final scoreProvider = context.read<ScoreProvider>();
+    if (_filterGroupId != null) {
+      if (_filterStudentId != null) {
+        // 选了小组 + 具体学生 → 只查该学生的记录
+        scoreProvider.loadRecords(
+          targetType: 'student',
+          targetId: _filterStudentId,
+        );
+      } else {
+        // 选了小组 + 全部学生 → 查该小组所有成员的记录
+        scoreProvider.loadRecords(groupId: _filterGroupId);
+      }
+    } else {
+      // 全部小组
+      if (_filterStudentId != null) {
+        // 全部小组 + 具体学生 → 只查该学生的记录
+        scoreProvider.loadRecords(
+          targetType: 'student',
+          targetId: _filterStudentId,
+        );
+      } else {
+        // 全部小组 + 全部学生 → 查所有学生记录
+        scoreProvider.loadRecords(targetType: 'student');
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final records = context.watch<ScoreProvider>().recordsWithName;
-    final students = context.watch<StudentProvider>().students;
+    final allStudents = context.watch<StudentProvider>().students;
+    final groups = context.watch<GroupProvider>().groups;
     final isUnlocked = context.watch<AuthProvider>().isUnlocked;
+
+    // 根据所选小组过滤学生列表
+    final students = _filterGroupId != null
+        ? allStudents.where((s) => s.groupId == _filterGroupId).toList()
+        : allStudents;
 
     return Scaffold(
       appBar: AppBar(toolbarHeight: 0),
       body: Column(
         children: [
-          // Filters（仅学生）
+          // Filters（一行两个：小组 + 学生）
           Padding(
             padding: const EdgeInsets.all(8.0),
-            child: DropdownButtonFormField<int?>(
-              initialValue: _filterStudentId,
-              decoration: const InputDecoration(
-                labelText: '筛选学生',
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                isDense: true,
-              ),
-              items: [
-                const DropdownMenuItem(value: null, child: Text('全部学生')),
-                ...students.map(
-                  (s) => DropdownMenuItem(
-                    value: s.id,
-                    child: Text(
-                      s.studentNumber.isNotEmpty
-                          ? '${s.name} (${s.studentNumber})'
-                          : s.name,
+            child: Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<int?>(
+                    initialValue: _filterGroupId,
+                    decoration: const InputDecoration(
+                      labelText: '筛选小组',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      isDense: true,
                     ),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('全部小组')),
+                      ...groups.map(
+                        (g) =>
+                            DropdownMenuItem(value: g.id, child: Text(g.name)),
+                      ),
+                    ],
+                    onChanged: (v) {
+                      setState(() {
+                        _filterGroupId = v;
+                        // 切换小组后，清除学生筛选（因为可能选了另一个小组的学生）
+                        _filterStudentId = null;
+                      });
+                      _loadRecords();
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<int?>(
+                    initialValue: _filterStudentId,
+                    decoration: const InputDecoration(
+                      labelText: '筛选学生',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      isDense: true,
+                    ),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('全部学生')),
+                      ...students.map(
+                        (s) => DropdownMenuItem(
+                          value: s.id,
+                          child: Text(
+                            s.studentNumber.isNotEmpty
+                                ? '${s.name} (${s.studentNumber})'
+                                : s.name,
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: (v) {
+                      setState(() => _filterStudentId = v);
+                      _loadRecords();
+                    },
                   ),
                 ),
               ],
-              onChanged: (v) {
-                setState(() => _filterStudentId = v);
-                context.read<ScoreProvider>().loadRecords(
-                  targetType: 'student',
-                  targetId: v,
-                );
-              },
             ),
           ),
           // Records list
@@ -104,18 +174,15 @@ class _ScoreRecordsPageState extends State<ScoreRecordsPage> {
                       final hasReason = reason.isNotEmpty;
 
                       if (hasScoreItem && hasReason) {
-                        // 两者都有时，显示：评分项 - 变动原因
                         final itemText = scoreItemName.isNotEmpty
                             ? scoreItemName
                             : customName;
                         displayReason = '$itemText · $reason';
                       } else if (hasScoreItem) {
-                        // 只有评分项
                         displayReason = scoreItemName.isNotEmpty
                             ? scoreItemName
                             : customName;
                       } else if (hasReason) {
-                        // 只有变动原因
                         displayReason = reason;
                       }
 

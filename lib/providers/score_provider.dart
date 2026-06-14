@@ -20,11 +20,68 @@ class ScoreProvider extends ChangeNotifier {
   int? _filterGroupId;
   int? get filterGroupId => _filterGroupId;
 
-  Future<void> loadRecords({String? targetType, int? targetId}) async {
-    final maps = await DatabaseHelper.instance.getScoreRecords(
-      targetType: targetType,
-      targetId: targetId,
+  // 当前评分周期
+  int _currentPeriod = 1;
+  int get currentPeriod => _currentPeriod;
+
+  // 当前加载记录时使用的筛选状态，用于 add/delete 后保持筛选
+  String? _lastRecordTargetType;
+  int? _lastRecordTargetId;
+  int? _lastRecordGroupId;
+
+  // 初始化 - 加载当前周期设置
+  Future<void> init() async {
+    final periodStr = await DatabaseHelper.instance.getSetting(
+      'current_period',
     );
+    _currentPeriod = int.tryParse(periodStr ?? '1') ?? 1;
+    notifyListeners();
+  }
+
+  /// 加载评分记录。支持按 targetType + targetId 筛选，也支持按 groupId 筛选（查小组内所有成员记录）。
+  /// 如果不传任何参数，则使用上次 loadRecords 的筛选条件重新加载。
+  Future<void> loadRecords({
+    String? targetType,
+    int? targetId,
+    int? groupId,
+    bool resetFilters = false,
+  }) async {
+    if (resetFilters) {
+      _lastRecordTargetType = null;
+      _lastRecordTargetId = null;
+      _lastRecordGroupId = null;
+    }
+
+    // 如果传入了筛选条件中的任意一个，更新保存的状态
+    final hasNewFilter =
+        targetType != null || targetId != null || groupId != null;
+    if (hasNewFilter) {
+      _lastRecordTargetType = targetType;
+      _lastRecordTargetId = targetId;
+      _lastRecordGroupId = groupId;
+    }
+
+    // 使用保存的筛选条件（参数优先，回退到保存值）
+    final effectiveTargetType = hasNewFilter
+        ? targetType
+        : _lastRecordTargetType;
+    final effectiveTargetId = hasNewFilter ? targetId : _lastRecordTargetId;
+    final effectiveGroupId = hasNewFilter ? groupId : _lastRecordGroupId;
+
+    List<Map<String, dynamic>> maps;
+    if (effectiveGroupId != null) {
+      maps = await DatabaseHelper.instance.getScoreRecordsAdvanced(
+        targetType: 'group',
+        targetId: effectiveGroupId,
+        period: _currentPeriod,
+      );
+    } else {
+      maps = await DatabaseHelper.instance.getScoreRecords(
+        targetType: effectiveTargetType,
+        targetId: effectiveTargetId,
+        period: _currentPeriod,
+      );
+    }
     _recordsWithName = maps;
     _records = maps.map((m) => ScoreRecord.fromMap(m)).toList();
     notifyListeners();
@@ -45,6 +102,7 @@ class ScoreProvider extends ChangeNotifier {
       'score': score,
       'reason': reason ?? '',
       'create_time': DateTime.now().toIso8601String(),
+      'period': _currentPeriod, // 当前周期
     };
     if (scoreItemId != null) map['score_item_id'] = scoreItemId;
     if (customName != null && customName.isNotEmpty) {
@@ -73,6 +131,7 @@ class ScoreProvider extends ChangeNotifier {
         'score': score,
         'reason': reason ?? '',
         'create_time': now,
+        'period': _currentPeriod, // 添加当前周期
       };
       if (scoreItemId != null) map['score_item_id'] = scoreItemId;
       if (customName != null && customName.isNotEmpty) {
@@ -87,6 +146,59 @@ class ScoreProvider extends ChangeNotifier {
     return count;
   }
 
+  /// 切换到下一个评分周期
+  /// 会清空新周期的所有评分记录
+  Future<void> switchToNextPeriod() async {
+    await BackupService.instance.createBackup();
+
+    // 获取新周期号
+    final nextPeriod = _currentPeriod + 1;
+
+    // 删除新周期的所有评分记录（如果存在）
+    final db = await DatabaseHelper.instance.database;
+    await db.delete(
+      'score_records',
+      where: 'period = ?',
+      whereArgs: [nextPeriod],
+    );
+
+    // 更新当前周期设置
+    await DatabaseHelper.instance.setSetting(
+      'current_period',
+      nextPeriod.toString(),
+    );
+
+    // 更新内存中的值
+    _currentPeriod = nextPeriod;
+    notifyListeners();
+
+    // 重新加载评分记录
+    await loadRecords();
+  }
+
+  /// 切换到上一个评分周期
+  Future<void> switchToPreviousPeriod() async {
+    if (_currentPeriod <= 1) return;
+
+    await BackupService.instance.createBackup();
+
+    // 获取上一周期号
+    final prevPeriod = _currentPeriod - 1;
+
+    // 更新当前周期设置
+    await DatabaseHelper.instance.setSetting(
+      'current_period',
+      prevPeriod.toString(),
+    );
+
+    // 更新内存中的值
+    _currentPeriod = prevPeriod;
+    notifyListeners();
+
+    // 重新加载评分记录
+    await loadRecords();
+  }
+
   Future<void> deleteScoreRecord(int id) async {
     await BackupService.instance.createBackup();
     await DatabaseHelper.instance.deleteScoreRecord(id);
@@ -95,7 +207,9 @@ class ScoreProvider extends ChangeNotifier {
 
   // Statistics
   Future<void> loadStatistics({int? groupId}) async {
-    final rawGroupScores = await DatabaseHelper.instance.getGroupTotalScores();
+    final rawGroupScores = await DatabaseHelper.instance.getGroupTotalScores(
+      period: _currentPeriod,
+    );
     // 获取每个小组的成员数量，过滤掉"未分组"且没有成员的组
     final allStudents = await DatabaseHelper.instance.getStudents();
     final groupMemberCount = <int, int>{};
@@ -113,6 +227,7 @@ class ScoreProvider extends ChangeNotifier {
     }).toList();
     _studentTotalScores = await DatabaseHelper.instance.getStudentTotalScores(
       groupId: groupId,
+      period: _currentPeriod,
     );
     _filterGroupId = groupId;
     notifyListeners();
