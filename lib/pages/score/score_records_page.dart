@@ -22,8 +22,20 @@ class _ScoreRecordsPageState extends State<ScoreRecordsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<GroupProvider>().loadGroups();
       context.read<StudentProvider>().loadStudents();
+      _checkPendingGroupFilter();
       _loadRecords();
     });
+  }
+
+  /// 检查是否有待处理的小组筛选（来自统计分析页面点击小组跳转）
+  void _checkPendingGroupFilter() {
+    final scoreProvider = context.read<ScoreProvider>();
+    final pending = scoreProvider.pendingGroupFilter;
+    if (pending != null) {
+      _filterGroupId = pending;
+      _filterStudentId = null;
+      scoreProvider.consumeGroupFilter();
+    }
   }
 
   void _loadRecords() {
@@ -56,10 +68,24 @@ class _ScoreRecordsPageState extends State<ScoreRecordsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final records = context.watch<ScoreProvider>().recordsWithName;
+    final scoreProvider = context.watch<ScoreProvider>();
+    final records = scoreProvider.recordsWithName;
     final allStudents = context.watch<StudentProvider>().students;
     final groups = context.watch<GroupProvider>().groups;
     final isUnlocked = context.watch<AuthProvider>().isUnlocked;
+
+    // 每次 build 时检测是否有待处理的筛选，并延迟应用（避免 build 中触发 setState）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final pending = scoreProvider.pendingGroupFilter;
+      if (pending != null && pending != _filterGroupId) {
+        setState(() {
+          _filterGroupId = pending;
+          _filterStudentId = null;
+        });
+        scoreProvider.consumeGroupFilter();
+        _loadRecords();
+      }
+    });
 
     // 根据所选小组过滤学生列表
     final students = _filterGroupId != null

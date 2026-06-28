@@ -5,7 +5,8 @@ import '../../providers/group_provider.dart';
 import 'analysis_page.dart';
 
 class StatisticsAnalysisPage extends StatefulWidget {
-  const StatisticsAnalysisPage({super.key});
+  final VoidCallback? onNavigateToRecords;
+  const StatisticsAnalysisPage({super.key, this.onNavigateToRecords});
 
   @override
   State<StatisticsAnalysisPage> createState() => _StatisticsAnalysisPageState();
@@ -26,14 +27,20 @@ class _StatisticsAnalysisPageState extends State<StatisticsAnalysisPage> {
             ],
           ),
         ),
-        body: const TabBarView(children: [StatisticsView(), AnalysisView()]),
+        body: TabBarView(
+          children: [
+            StatisticsView(onNavigateToRecords: widget.onNavigateToRecords),
+            const AnalysisView(),
+          ],
+        ),
       ),
     );
   }
 }
 
 class StatisticsView extends StatefulWidget {
-  const StatisticsView({super.key});
+  final VoidCallback? onNavigateToRecords;
+  const StatisticsView({super.key, this.onNavigateToRecords});
 
   @override
   State<StatisticsView> createState() => _StatisticsViewState();
@@ -130,6 +137,7 @@ class _StatisticsViewState extends State<StatisticsView> {
                     itemBuilder: (_, i) {
                       final g = groupScores[i];
                       final score = (g['total_score'] as num).toDouble();
+                      final groupId = g['id'] as int;
                       return ListTile(
                         dense: true,
                         leading: CircleAvatar(
@@ -148,6 +156,12 @@ class _StatisticsViewState extends State<StatisticsView> {
                             color: score >= 0 ? Colors.green : Colors.red,
                           ),
                         ),
+                        onTap: () {
+                          context.read<ScoreProvider>().requestGroupFilter(
+                            groupId,
+                          );
+                          widget.onNavigateToRecords?.call();
+                        },
                       );
                     },
                   )

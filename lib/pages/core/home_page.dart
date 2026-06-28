@@ -36,7 +36,7 @@ class _HomePageState extends State<HomePage>
       DashboardPage(onNavigateToRecords: () => _switchTab(2)),
       const ScoreInputPage(),
       const ScoreRecordsPage(),
-      const StatisticsAnalysisPage(),
+      StatisticsAnalysisPage(onNavigateToRecords: () => _switchTab(2)),
       const SettingsHubPage(),
     ];
     _slideController = AnimationController(

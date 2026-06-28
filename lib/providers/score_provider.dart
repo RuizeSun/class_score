@@ -29,6 +29,19 @@ class ScoreProvider extends ChangeNotifier {
   int? _lastRecordTargetId;
   int? _lastRecordGroupId;
 
+  // 待处理的小组筛选（用于统计分析→点击小组→跳转记录页自动筛选）
+  int? _pendingGroupFilter;
+  int? get pendingGroupFilter => _pendingGroupFilter;
+  void requestGroupFilter(int? groupId) {
+    _pendingGroupFilter = groupId;
+    notifyListeners();
+  }
+
+  void consumeGroupFilter() {
+    _pendingGroupFilter = null;
+    // 不调用 notifyListeners()，由调用方控制
+  }
+
   // 初始化 - 加载当前周期设置
   Future<void> init() async {
     final periodStr = await DatabaseHelper.instance.getSetting(
