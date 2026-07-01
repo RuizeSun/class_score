@@ -263,9 +263,9 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                 // 筛选小组
                 const Text(
                   '筛选小组（可选）',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                  style: TextStyle(fontWeight: FontWeight.bold, height: 1.2),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 DropdownButtonFormField<int?>(
                   initialValue: _selectedGroupId,
                   decoration: const InputDecoration(
@@ -290,7 +290,7 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                   }),
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
 
                 // 学生选择区域
                 Row(
@@ -298,7 +298,10 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                   children: [
                     const Text(
                       '选择学生',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        height: 1.2,
+                      ),
                     ),
                     Row(
                       children: [
@@ -332,40 +335,8 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                if (filteredStudents.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text(
-                      '该范围内没有学生',
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  )
-                else
-                  Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: CheckboxListTile(
-                      dense: true,
-                      visualDensity: VisualDensity.compact,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      value:
-                          filteredStudents.every(
-                            (s) => _selectedStudentIds.contains(s.id),
-                          ) &&
-                          filteredStudents.isNotEmpty,
-                      onChanged: (_) => _selectAllStudents(),
-                      title: const Text('全选当前筛选的学生'),
-                      subtitle: Text('共 ${filteredStudents.length} 人'),
-                      controlAffinity: ListTileControlAffinity.trailing,
-                    ),
-                  ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
+                const SizedBox(height: 4),
                 // 根据容器宽度动态计算每行显示的学生数量
                 LayoutBuilder(
                   builder: (ctx, constraints) {
@@ -456,14 +427,14 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                   },
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
 
                 // 预设评分项
                 const Text(
                   '预设评分项（可选）',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                  style: TextStyle(fontWeight: FontWeight.bold, height: 1.2),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 DropdownButtonFormField<int?>(
                   initialValue: _selectedItemId,
                   decoration: const InputDecoration(
@@ -578,14 +549,14 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                     ],
                   ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
 
                 // 变动原因
                 const Text(
                   '变动原因',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                  style: TextStyle(fontWeight: FontWeight.bold, height: 1.2),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 TextField(
                   controller: _reasonController,
                   maxLines: 3,

@@ -27,11 +27,31 @@ class _ScoreRecordsPageState extends State<ScoreRecordsPage> {
     });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 每次 deps 变化时检查待处理筛选（来自统计分析页面点击小组跳转）
+    // 用 pending != _filterGroupId 避免重复消费同一个值
+    final pending = context.read<ScoreProvider>().pendingGroupFilter;
+    if (pending != null && pending != _filterGroupId) {
+      _filterGroupId = pending;
+      _filterStudentId = null;
+      context.read<ScoreProvider>().consumeGroupFilter();
+      // 延迟到下一帧加载（避免在 didChangeDependencies 中直接触发 setState）
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {});
+          _loadRecords();
+        }
+      });
+    }
+  }
+
   /// 检查是否有待处理的小组筛选（来自统计分析页面点击小组跳转）
   void _checkPendingGroupFilter() {
     final scoreProvider = context.read<ScoreProvider>();
     final pending = scoreProvider.pendingGroupFilter;
-    if (pending != null) {
+    if (pending != null && pending != _filterGroupId) {
       _filterGroupId = pending;
       _filterStudentId = null;
       scoreProvider.consumeGroupFilter();
@@ -74,19 +94,6 @@ class _ScoreRecordsPageState extends State<ScoreRecordsPage> {
     final groups = context.watch<GroupProvider>().groups;
     final isUnlocked = context.watch<AuthProvider>().isUnlocked;
 
-    // 每次 build 时检测是否有待处理的筛选，并延迟应用（避免 build 中触发 setState）
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final pending = scoreProvider.pendingGroupFilter;
-      if (pending != null && pending != _filterGroupId) {
-        setState(() {
-          _filterGroupId = pending;
-          _filterStudentId = null;
-        });
-        scoreProvider.consumeGroupFilter();
-        _loadRecords();
-      }
-    });
-
     // 根据所选小组过滤学生列表
     final students = _filterGroupId != null
         ? allStudents.where((s) => s.groupId == _filterGroupId).toList()
@@ -103,6 +110,7 @@ class _ScoreRecordsPageState extends State<ScoreRecordsPage> {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<int?>(
+                    key: ValueKey('group_$_filterGroupId'),
                     initialValue: _filterGroupId,
                     decoration: const InputDecoration(
                       labelText: '筛选小组',
@@ -133,6 +141,7 @@ class _ScoreRecordsPageState extends State<ScoreRecordsPage> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: DropdownButtonFormField<int?>(
+                    key: ValueKey('student_$_filterStudentId'),
                     initialValue: _filterStudentId,
                     decoration: const InputDecoration(
                       labelText: '筛选学生',

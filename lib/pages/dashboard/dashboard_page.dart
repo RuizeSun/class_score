@@ -228,14 +228,15 @@ class _DashboardPageState extends State<DashboardPage> {
         onRefresh: _loadDashboardData,
         child: CustomScrollView(
           slivers: [
-            // 卡片网格
+            // 卡片网格 — 磁贴设计系统
             SliverPadding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(24),
               sliver: SliverGrid(
                 gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 400,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
+                  // 1280x960 固定尺寸下实现 3 列: (1280-48-40)/3 ≈ 397
+                  maxCrossAxisExtent: 397,
+                  mainAxisSpacing: 20,
+                  crossAxisSpacing: 20,
                   childAspectRatio: 1.6,
                 ),
                 delegate: SliverChildBuilderDelegate((context, index) {
@@ -305,6 +306,7 @@ class _DateScheduleCard extends StatelessWidget {
       icon: Icons.calendar_today,
       iconColor: Colors.blue,
       title: '日期与课表',
+      surfaceColor: Colors.blue.shade50,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -319,10 +321,7 @@ class _DateScheduleCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           if (schedules.isEmpty)
-            const Text(
-              '今日无课程',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            )
+            _EmptyStateWidget()
           else
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -391,11 +390,9 @@ class _RecentScoresCard extends StatelessWidget {
       icon: Icons.history,
       iconColor: Colors.purple,
       title: '最近评分',
+      surfaceColor: Colors.purple.shade50,
       child: records.isEmpty
-          ? const Text(
-              '暂无评分记录',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            )
+          ? _EmptyStateWidget()
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: records.map((r) {
@@ -480,6 +477,7 @@ class _TotalScoresCard extends StatelessWidget {
       icon: Icons.analytics,
       iconColor: Colors.orange,
       title: '今日总分',
+      surfaceColor: Colors.green.shade50,
       child: Center(
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -552,11 +550,9 @@ class _GroupRankingCard extends StatelessWidget {
       icon: Icons.groups,
       iconColor: Colors.teal,
       title: '今日小组排名',
+      surfaceColor: Colors.orange.shade50,
       child: ranking.isEmpty
-          ? const Text(
-              '暂无小组数据',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            )
+          ? _EmptyStateWidget()
           : ListView.builder(
               shrinkWrap: true,
               // 如果希望卡片内部能上下滚动查看超出的小组，可以删除下面这一行
@@ -644,13 +640,9 @@ class _PieChartCard extends StatelessWidget {
       icon: isPositive ? Icons.add_circle : Icons.remove_circle,
       iconColor: isPositive ? Colors.green : Colors.red,
       title: title,
+      surfaceColor: isPositive ? Colors.teal.shade50 : Colors.amber.shade50,
       child: distribution.isEmpty
-          ? const Center(
-              child: Text(
-                '暂无数据',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            )
+          ? _EmptyStateWidget()
           : Row(
               // 改变为左右布局
               children: [
@@ -761,27 +753,60 @@ class _PieChartCard extends StatelessWidget {
   }
 }
 
-// ========== 通用卡片组件 ==========
+// ========== 空状态组件 — 磁贴设计系统 ==========
+class _EmptyStateWidget extends StatelessWidget {
+  const _EmptyStateWidget();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.bar_chart, size: 40, color: Colors.grey.shade400),
+          const SizedBox(height: 8),
+          Text(
+            '暂无数据',
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ========== 通用卡片组件 — 磁贴设计系统 ==========
 class _CardWidget extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
   final String title;
   final Widget child;
+  final Color surfaceColor;
 
   const _CardWidget({
     required this.icon,
     required this.iconColor,
     required this.title,
     required this.child,
+    this.surfaceColor = Colors.white,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    return Container(
+      decoration: BoxDecoration(
+        color: surfaceColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -792,13 +817,13 @@ class _CardWidget extends StatelessWidget {
                 Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
-            const Divider(height: 12, thickness: 1),
+            const SizedBox(height: 12),
             Flexible(child: child),
           ],
         ),
