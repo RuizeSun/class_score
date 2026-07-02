@@ -18,14 +18,10 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage>
-    with
-        SingleTickerProviderStateMixin,
-        WidgetsBindingObserver,
-        WindowListener {
+    with WidgetsBindingObserver, WindowListener {
   int _currentIndex = 0;
-  int? _previousIndex;
 
-  late final AnimationController _slideController;
+  late final PageController _pageController;
 
   late final List<Widget> _pages;
 
@@ -39,10 +35,7 @@ class _HomePageState extends State<HomePage>
       StatisticsAnalysisPage(onNavigateToRecords: () => _switchTab(2)),
       const SettingsHubPage(),
     ];
-    _slideController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
+    _pageController = PageController(initialPage: _currentIndex);
 
     // Disable maximize button since window size is fixed
     windowManager.setMaximumSize(const Size(1200, 800));
@@ -104,18 +97,19 @@ class _HomePageState extends State<HomePage>
   @override
   void dispose() {
     context.read<AuthProvider>().removeListener(_onAuthStateChanged);
-    _slideController.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
   void _switchTab(int newIndex) {
     if (newIndex == _currentIndex) return;
+    _pageController.animateToPage(
+      newIndex,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
     setState(() {
-      _previousIndex = _currentIndex;
       _currentIndex = newIndex;
-    });
-    _slideController.forward(from: 0.0).then((_) {
-      if (mounted) setState(() => _previousIndex = null);
     });
   }
 
@@ -256,7 +250,7 @@ class _HomePageState extends State<HomePage>
               ),
             ),
           ),
-          // Page content with slide animation
+          // Page content with PageView
           Expanded(child: _buildPageContent()),
         ],
       ),
@@ -275,63 +269,10 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildPageContent() {
-    final isForward = _previousIndex != null && _currentIndex > _previousIndex!;
-    final isAnimating = _previousIndex != null;
-
-    return Stack(
-      children: [
-        // Previous page (slides out)
-        if (isAnimating)
-          AnimatedBuilder(
-            animation: _slideController,
-            builder: (context, child) {
-              final offset =
-                  Tween<Offset>(
-                        begin: Offset.zero,
-                        end: Offset(isForward ? -1.0 : 1.0, 0),
-                      )
-                      .animate(
-                        CurvedAnimation(
-                          parent: _slideController,
-                          curve: Curves.easeInOut,
-                        ),
-                      )
-                      .value;
-              return Transform.translate(
-                offset: Offset(
-                  offset.dx * MediaQuery.of(context).size.width,
-                  0,
-                ),
-                child: child,
-              );
-            },
-            child: _pages[_previousIndex!],
-          ),
-        // Current page (slides in)
-        AnimatedBuilder(
-          animation: _slideController,
-          builder: (context, child) {
-            final offset = isAnimating
-                ? Tween<Offset>(
-                        begin: Offset(isForward ? 1.0 : -1.0, 0),
-                        end: Offset.zero,
-                      )
-                      .animate(
-                        CurvedAnimation(
-                          parent: _slideController,
-                          curve: Curves.easeInOut,
-                        ),
-                      )
-                      .value
-                : Offset.zero;
-            return Transform.translate(
-              offset: Offset(offset.dx * MediaQuery.of(context).size.width, 0),
-              child: child,
-            );
-          },
-          child: _pages[_currentIndex],
-        ),
-      ],
+    return PageView(
+      controller: _pageController,
+      physics: const NeverScrollableScrollPhysics(),
+      children: _pages,
     );
   }
 }
