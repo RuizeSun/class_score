@@ -68,13 +68,15 @@ class DatabaseHelper {
         reason TEXT,
         score_item_id INTEGER,
         custom_name TEXT,
-        create_time TEXT NOT NULL
+        create_time TEXT NOT NULL,
+        period INTEGER NOT NULL DEFAULT 1
       )
     ''');
     await _createV2Tables(db);
     await _createV3Tables(db);
     await _createV4Tables(db);
     await _createV5Tables(db);
+    await _createV6Tables(db);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
