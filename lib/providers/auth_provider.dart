@@ -45,6 +45,10 @@ class AuthProvider extends ChangeNotifier {
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
+  // Whether to use long PIN verification (up to 100 chars, contains original PIN)
+  bool _useLongPin = false;
+  bool get useLongPin => _useLongPin;
+
   // Weekday names
   static const weekdayNames = {
     1: '周一',
@@ -62,6 +66,12 @@ class AuthProvider extends ChangeNotifier {
     final storedPin = await DatabaseHelper.instance.getSetting('pin_hash');
     _isPinSet = storedPin != null && storedPin.isNotEmpty;
     _hashedPin = storedPin;
+
+    // Load useLongPin setting
+    final useLongPinSetting = await DatabaseHelper.instance.getSetting(
+      'use_long_pin',
+    );
+    _useLongPin = useLongPinSetting == 'true';
 
     _isUnlocked = false;
     _unlockedByManual = false;
@@ -180,7 +190,29 @@ class AuthProvider extends ChangeNotifier {
 
   bool verifyPin(String pin) {
     if (_hashedPin == null) return false;
-    return _hashPin(pin) == _hashedPin;
+    if (pin.length < 6) return false;
+
+    if (_useLongPin) {
+      // Long PIN mode: check if input contains the original PIN
+      // Verify by checking if any 6-char substring of the input, when hashed,
+      // matches the stored hash
+      for (int i = 0; i <= pin.length - 6; i++) {
+        final substring = pin.substring(i, i + 6);
+        if (_hashPin(substring) == _hashedPin) {
+          return true;
+        }
+      }
+      return false;
+    } else {
+      // Original mode: exact 6-digit PIN match
+      return _hashPin(pin) == _hashedPin;
+    }
+  }
+
+  Future<void> setUseLongPin(bool value) async {
+    _useLongPin = value;
+    await DatabaseHelper.instance.setSetting('use_long_pin', value.toString());
+    notifyListeners();
   }
 
   Future<bool> unlock(String pin) async {

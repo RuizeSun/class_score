@@ -47,6 +47,8 @@ class _SystemSettingsCardState extends State<SystemSettingsCard> {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -58,6 +60,16 @@ class _SystemSettingsCardState extends State<SystemSettingsCard> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
+            SwitchListTile(
+              secondary: const Icon(Icons.password),
+              title: const Text('启用长密码解锁'),
+              subtitle: const Text('开启后解锁时可输入最多100位密码，只要包含原始6位PIN码即可成功解锁'),
+              value: auth.useLongPin,
+              onChanged: auth.isUnlocked
+                  ? (value) => auth.setUseLongPin(value)
+                  : null,
+            ),
+            const Divider(),
             ListTile(
               leading: const Icon(Icons.download),
               title: const Text('导出数据库'),

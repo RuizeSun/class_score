@@ -1,6 +1,123 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+class LongPinPad extends StatelessWidget {
+  final int maxLength;
+  final String currentPin;
+  final ValueChanged<String> onPinChanged;
+  final VoidCallback? onConfirm;
+
+  const LongPinPad({
+    super.key,
+    this.maxLength = 100,
+    required this.currentPin,
+    required this.onPinChanged,
+    this.onConfirm,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Length indicator
+        Text(
+          '${currentPin.length} / $maxLength',
+          style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+        ),
+        const SizedBox(height: 16),
+        // Number pad
+        for (int row = 0; row < 4; row++)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(3, (col) {
+                final num = _keyLabel(row, col);
+                if (num == null) return const SizedBox(width: 72);
+                return _buildKey(num);
+              }),
+            ),
+          ),
+        const SizedBox(height: 8),
+        // Confirm button
+        SizedBox(
+          width: 200,
+          height: 44,
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.indigo,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            onPressed: currentPin.length >= 6 && onConfirm != null
+                ? onConfirm
+                : null,
+            child: const Text(
+              '确认',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String? _keyLabel(int row, int col) {
+    if (row == 3) {
+      if (col == 0) return '清空';
+      if (col == 1) return '0';
+      if (col == 2) return '⌫';
+    }
+    return '${row * 3 + col + 1}';
+  }
+
+  Widget _buildKey(String label) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: SizedBox(
+        width: 64,
+        height: 52,
+        child: TextButton(
+          style: TextButton.styleFrom(
+            backgroundColor: Colors.grey.shade100,
+            foregroundColor: Colors.black87,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(color: Colors.grey.shade300),
+            ),
+          ),
+          onPressed: () {
+            HapticFeedback.lightImpact();
+            if (label == '⌫') {
+              if (currentPin.isNotEmpty) {
+                onPinChanged(currentPin.substring(0, currentPin.length - 1));
+              }
+            } else if (label == '清空') {
+              onPinChanged('');
+            } else {
+              if (currentPin.length < maxLength) {
+                final newPin = currentPin + label;
+                onPinChanged(newPin);
+                // Auto confirm when reaching max length
+                if (newPin.length == maxLength && onConfirm != null) {
+                  onConfirm!();
+                }
+              }
+            }
+          },
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class PinPad extends StatelessWidget {
   final int pinLength;
   final String currentPin;

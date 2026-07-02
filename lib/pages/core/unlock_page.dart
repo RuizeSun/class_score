@@ -16,6 +16,7 @@ class _UnlockPageState extends State<UnlockPage> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final useLongPin = auth.useLongPin;
 
     return Scaffold(
       appBar: AppBar(title: const Text('解锁')),
@@ -27,29 +28,48 @@ class _UnlockPageState extends State<UnlockPage> {
             children: [
               Icon(Icons.lock, size: 64, color: Colors.red.shade300),
               const SizedBox(height: 16),
-              const Text(
-                '请输入 6 位 PIN 码解锁',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              Text(
+                useLongPin ? '请输入密码（需包含原始6位PIN码）' : '请输入 6 位 PIN 码解锁',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
-              const Text(
-                '或将 U 盘插入电脑自动解锁',
-                style: TextStyle(fontSize: 13, color: Colors.grey),
+              Text(
+                useLongPin ? '最长100位，或插入U盘自动解锁' : '或将 U 盘插入电脑自动解锁',
+                style: const TextStyle(fontSize: 13, color: Colors.grey),
               ),
               const SizedBox(height: 32),
-              PinPad(
-                currentPin: _pin,
-                onPinChanged: (v) => setState(() => _pin = v),
-                onConfirm: () {
-                  auth.unlock(_pin).then((success) {
-                    if (success) {
-                      Navigator.pop(context);
-                    } else {
-                      setState(() => _pin = '');
-                    }
-                  });
-                },
-              ),
+              if (useLongPin)
+                LongPinPad(
+                  currentPin: _pin,
+                  onPinChanged: (v) => setState(() => _pin = v),
+                  onConfirm: () {
+                    auth.unlock(_pin).then((success) {
+                      if (success) {
+                        Navigator.pop(context);
+                      } else {
+                        setState(() => _pin = '');
+                      }
+                    });
+                  },
+                )
+              else
+                PinPad(
+                  currentPin: _pin,
+                  onPinChanged: (v) => setState(() => _pin = v),
+                  onConfirm: () {
+                    auth.unlock(_pin).then((success) {
+                      if (success) {
+                        Navigator.pop(context);
+                      } else {
+                        setState(() => _pin = '');
+                      }
+                    });
+                  },
+                ),
               if (auth.errorMessage != null) ...[
                 const SizedBox(height: 16),
                 Text(
