@@ -674,12 +674,20 @@ class DatabaseHelper {
         final totalNegative = (r['total_negative'] as num?)?.toDouble() ?? 0.0;
         final days = (r['scored_days'] as int?) ?? 0;
         return {
+          'total_positive': totalPositive,
+          'total_negative': totalNegative,
           'avg_positive': days > 0 ? totalPositive / days : 0.0,
           'avg_negative': days > 0 ? totalNegative / days : 0.0,
           'scored_days': days,
         };
       }
-      return {'avg_positive': 0.0, 'avg_negative': 0.0, 'scored_days': 0};
+      return {
+        'total_positive': 0.0,
+        'total_negative': 0.0,
+        'avg_positive': 0.0,
+        'avg_negative': 0.0,
+        'scored_days': 0,
+      };
     }
 
     List<dynamic> whereArgs = [];
@@ -718,12 +726,20 @@ class DatabaseHelper {
       final totalNegative = (r['total_negative'] as num?)?.toDouble() ?? 0.0;
       final days = (r['scored_days'] as int?) ?? 0;
       return {
+        'total_positive': totalPositive,
+        'total_negative': totalNegative,
         'avg_positive': days > 0 ? totalPositive / days : 0.0,
         'avg_negative': days > 0 ? totalNegative / days : 0.0,
         'scored_days': days,
       };
     }
-    return {'avg_positive': 0.0, 'avg_negative': 0.0, 'scored_days': 0};
+    return {
+      'total_positive': 0.0,
+      'total_negative': 0.0,
+      'avg_positive': 0.0,
+      'avg_negative': 0.0,
+      'scored_days': 0,
+    };
   }
 
   // ---- Statistics ----

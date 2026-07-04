@@ -71,30 +71,26 @@ class _StatisticsViewState extends State<StatisticsView> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 学生/小组切换
-          SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(
-                value: false,
-                label: Text('学生'),
-                icon: Icon(Icons.person),
-              ),
-              ButtonSegment(
-                value: true,
-                label: Text('小组'),
-                icon: Icon(Icons.groups),
-              ),
-            ],
-            selected: {_showGroup},
-            onSelectionChanged: (v) {
-              setState(() => _showGroup = v.first);
-            },
-            style: const ButtonStyle(iconSize: WidgetStatePropertyAll(18)),
-          ),
-          const SizedBox(height: 8),
-          // 标题
-          Text(
-            _showGroup ? '小组总分排行' : '学生个人总分',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          Center(
+            child: SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(
+                  value: false,
+                  label: Text('学生'),
+                  icon: Icon(Icons.person),
+                ),
+                ButtonSegment(
+                  value: true,
+                  label: Text('小组'),
+                  icon: Icon(Icons.groups),
+                ),
+              ],
+              selected: {_showGroup},
+              onSelectionChanged: (v) {
+                setState(() => _showGroup = v.first);
+              },
+              style: const ButtonStyle(iconSize: WidgetStatePropertyAll(18)),
+            ),
           ),
           const SizedBox(height: 8),
           // 学生模式下显示按小组筛选

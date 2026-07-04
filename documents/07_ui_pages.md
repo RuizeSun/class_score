@@ -27,8 +27,8 @@
 
 ### analysis (分析)
 
-- **analysis_page.dart** - 分析首页
-- **statistics_page.dart** - 统计分析页
+- **analysis_page.dart** - 分析首页（图表分析：含评分项分布饼图、总加分/总扣分统计、日均加分/扣分统计、评分变动记录）
+- **statistics_page.dart** - 统计分析页（统计报表：学生/小组总分排名）
 
 ### settings (设置)
 

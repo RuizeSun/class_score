@@ -120,33 +120,37 @@ class _AnalysisViewState extends State<AnalysisView> {
           child: Column(
             children: [
               // 目标类型切换
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(
-                    value: 'student',
-                    label: Text('学生'),
-                    icon: Icon(Icons.person),
+              Center(
+                child: SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 'student',
+                      label: Text('学生'),
+                      icon: Icon(Icons.person),
+                    ),
+                    ButtonSegment(
+                      value: 'group',
+                      label: Text('小组'),
+                      icon: Icon(Icons.groups),
+                    ),
+                  ],
+                  selected: {_targetType},
+                  onSelectionChanged: (v) {
+                    setState(() {
+                      _targetType = v.first;
+                      // 切换时重置筛选
+                      if (_targetType == 'student') {
+                        _filterStudentId = null;
+                      } else {
+                        _filterGroupId = null;
+                      }
+                    });
+                    _loadData();
+                  },
+                  style: const ButtonStyle(
+                    iconSize: WidgetStatePropertyAll(18),
                   ),
-                  ButtonSegment(
-                    value: 'group',
-                    label: Text('小组'),
-                    icon: Icon(Icons.groups),
-                  ),
-                ],
-                selected: {_targetType},
-                onSelectionChanged: (v) {
-                  setState(() {
-                    _targetType = v.first;
-                    // 切换时重置筛选
-                    if (_targetType == 'student') {
-                      _filterStudentId = null;
-                    } else {
-                      _filterGroupId = null;
-                    }
-                  });
-                  _loadData();
-                },
-                style: const ButtonStyle(iconSize: WidgetStatePropertyAll(18)),
+                ),
               ),
               const SizedBox(height: 8),
               // 根据目标类型显示不同的筛选下拉框
@@ -314,6 +318,61 @@ class _AnalysisViewState extends State<AnalysisView> {
                       ),
                     ),
                   ],
+                ),
+
+                const SizedBox(height: 24),
+
+                // Total scores
+                const Text(
+                  '总加分/总扣分统计',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            children: [
+                              Text(
+                                ((_dailyAverages['total_positive'] as num?)
+                                            ?.toDouble() ??
+                                        0.0)
+                                    .toStringAsFixed(1),
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green,
+                                ),
+                              ),
+                              const Text('总加分'),
+                            ],
+                          ),
+                        ),
+                        const VerticalDivider(),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              Text(
+                                ((_dailyAverages['total_negative'] as num?)
+                                            ?.toDouble() ??
+                                        0.0)
+                                    .toStringAsFixed(1),
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.red,
+                                ),
+                              ),
+                              const Text('总扣分'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
 
                 const SizedBox(height: 24),
