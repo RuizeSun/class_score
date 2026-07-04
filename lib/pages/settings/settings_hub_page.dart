@@ -12,6 +12,7 @@ import 'course_schedule_management.dart';
 import 'usb_key_management.dart';
 import 'system_settings.dart';
 import 'period_management.dart';
+import 'personalization_card.dart';
 import '../../models/group.dart';
 import '../../models/student.dart';
 import '../../models/score_item.dart';
@@ -24,6 +25,7 @@ class SettingsHubPage extends StatefulWidget {
 }
 
 enum SettingsSection {
+  personalization,
   group,
   student,
   scoreItems,
@@ -37,7 +39,7 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
   static const double _breakpoint = 800;
   static const double _sidebarWidth = 260;
 
-  SettingsSection _current = SettingsSection.group;
+  SettingsSection _current = SettingsSection.personalization;
 
   @override
   void initState() {
@@ -100,6 +102,8 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
       width: _sidebarWidth,
       child: ListView(
         children: [
+          item(Icons.palette, '个性化', SettingsSection.personalization),
+          const Divider(),
           item(Icons.group, '分组管理', SettingsSection.group),
           item(Icons.person, '学生管理', SettingsSection.student),
           item(Icons.list_alt, '预设评分项', SettingsSection.scoreItems),
@@ -115,7 +119,8 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
 
   Widget _buildContent(BuildContext context) {
     final section = _current;
-    if (section != SettingsSection.system) {
+    if (section != SettingsSection.system &&
+        section != SettingsSection.personalization) {
       final hasToolbar = section == SettingsSection.student;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -224,6 +229,8 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
           isUnlocked: context.watch<AuthProvider>().isUnlocked,
           onVerifyPinForUsbActions: () async => verifyPinForUsbActions(context),
         );
+      case SettingsSection.personalization:
+        return const PersonalizationCard();
       case SettingsSection.system:
         return const SystemSettingsCard();
     }
@@ -243,6 +250,8 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
         return '评分周期';
       case SettingsSection.usbKey:
         return '物理密钥管理';
+      case SettingsSection.personalization:
+        return '个性化';
       case SettingsSection.system:
         return '系统设置';
     }

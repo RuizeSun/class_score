@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/personalization_provider.dart';
 import '../score/score_input_page.dart';
 import '../score/score_records_page.dart';
 import '../analysis/statistics_page.dart';
@@ -53,28 +54,33 @@ class _HomePageState extends State<HomePage>
 
   void _updatePreventClose() {
     final auth = context.read<AuthProvider>();
-    windowManager.setPreventClose(!auth.isUnlocked);
+    final personalization = context.read<PersonalizationProvider>();
+    final shouldPreventClose =
+        !auth.isUnlocked && !personalization.allowCloseWhenLocked;
+    windowManager.setPreventClose(shouldPreventClose);
   }
 
   @override
   void onWindowClose() {
     final auth = context.read<AuthProvider>();
-    if (!auth.isUnlocked) {
-      // Show lock message
+    final personalization = context.read<PersonalizationProvider>();
+    if (!auth.isUnlocked && !personalization.allowCloseWhenLocked) {
+      // Show lock message only if close is not allowed when locked
       _showLockMessage();
     }
-    // If unlocked, allow close (setPreventClose(false) is already set)
+    // If unlocked or close allowed when locked, allow close
   }
 
   @override
   void onWindowMinimize() {
     final auth = context.read<AuthProvider>();
-    if (!auth.isUnlocked) {
-      // Show lock message and restore window
+    final personalization = context.read<PersonalizationProvider>();
+    if (!auth.isUnlocked && !personalization.allowMinimizeWhenLocked) {
+      // Show lock message and restore window only if minimize is not allowed
       _showLockMessage();
       windowManager.show();
     }
-    // If unlocked, allow minimize
+    // If unlocked or minimize allowed when locked, allow minimize
   }
 
   void _showLockMessage() {

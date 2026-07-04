@@ -101,9 +101,22 @@
 
 ---
 
+## 窗口行为配置
+
+锁定状态下的窗口行为可通过「个性化」设置页面进行配置：
+
+- **未解锁时允许最小化窗口**：开启后，即使应用处于锁定状态也可以最小化窗口。默认关闭（锁定状态下阻止最小化）。
+- **未解锁时允许关闭窗口**：开启后，即使应用处于锁定状态也可以直接关闭窗口。默认关闭（锁定状态下阻止关闭）。
+
+设置存储在 `app_settings` 表中：
+
+- `allow_minimize_locked` - 锁定状态下是否允许最小化（`"true"` / `"false"`）
+- `allow_close_locked` - 锁定状态下是否允许关闭（`"true"` / `"false"`）
+
 ## 页面结构
 
 - `pages/core/pin_setup_page.dart` - PIN设置页
 - `pages/core/unlock_page.dart` - 解锁页
 - `pages/core/usb_key_page.dart` - USB密钥管理页
 - `pages/dashboard/course_schedule_page.dart` - 课程表页
+- `pages/settings/personalization_card.dart` - 个性化设置页（主题色、窗口行为）

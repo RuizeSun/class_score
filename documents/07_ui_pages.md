@@ -41,6 +41,7 @@
 - **period_management.dart** - 周期管理
 - **pin_dialogs.dart** - PIN相关对话框
 - **usb_key_management.dart** - USB密钥管理
+- **personalization_card.dart** - 个性化设置（主题色、窗口行为）
 - **system_settings.dart** - 系统设置
 
 ## 页面关系图
@@ -64,6 +65,7 @@ AppEntry (应用入口)
         ├── CourseScheduleManagement (课程表管理)
         ├── ScoreItemsManagement (评分项目管理)
         ├── PeriodManagement (周期管理)
+        ├── PersonalizationCard (个性化设置)
         ├── PinDialogs (PIN管理)
         ├── UsbKeyManagement (USB密钥管理)
         └── SystemSettings (系统设置)
@@ -85,3 +87,4 @@ AppEntry (应用入口)
 - `StudentProvider` - 学生数据
 - `ScoreProvider` - 评分数据
 - `ScoreItemProvider` - 评分项目
+- `PersonalizationProvider` - 个性化设置（主题色、窗口行为）

@@ -6,6 +6,7 @@ import 'providers/student_provider.dart';
 import 'providers/score_provider.dart';
 import 'providers/score_item_provider.dart';
 import 'providers/auth_provider.dart';
+import 'providers/personalization_provider.dart';
 import 'pages/core/home_page.dart';
 import 'pages/core/pin_setup_page.dart';
 
@@ -32,21 +33,39 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => PersonalizationProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => GroupProvider()),
         ChangeNotifierProvider(create: (_) => StudentProvider()),
         ChangeNotifierProvider(create: (_) => ScoreProvider()),
         ChangeNotifierProvider(create: (_) => ScoreItemProvider()),
       ],
-      child: MaterialApp(
-        title: '班级量化评分管理',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-          useMaterial3: true,
-        ),
-        home: const AppEntry(),
+      child: const AppBody(),
+    );
+  }
+}
+
+/// Separate widget so it can watch PersonalizationProvider for dynamic theme.
+class AppBody extends StatefulWidget {
+  const AppBody({super.key});
+
+  @override
+  State<AppBody> createState() => _AppBodyState();
+}
+
+class _AppBodyState extends State<AppBody> {
+  @override
+  Widget build(BuildContext context) {
+    final personalization = context.watch<PersonalizationProvider>();
+
+    return MaterialApp(
+      title: '班级量化评分管理',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: personalization.seedColor),
+        useMaterial3: true,
       ),
+      home: const AppEntry(),
     );
   }
 }
@@ -63,6 +82,7 @@ class _AppEntryState extends State<AppEntry> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<PersonalizationProvider>().init();
       context.read<AuthProvider>().init();
       context.read<ScoreProvider>().init();
     });
@@ -71,7 +91,8 @@ class _AppEntryState extends State<AppEntry> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    if (!auth.isInitialized) {
+    final personalization = context.watch<PersonalizationProvider>();
+    if (!auth.isInitialized || !personalization.isInitialized) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (!auth.isPinSet) {
