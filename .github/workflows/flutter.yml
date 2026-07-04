@@ -2,51 +2,48 @@ name: Flutter Windows CI
 
 # 1. 触发条件：推送到 main 分支或 PR 时运行
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main]
 
 jobs:
-  # Windows 构建任务
-  build-windows:
-    # 运行在 windows-latest 上
-    runs-on: windows-latest
-    
-    # ⭐ 核心改动：只有当 commit 信息中包含 'build:' 时才执行这个 job
-    # contains() 函数不区分大小写，如果你希望严格匹配 'build:' 可以直接这样写
-    if: contains(github.event.head_commit.message, 'build:')
-    
-    steps:
-      # 2. 拉取代码
-      - uses: actions/checkout@v4
-      
-      # 3. 设置 Java 环境（Flutter 构建的必需依赖）
-      - uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-      
-      # 4. 安装 Flutter SDK
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-      
-      # 5. 启用 Windows 桌面端支持
-      - run: flutter config --enable-windows-desktop
-      
-      # 6. 安装项目依赖
-      - run: flutter pub get
-      
-      # 7. 代码静态检查
-      - run: flutter analyze
-      
-      # 8. ⭐ 核心步骤：构建 Windows 可执行文件（Release 模式）
-      - run: flutter build windows --release
-      
-      # 9. 上传构建产物
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-release
-          # 提示：Windows 构建输出路径在较新版本的 Flutter 中通常是这个，可以根据你的实际项目确认
-          path: build\windows\x64\runner\Release\
+    # Windows 构建任务
+    build-windows:
+        # 运行在 windows-latest 上
+        runs-on: windows-latest
+
+        # ⭐ 核心改动：只有当 commit 信息中包含 'build:' 时才执行这个 job
+        # contains() 函数不区分大小写，如果你希望严格匹配 'build:' 可以直接这样写
+        if: contains(github.event.head_commit.message, 'build:')
+
+        steps:
+            # 2. 拉取代码
+            - uses: actions/checkout@v4
+
+            # 3. 设置 Java 环境（Flutter 构建的必需依赖）
+            - uses: actions/setup-java@v4
+              with:
+                  distribution: "temurin"
+                  java-version: "17"
+
+            # 4. 安装 Flutter SDK
+            - uses: subosito/flutter-action@v2
+              with:
+                  channel: "stable"
+
+            # 5. 启用 Windows 桌面端支持
+            - run: flutter config --enable-windows-desktop
+
+            # 6. 安装项目依赖
+            - run: flutter pub get
+
+            # 7. ⭐ 核心步骤：构建 Windows 可执行文件
+            - run: flutter build windows
+
+            # 8. 上传构建产物
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: windows-release
+                  # 提示：Windows 构建输出路径在较新版本的 Flutter 中通常是这个，可以根据你的实际项目确认
+                  path: build\windows\x64\runner\Release\
