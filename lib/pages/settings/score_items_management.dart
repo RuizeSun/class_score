@@ -84,7 +84,6 @@ class ScoreItemsManagementView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = context.watch<ScoreItemProvider>().items;
-    final isUnlocked = context.watch<AuthProvider>().isUnlocked;
 
     return Stack(
       children: [
@@ -114,54 +113,51 @@ class ScoreItemsManagementView extends StatelessWidget {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (isUnlocked)
-                          IconButton(
-                            icon: const Icon(Icons.edit, size: 20),
-                            onPressed: () => onShowItemDialog(item: item),
-                          ),
-                        if (isUnlocked)
-                          IconButton(
-                            icon: const Icon(Icons.delete, size: 20),
-                            onPressed: () {
-                              showDialog(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  title: const Text('确认删除'),
-                                  content: Text('确定删除评分项"${item.name}"吗？'),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(ctx),
-                                      child: const Text('取消'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () {
-                                        context
-                                            .read<ScoreItemProvider>()
-                                            .deleteItem(item.id!);
-                                        Navigator.pop(ctx);
-                                      },
-                                      child: const Text('删除'),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
+                        IconButton(
+                          icon: const Icon(Icons.edit, size: 20),
+                          onPressed: () => onShowItemDialog(item: item),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, size: 20),
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('确认删除'),
+                                content: Text('确定删除评分项"${item.name}"吗？'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx),
+                                    child: const Text('取消'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () {
+                                      context
+                                          .read<ScoreItemProvider>()
+                                          .deleteItem(item.id!);
+                                      Navigator.pop(ctx);
+                                    },
+                                    child: const Text('删除'),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
                       ],
                     ),
                   );
                 },
               ),
-        if (isUnlocked)
-          Positioned(
-            right: 16,
-            bottom: 16,
-            child: FloatingActionButton(
-              heroTag: 'score_item_fab',
-              onPressed: () => onShowItemDialog(),
-              child: const Icon(Icons.add),
-            ),
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: FloatingActionButton(
+            heroTag: 'score_item_fab',
+            onPressed: () => onShowItemDialog(),
+            child: const Icon(Icons.add),
           ),
+        ),
       ],
     );
   }

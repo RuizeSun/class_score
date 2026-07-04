@@ -212,7 +212,6 @@ class _StudentManagementViewState extends State<StudentManagementView> {
     final students = context.watch<StudentProvider>().studentsWithGroup;
     final groups = context.watch<GroupProvider>().groups;
     final filterGroupId = context.watch<StudentProvider>().filterGroupId;
-    final isUnlocked = context.watch<AuthProvider>().isUnlocked;
 
     return Stack(
       children: [
@@ -257,13 +256,13 @@ class _StudentManagementViewState extends State<StudentManagementView> {
                   ),
                   const SizedBox(width: 8),
                   // Batch operation button
-                  if (isUnlocked && _isSelectionMode)
+                  if (_isSelectionMode)
                     FilledButton.icon(
                       onPressed: _showBatchAddToGroupDialog,
                       icon: const Icon(Icons.group_add),
                       label: const Text('添加到小组'),
                     ),
-                  if (isUnlocked && _isSelectionMode)
+                  if (_isSelectionMode)
                     SizedBox(
                       width: 80,
                       child: FilledButton.icon(
@@ -326,12 +325,10 @@ class _StudentManagementViewState extends State<StudentManagementView> {
                           studentId,
                         );
                         return ListTile(
-                          leading: isUnlocked
-                              ? Checkbox(
-                                  value: isSelected,
-                                  onChanged: (_) => _toggleSelection(studentId),
-                                )
-                              : null,
+                          leading: Checkbox(
+                            value: isSelected,
+                            onChanged: (_) => _toggleSelection(studentId),
+                          ),
                           title: Text(s['name'] as String),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -353,7 +350,7 @@ class _StudentManagementViewState extends State<StudentManagementView> {
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (!_isSelectionMode && isUnlocked)
+                              if (!_isSelectionMode)
                                 IconButton(
                                   icon: const Icon(Icons.edit),
                                   onPressed: () {
@@ -369,7 +366,7 @@ class _StudentManagementViewState extends State<StudentManagementView> {
                                     );
                                   },
                                 ),
-                              if (!_isSelectionMode && isUnlocked)
+                              if (!_isSelectionMode)
                                 IconButton(
                                   icon: const Icon(Icons.delete),
                                   onPressed: () {
@@ -407,7 +404,7 @@ class _StudentManagementViewState extends State<StudentManagementView> {
             ),
           ],
         ),
-        if (isUnlocked && !_isSelectionMode)
+        if (!_isSelectionMode)
           Positioned(
             right: 16,
             bottom: 16,

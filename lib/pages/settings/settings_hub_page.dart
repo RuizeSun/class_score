@@ -137,7 +137,7 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
                   ),
                 ),
                 const Spacer(),
-                if (hasToolbar && context.watch<AuthProvider>().isUnlocked)
+                if (hasToolbar)
                   PopupMenuButton(
                     icon: const Icon(Icons.file_download),
                     tooltip: '导入学生',
@@ -216,7 +216,6 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
         return CourseScheduleManagementView(
           onShowCourseDialog: ({Map<String, dynamic>? schedule}) =>
               showCourseScheduleDialog(context, schedule: schedule),
-          isUnlocked: context.watch<AuthProvider>().isUnlocked,
         );
       case SettingsSection.period:
         return const PeriodManagementView();
@@ -226,7 +225,6 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
           onRenameKey: (int id, String label) =>
               showRenameKeyDialog(context, id, label),
           onDeleteKey: (int id) => confirmDeleteKey(context, id),
-          isUnlocked: context.watch<AuthProvider>().isUnlocked,
           onVerifyPinForUsbActions: () async => verifyPinForUsbActions(context),
         );
       case SettingsSection.personalization:

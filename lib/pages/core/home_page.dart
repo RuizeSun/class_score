@@ -138,6 +138,30 @@ class _HomePageState extends State<HomePage>
     final auth = context.watch<AuthProvider>();
     final currentCourse = auth.currentCourseName;
 
+    // 如果未解锁且当前在设置tab，自动跳转到主页
+    if (!auth.isUnlocked && _currentIndex >= 4) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _currentIndex >= 4) {
+          _switchTab(0);
+        }
+      });
+    }
+
+    // 动态构建导航栏：未解锁时不显示设置tab
+    final destinations = <NavigationDestination>[
+      const NavigationDestination(icon: Icon(Icons.dashboard), label: '主页'),
+      const NavigationDestination(icon: Icon(Icons.add_circle), label: '评分'),
+      const NavigationDestination(icon: Icon(Icons.history), label: '记录'),
+      const NavigationDestination(icon: Icon(Icons.bar_chart), label: '统计分析'),
+      if (auth.isUnlocked)
+        const NavigationDestination(icon: Icon(Icons.settings), label: '设置'),
+    ];
+
+    // 确保 selectedIndex 在有效范围内
+    final effectiveIndex = _currentIndex >= destinations.length
+        ? 0
+        : _currentIndex;
+
     return Scaffold(
       body: Column(
         children: [
@@ -261,15 +285,9 @@ class _HomePageState extends State<HomePage>
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
+        selectedIndex: effectiveIndex,
         onDestinationSelected: _switchTab,
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.dashboard), label: '主页'),
-          NavigationDestination(icon: Icon(Icons.add_circle), label: '评分'),
-          NavigationDestination(icon: Icon(Icons.history), label: '记录'),
-          NavigationDestination(icon: Icon(Icons.bar_chart), label: '统计分析'),
-          NavigationDestination(icon: Icon(Icons.settings), label: '设置'),
-        ],
+        destinations: destinations,
       ),
     );
   }

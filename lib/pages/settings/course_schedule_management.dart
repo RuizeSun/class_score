@@ -123,11 +123,9 @@ class CourseScheduleManagementView extends StatelessWidget {
   const CourseScheduleManagementView({
     super.key,
     required this.onShowCourseDialog,
-    required this.isUnlocked,
   });
 
   final void Function({Map<String, dynamic>? schedule}) onShowCourseDialog;
-  final bool isUnlocked;
 
   @override
   Widget build(BuildContext context) {
@@ -151,7 +149,7 @@ class CourseScheduleManagementView extends StatelessWidget {
                     SizedBox(height: 16),
                     Text('暂无课程安排'),
                     SizedBox(height: 8),
-                    Text('解锁后可编辑课程', style: TextStyle(color: Colors.grey)),
+                    Text('点击右下角添加', style: TextStyle(color: Colors.grey)),
                   ],
                 ),
               )
@@ -182,43 +180,40 @@ class CourseScheduleManagementView extends StatelessWidget {
                                 children: [
                                   IconButton(
                                     icon: const Icon(Icons.edit, size: 20),
-                                    onPressed: isUnlocked
-                                        ? () => onShowCourseDialog(schedule: s)
-                                        : null,
+                                    onPressed: () =>
+                                        onShowCourseDialog(schedule: s),
                                   ),
                                   IconButton(
                                     icon: const Icon(Icons.delete, size: 20),
-                                    onPressed: isUnlocked
-                                        ? () {
-                                            showDialog(
-                                              context: context,
-                                              builder: (ctx) => AlertDialog(
-                                                title: const Text('确认删除'),
-                                                content: Text(
-                                                  '确定删除课程"${s['course_name']}"吗？',
-                                                ),
-                                                actions: [
-                                                  TextButton(
-                                                    onPressed: () =>
-                                                        Navigator.pop(ctx),
-                                                    child: const Text('取消'),
-                                                  ),
-                                                  TextButton(
-                                                    onPressed: () {
-                                                      context
-                                                          .read<AuthProvider>()
-                                                          .deleteCourseSchedule(
-                                                            s['id'] as int,
-                                                          );
-                                                      Navigator.pop(ctx);
-                                                    },
-                                                    child: const Text('删除'),
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          }
-                                        : null,
+                                    onPressed: () {
+                                      showDialog(
+                                        context: context,
+                                        builder: (ctx) => AlertDialog(
+                                          title: const Text('确认删除'),
+                                          content: Text(
+                                            '确定删除课程"${s['course_name']}"吗？',
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx),
+                                              child: const Text('取消'),
+                                            ),
+                                            TextButton(
+                                              onPressed: () {
+                                                context
+                                                    .read<AuthProvider>()
+                                                    .deleteCourseSchedule(
+                                                      s['id'] as int,
+                                                    );
+                                                Navigator.pop(ctx);
+                                              },
+                                              child: const Text('删除'),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
                                   ),
                                 ],
                               ),
@@ -229,16 +224,15 @@ class CourseScheduleManagementView extends StatelessWidget {
                     })
                     .toList(),
               ),
-        if (isUnlocked)
-          Positioned(
-            right: 16,
-            bottom: 16,
-            child: FloatingActionButton(
-              heroTag: 'course_schedule_fab',
-              onPressed: () => onShowCourseDialog(),
-              child: const Icon(Icons.add),
-            ),
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: FloatingActionButton(
+            heroTag: 'course_schedule_fab',
+            onPressed: () => onShowCourseDialog(),
+            child: const Icon(Icons.add),
           ),
+        ),
       ],
     );
   }

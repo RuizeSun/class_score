@@ -27,7 +27,6 @@ class _UsbKeyPageState extends State<UsbKeyPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isUnlocked = context.watch<AuthProvider>().isUnlocked;
     return Scaffold(
       appBar: AppBar(title: const Text('物理密钥管理')),
       body: UsbKeyManagementView(
@@ -35,15 +34,9 @@ class _UsbKeyPageState extends State<UsbKeyPage> {
         onRenameKey: (int id, String label) =>
             showRenameKeyDialog(context, id, label),
         onDeleteKey: (int id) => confirmDeleteKey(context, id),
-        isUnlocked: isUnlocked,
         onVerifyPinForUsbActions: () async => verifyPinForUsbActions(context),
       ),
-      floatingActionButton: isUnlocked
-          ? FloatingActionButton(
-              onPressed: () => showWriteKeyDialog(context),
-              child: const Icon(Icons.add),
-            )
-          : null,
+      // FAB is already included in UsbKeyManagementView, no need to duplicate
     );
   }
 }

@@ -158,14 +158,12 @@ class UsbKeyManagementView extends StatelessWidget {
     required this.onWriteKey,
     required this.onRenameKey,
     required this.onDeleteKey,
-    required this.isUnlocked,
     this.onVerifyPinForUsbActions,
   });
 
   final VoidCallback onWriteKey;
   final void Function(int id, String currentLabel) onRenameKey;
   final void Function(int id) onDeleteKey;
-  final bool isUnlocked;
 
   /// When provided, this callback is invoked when USB-key unlock requires PIN
   /// verification before performing sensitive actions (write, rename, delete).
@@ -194,7 +192,7 @@ class UsbKeyManagementView extends StatelessWidget {
                     SizedBox(height: 16),
                     Text('暂无已注册的 U 盘密钥'),
                     SizedBox(height: 8),
-                    Text('解锁后可管理密钥', style: TextStyle(color: Colors.grey)),
+                    Text('点击右下角添加', style: TextStyle(color: Colors.grey)),
                   ],
                 ),
               )
@@ -214,57 +212,50 @@ class UsbKeyManagementView extends StatelessWidget {
                         IconButton(
                           icon: const Icon(Icons.edit),
                           tooltip: '重命名',
-                          onPressed: isUnlocked
-                              ? () async {
-                                  if (needsPin &&
-                                      onVerifyPinForUsbActions != null) {
-                                    final verified =
-                                        await onVerifyPinForUsbActions!();
-                                    if (!verified) return;
-                                  }
-                                  onRenameKey(
-                                    key['id'] as int,
-                                    key['label'] as String? ?? '',
-                                  );
-                                }
-                              : null,
+                          onPressed: () async {
+                            if (needsPin && onVerifyPinForUsbActions != null) {
+                              final verified =
+                                  await onVerifyPinForUsbActions!();
+                              if (!verified) return;
+                            }
+                            onRenameKey(
+                              key['id'] as int,
+                              key['label'] as String? ?? '',
+                            );
+                          },
                         ),
                         IconButton(
                           icon: const Icon(Icons.delete),
                           tooltip: '删除密钥',
-                          onPressed: isUnlocked
-                              ? () async {
-                                  if (needsPin &&
-                                      onVerifyPinForUsbActions != null) {
-                                    final verified =
-                                        await onVerifyPinForUsbActions!();
-                                    if (!verified) return;
-                                  }
-                                  onDeleteKey(key['id'] as int);
-                                }
-                              : null,
+                          onPressed: () async {
+                            if (needsPin && onVerifyPinForUsbActions != null) {
+                              final verified =
+                                  await onVerifyPinForUsbActions!();
+                              if (!verified) return;
+                            }
+                            onDeleteKey(key['id'] as int);
+                          },
                         ),
                       ],
                     ),
                   );
                 },
               ),
-        if (isUnlocked)
-          Positioned(
-            right: 16,
-            bottom: 16,
-            child: FloatingActionButton(
-              heroTag: 'usb_key_fab',
-              onPressed: () async {
-                if (needsPin && onVerifyPinForUsbActions != null) {
-                  final verified = await onVerifyPinForUsbActions!();
-                  if (!verified) return;
-                }
-                onWriteKey();
-              },
-              child: const Icon(Icons.add),
-            ),
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: FloatingActionButton(
+            heroTag: 'usb_key_fab',
+            onPressed: () async {
+              if (needsPin && onVerifyPinForUsbActions != null) {
+                final verified = await onVerifyPinForUsbActions!();
+                if (!verified) return;
+              }
+              onWriteKey();
+            },
+            child: const Icon(Icons.add),
           ),
+        ),
       ],
     );
   }

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
 import '../../providers/score_provider.dart';
 
 class PeriodManagementView extends StatelessWidget {
@@ -73,10 +72,8 @@ class PeriodManagementView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scoreProvider = context.watch<ScoreProvider>();
-    final auth = context.watch<AuthProvider>();
     final currentPeriod = scoreProvider.currentPeriod;
     final canGoPrevious = currentPeriod > 1;
-    final isUnlocked = auth.isUnlocked;
 
     return Card(
       margin: const EdgeInsets.all(16),
@@ -106,7 +103,7 @@ class PeriodManagementView extends StatelessWidget {
               children: [
                 // 切换到上一周期按钮
                 IconButton.filled(
-                  onPressed: isUnlocked && canGoPrevious
+                  onPressed: canGoPrevious
                       ? () => _switchToPreviousPeriod(context)
                       : null,
                   icon: const Icon(Icons.arrow_back),
@@ -135,9 +132,7 @@ class PeriodManagementView extends StatelessWidget {
                 const SizedBox(width: 16),
                 // 切换到下一周期按钮
                 IconButton.filled(
-                  onPressed: isUnlocked
-                      ? () => _switchToNextPeriod(context)
-                      : null,
+                  onPressed: () => _switchToNextPeriod(context),
                   icon: const Icon(Icons.arrow_forward),
                   tooltip: '切换到下一周期',
                 ),

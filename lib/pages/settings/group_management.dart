@@ -204,14 +204,12 @@ class _GroupMembersDialogState extends State<_GroupMembersDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final isUnlocked = context.watch<AuthProvider>().isUnlocked;
-
     return AlertDialog(
       title: Row(
         children: [
           Text('${widget.group.name} - 成员列表'),
-          if (isUnlocked && widget.students.isNotEmpty) const Spacer(),
-          if (isUnlocked && widget.students.isNotEmpty)
+          if (widget.students.isNotEmpty) const Spacer(),
+          if (widget.students.isNotEmpty)
             TextButton(
               onPressed: _isSelectionMode ? _clearSelection : _selectAll,
               child: Text(_isSelectionMode ? '取消选择' : '全选'),
@@ -325,9 +323,7 @@ class _GroupMembersDialogState extends State<_GroupMembersDialog> {
                       return CheckboxListTile(
                         dense: true,
                         value: isSelected,
-                        onChanged: isUnlocked
-                            ? (_) => _toggleSelection(studentId)
-                            : null,
+                        onChanged: (_) => _toggleSelection(studentId),
                         title: Text(s['name'] as String),
                         subtitle:
                             s['student_number'] != null &&
@@ -367,7 +363,6 @@ class GroupManagementView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final groups = context.watch<GroupProvider>().groups;
-    final isUnlocked = context.watch<AuthProvider>().isUnlocked;
 
     return Stack(
       children: [
@@ -387,63 +382,60 @@ class GroupManagementView extends StatelessWidget {
                           tooltip: '查看成员',
                           onPressed: () => onShowGroupMembers(group),
                         ),
-                        if (isUnlocked)
-                          IconButton(
-                            icon: const Icon(Icons.edit),
-                            onPressed: () => onShowGroupDialog(group: group),
-                          ),
-                        if (isUnlocked)
-                          IconButton(
-                            icon: const Icon(Icons.delete),
-                            onPressed: () {
-                              if (group.name == '未分组') {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('不能删除默认分组"未分组"'),
-                                    backgroundColor: Colors.orange,
-                                  ),
-                                );
-                                return;
-                              }
-                              showDialog(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  title: const Text('确认删除'),
-                                  content: Text('确定删除"${group.name}"及其所有学生吗？'),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(ctx),
-                                      child: const Text('取消'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () {
-                                        context
-                                            .read<GroupProvider>()
-                                            .deleteGroup(group.id!);
-                                        Navigator.pop(ctx);
-                                      },
-                                      child: const Text('删除'),
-                                    ),
-                                  ],
+                        IconButton(
+                          icon: const Icon(Icons.edit),
+                          onPressed: () => onShowGroupDialog(group: group),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete),
+                          onPressed: () {
+                            if (group.name == '未分组') {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('不能删除默认分组"未分组"'),
+                                  backgroundColor: Colors.orange,
                                 ),
                               );
-                            },
-                          ),
+                              return;
+                            }
+                            showDialog(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('确认删除'),
+                                content: Text('确定删除"${group.name}"及其所有学生吗？'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx),
+                                    child: const Text('取消'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () {
+                                      context.read<GroupProvider>().deleteGroup(
+                                        group.id!,
+                                      );
+                                      Navigator.pop(ctx);
+                                    },
+                                    child: const Text('删除'),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
                       ],
                     ),
                   );
                 },
               ),
-        if (isUnlocked)
-          Positioned(
-            right: 16,
-            bottom: 16,
-            child: FloatingActionButton(
-              heroTag: 'group_fab',
-              onPressed: () => onShowGroupDialog(),
-              child: const Icon(Icons.add),
-            ),
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: FloatingActionButton(
+            heroTag: 'group_fab',
+            onPressed: () => onShowGroupDialog(),
+            child: const Icon(Icons.add),
           ),
+        ),
       ],
     );
   }

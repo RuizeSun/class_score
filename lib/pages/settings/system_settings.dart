@@ -65,9 +65,7 @@ class _SystemSettingsCardState extends State<SystemSettingsCard> {
               title: const Text('启用长密码解锁'),
               subtitle: const Text('开启后解锁时可输入最多100位密码，只要包含原始6位PIN码即可成功解锁'),
               value: auth.useLongPin,
-              onChanged: auth.isUnlocked
-                  ? (value) => auth.setUseLongPin(value)
-                  : null,
+              onChanged: (value) => auth.setUseLongPin(value),
             ),
             const Divider(),
             ListTile(

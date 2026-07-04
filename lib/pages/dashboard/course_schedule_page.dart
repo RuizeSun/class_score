@@ -22,13 +22,11 @@ class _CourseSchedulePageState extends State<CourseSchedulePage> {
 
   @override
   Widget build(BuildContext context) {
-    final isUnlocked = context.watch<AuthProvider>().isUnlocked;
     return Scaffold(
       appBar: AppBar(title: const Text('课程表管理')),
       body: CourseScheduleManagementView(
         onShowCourseDialog: ({Map<String, dynamic>? schedule}) =>
             showCourseScheduleDialog(context, schedule: schedule),
-        isUnlocked: isUnlocked,
       ),
       // FAB is already included in CourseScheduleManagementView, no need to duplicate
     );
