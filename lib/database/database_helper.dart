@@ -743,6 +743,86 @@ class DatabaseHelper {
   }
 
   // ---- Statistics ----
+  /// 获取指定周期范围内的小组总分
+  Future<List<Map<String, dynamic>>> getGroupTotalScoresByPeriodRange({
+    int? startPeriod,
+    int? endPeriod,
+  }) async {
+    if (startPeriod == null || endPeriod == null) {
+      // 回退到当前周期查询
+      return getGroupTotalScores();
+    }
+    final db = await database;
+    String query = '''
+      SELECT groups.id, groups.name, COALESCE(SUM(score_records.score), 0) as total_score
+      FROM groups
+      LEFT JOIN students ON students.group_id = groups.id
+      LEFT JOIN score_records ON score_records.target_type = 'student' AND score_records.target_id = students.id
+        AND score_records.period >= ? AND score_records.period <= ?
+      GROUP BY groups.id ORDER BY total_score DESC
+    ''';
+    return db.rawQuery(query, [startPeriod, endPeriod]);
+  }
+
+  /// 获取指定周期范围内的学生总分
+  Future<List<Map<String, dynamic>>> getStudentTotalScoresByPeriodRange({
+    int? startPeriod,
+    int? endPeriod,
+    int? groupId,
+  }) async {
+    if (startPeriod == null || endPeriod == null) {
+      // 回退到当前周期查询
+      return getStudentTotalScores(groupId: groupId);
+    }
+    final db = await database;
+    String query = '''
+      SELECT students.id, students.name, students.student_number, students.group_id, groups.name as group_name,
+             COALESCE(SUM(score_records.score), 0) as total_score
+      FROM students
+      LEFT JOIN groups ON students.group_id = groups.id
+      LEFT JOIN score_records ON score_records.target_type = 'student' AND score_records.target_id = students.id
+        AND score_records.period >= ? AND score_records.period <= ?
+    ''';
+    List<dynamic> whereArgs = [startPeriod, endPeriod];
+    List<String> conditions = [];
+    if (groupId != null) {
+      conditions.add('students.group_id = ?');
+      whereArgs.add(groupId);
+    }
+    if (conditions.isNotEmpty) {
+      query += ' WHERE ${conditions.join(' AND ')}';
+    }
+    query += ' GROUP BY students.id ORDER BY total_score DESC';
+    return db.rawQuery(query, whereArgs);
+  }
+
+  /// 获取指定周期范围内评分的时间范围（首次评分时间和末次评分时间）
+  Future<Map<String, String?>?> getScoreTimeRangeByPeriod({
+    int? startPeriod,
+    int? endPeriod,
+  }) async {
+    if (startPeriod == null || endPeriod == null) {
+      return null;
+    }
+    final db = await database;
+    final result = await db.rawQuery(
+      '''
+      SELECT MIN(create_time) as first_score, MAX(create_time) as last_score
+      FROM score_records
+      WHERE period >= ? AND period <= ?
+      LIMIT 1
+      ''',
+      [startPeriod, endPeriod],
+    );
+    if (result.isNotEmpty) {
+      final r = result.first;
+      final firstScore = r['first_score'] as String?;
+      final lastScore = r['last_score'] as String?;
+      return {'first_score': firstScore, 'last_score': lastScore};
+    }
+    return null;
+  }
+
   Future<List<Map<String, dynamic>>> getGroupTotalScores({int? period}) async {
     final db = await database;
     String query = '''

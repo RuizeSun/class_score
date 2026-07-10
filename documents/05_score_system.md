@@ -75,7 +75,27 @@ ScoreRecord {
 - 按总分降序排列
 - 支持按小组筛选
 
-### 高级查询
+### 高级查询（周期范围排名）
+
+用于期中/期末评优，支持查看指定周期范围内的个人/小组评分总和和排名。
+
+**入口**：统计报表页面 → "高级查询" 按钮
+
+**功能特点**：
+
+- 选择起始周期和结束周期
+- 显示首次评分和末次评分的时间
+- 支持按个人或小组查询
+- 个人查询时支持按小组筛选
+- 显示排名列表，前3名有高亮标识
+
+**数据库方法**：
+
+- `getStudentTotalScoresByPeriodRange(startPeriod, endPeriod, groupId)` - 获取指定周期范围内的学生总分
+- `getGroupTotalScoresByPeriodRange(startPeriod, endPeriod)` - 获取指定周期范围内的小组总分
+- `getScoreTimeRangeByPeriod(startPeriod, endPeriod)` - 获取评分的时间范围
+
+### 高级查询（日期范围筛选）
 
 - 按日期范围筛选
 - 按评分周期筛选

@@ -28,7 +28,8 @@
 ### analysis (分析)
 
 - **analysis_page.dart** - 分析首页（图表分析：含评分项分布饼图、总加分/总扣分统计、日均加分/扣分统计、评分变动记录）
-- **statistics_page.dart** - 统计分析页（统计报表：学生/小组总分排名）
+- **statistics_page.dart** - 统计分析页（统计报表：学生/小组总分排名，含"高级查询"按钮入口）
+- **ranking_summary_page.dart** - 高级查询页（周期范围排名：用于期中/期末评优，查看指定周期范围内的个人/小组评分总和和排名）
 
 ### settings (设置)
 
@@ -58,7 +59,9 @@ AppEntry (应用入口)
     ├── ScoreRecordsPage (评分记录)
     ├── ScoreItemsPage (评分项目)
     ├── AnalysisPage (分析)
-    │   └── StatisticsPage (统计分析)
+    │   ├── StatisticsPage (统计分析)
+    │   │   └── [高级查询按钮] → RankingSummaryPage (周期范围排名)
+    │   └── AnalysisView (图表分析)
     └── SettingsHubPage (设置中心)
         ├── GroupManagement (小组管理)
         ├── StudentManagement (学生管理)

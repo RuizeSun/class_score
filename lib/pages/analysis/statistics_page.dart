@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../providers/score_provider.dart';
 import '../../providers/group_provider.dart';
 import 'analysis_page.dart';
+import 'ranking_summary_page.dart';
 
 class StatisticsAnalysisPage extends StatefulWidget {
   final VoidCallback? onNavigateToRecords;
@@ -117,6 +118,28 @@ class _StatisticsViewState extends State<StatisticsView> {
               },
             ),
           ],
+          const SizedBox(height: 8),
+          // 高级查询按钮
+          Center(
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (ctx) => const RankingSummaryPage(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.filter_list, size: 18),
+              label: const Text('高级查询'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+            ),
+          ),
           const SizedBox(height: 8),
           // 数据列表
           if (_showGroup)

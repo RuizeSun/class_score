@@ -42,6 +42,80 @@ class ScoreProvider extends ChangeNotifier {
     // 不调用 notifyListeners()，由调用方控制
   }
 
+  // 高级查询 - 周期范围筛选
+  int? _advancedStartPeriod;
+  int? _advancedEndPeriod;
+  int? _advancedGroupId;
+  bool _advancedShowGroup = false;
+  List<Map<String, dynamic>> _advancedResults = [];
+  Map<String, String?>? _advancedTimeRange;
+
+  int? get advancedStartPeriod => _advancedStartPeriod;
+  int? get advancedEndPeriod => _advancedEndPeriod;
+  int? get advancedGroupId => _advancedGroupId;
+  bool get advancedShowGroup => _advancedShowGroup;
+  List<Map<String, dynamic>> get advancedResults => _advancedResults;
+  Map<String, String?>? get advancedTimeRange => _advancedTimeRange;
+
+  void setAdvancedPeriodRange(int? start, int? end) {
+    _advancedStartPeriod = start;
+    _advancedEndPeriod = end;
+  }
+
+  void setAdvancedGroupId(int? groupId) {
+    _advancedGroupId = groupId;
+  }
+
+  void setAdvancedShowGroup(bool showGroup) {
+    _advancedShowGroup = showGroup;
+  }
+
+  /// 执行高级查询：获取指定周期范围内的排名
+  Future<void> executeAdvancedQuery() async {
+    if (_advancedStartPeriod == null || _advancedEndPeriod == null) {
+      _advancedResults = [];
+      _advancedTimeRange = null;
+      notifyListeners();
+      return;
+    }
+
+    if (_advancedShowGroup) {
+      // 查询小组排名
+      _advancedResults = await DatabaseHelper.instance
+          .getGroupTotalScoresByPeriodRange(
+            startPeriod: _advancedStartPeriod,
+            endPeriod: _advancedEndPeriod,
+          );
+    } else {
+      // 查询学生排名
+      _advancedResults = await DatabaseHelper.instance
+          .getStudentTotalScoresByPeriodRange(
+            startPeriod: _advancedStartPeriod,
+            endPeriod: _advancedEndPeriod,
+            groupId: _advancedGroupId,
+          );
+    }
+
+    // 获取时间范围
+    _advancedTimeRange = await DatabaseHelper.instance
+        .getScoreTimeRangeByPeriod(
+          startPeriod: _advancedStartPeriod,
+          endPeriod: _advancedEndPeriod,
+        );
+
+    notifyListeners();
+  }
+
+  /// 清除高级查询结果
+  void clearAdvancedQuery() {
+    _advancedStartPeriod = null;
+    _advancedEndPeriod = null;
+    _advancedGroupId = null;
+    _advancedResults = [];
+    _advancedTimeRange = null;
+    notifyListeners();
+  }
+
   // 初始化 - 加载当前周期设置
   Future<void> init() async {
     final periodStr = await DatabaseHelper.instance.getSetting(
