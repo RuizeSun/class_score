@@ -4,7 +4,6 @@ import 'package:window_manager/window_manager.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/personalization_provider.dart';
 import '../score/score_input_page.dart';
-import '../score/score_records_page.dart';
 import '../analysis/statistics_page.dart';
 import 'unlock_page.dart';
 import 'usb_key_page.dart';
@@ -30,10 +29,9 @@ class _HomePageState extends State<HomePage>
   void initState() {
     super.initState();
     _pages = [
-      DashboardPage(onNavigateToRecords: () => _switchTab(2)),
+      const DashboardPage(),
       const ScoreInputPage(),
-      const ScoreRecordsPage(),
-      StatisticsAnalysisPage(onNavigateToRecords: () => _switchTab(2)),
+      const StatisticsAnalysisPage(),
       const SettingsHubPage(),
     ];
     _pageController = PageController(initialPage: _currentIndex);
@@ -139,9 +137,9 @@ class _HomePageState extends State<HomePage>
     final currentCourse = auth.currentCourseName;
 
     // 如果未解锁且当前在设置tab，自动跳转到主页
-    if (!auth.isUnlocked && _currentIndex >= 4) {
+    if (!auth.isUnlocked && _currentIndex >= 3) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _currentIndex >= 4) {
+        if (mounted && _currentIndex >= 3) {
           _switchTab(0);
         }
       });
@@ -151,8 +149,7 @@ class _HomePageState extends State<HomePage>
     final destinations = <NavigationDestination>[
       const NavigationDestination(icon: Icon(Icons.dashboard), label: '主页'),
       const NavigationDestination(icon: Icon(Icons.add_circle), label: '评分'),
-      const NavigationDestination(icon: Icon(Icons.history), label: '记录'),
-      const NavigationDestination(icon: Icon(Icons.bar_chart), label: '统计分析'),
+      const NavigationDestination(icon: Icon(Icons.bar_chart), label: '查询'),
       if (auth.isUnlocked)
         const NavigationDestination(icon: Icon(Icons.settings), label: '设置'),
     ];

@@ -3,10 +3,10 @@ import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../database/database_helper.dart';
 import '../../providers/score_provider.dart';
+import '../analysis/statistics_page.dart';
 
 class DashboardPage extends StatefulWidget {
-  final VoidCallback? onNavigateToRecords;
-  const DashboardPage({super.key, this.onNavigateToRecords});
+  const DashboardPage({super.key});
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -250,7 +250,14 @@ class _DashboardPageState extends State<DashboardPage> {
                     case 1:
                       return _RecentScoresCard(
                         records: _recentRecords,
-                        onTap: widget.onNavigateToRecords,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const StatisticsAnalysisPage(),
+                            ),
+                          );
+                        },
                       );
                     case 2:
                       return _TotalScoresCard(
