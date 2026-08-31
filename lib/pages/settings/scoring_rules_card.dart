@@ -209,6 +209,31 @@ class _ScoringRulesCardState extends State<ScoringRulesCard> {
                 ],
               ),
             ),
+            const SizedBox(height: 24),
+            const Divider(),
+
+            // ---- 快速评分 ----
+            const Text(
+              '快速评分',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            SwitchListTile(
+              secondary: Icon(
+                Icons.bolt,
+                color: p.defaultQuickScoring
+                    ? Colors.green.shade700
+                    : Colors.grey.shade600,
+              ),
+              title: const Text('默认使用快速评分'),
+              subtitle: const Text(
+                '开启后，进入「评分」标签页时将默认切换到快速评分模式（默认关闭）。',
+              ),
+              value: p.defaultQuickScoring,
+              onChanged: (value) =>
+                  context.read<ScoreProvider>().setDefaultQuickScoring(value),
+              contentPadding: EdgeInsets.zero,
+            ),
           ],
         ),
       ),

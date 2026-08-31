@@ -342,6 +342,61 @@ class _RecordManagementViewState extends State<RecordManagementView> {
     }
   }
 
+  /// 弹出对话框，用于补充/修改快速评分记录的变动原因
+  Future<void> _showEditReasonDialog(
+    BuildContext dialogContext, {
+    required int recordId,
+    required String currentReason,
+  }) async {
+    final controller = TextEditingController(text: currentReason);
+    final confirmed = await showDialog<bool>(
+      context: dialogContext,
+      builder: (ctx) => AlertDialog(
+        title: const Text('补充变动原因'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '为该条快速评分记录补充变动原因（如：课堂表现加分、作业未交扣分等）。',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: '变动原因',
+                border: OutlineInputBorder(),
+                hintText: '请输入变动原因',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+
+    final text = controller.text.trim();
+    if (confirmed == true && text.isNotEmpty) {
+      final scoreProvider = context.read<ScoreProvider>();
+      await scoreProvider.updateScoreRecordReason(recordId, text);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('变动原因已保存'), duration: Duration(seconds: 2)),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scoreProvider = context.watch<ScoreProvider>();
@@ -448,6 +503,9 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                         ? '${r['target_name'] ?? '(未知)'} ($studentNumber)'
                         : '${r['target_name'] ?? '(未知)'}';
 
+                    // 是否由快速评分产生
+                    final isQuick = (r['is_quick'] as num? ?? 0) != 0;
+
                     // 构建原因/评分项文本
                     final scoreItemName = r['score_item_name'] as String? ?? '';
                     final customName = r['custom_name'] as String? ?? '';
@@ -470,6 +528,12 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                           : customName;
                     } else if (hasReason) {
                       displayReason = reason;
+                    }
+
+                    // 快速评分记录：标识来源，未填写原因时提示
+                    if (isQuick) {
+                      displayReason =
+                          '快速评分 · ${displayReason?.isNotEmpty == true ? displayReason : '未填写原因'}';
                     }
 
                     // 构建subtitle内容
@@ -501,6 +565,25 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                               color: isPositive ? Colors.green : Colors.red,
                             ),
                           ),
+                          // 快速评分记录：解锁状态下可补充/修改变动原因
+                          if (isUnlocked && isQuick)
+                            IconButton(
+                              tooltip: reason.isNotEmpty ? '修改变动原因' : '补充变动原因',
+                              icon: Icon(
+                                reason.isNotEmpty
+                                    ? Icons.edit_note
+                                    : Icons.note_add,
+                                size: 20,
+                                color: Colors.blueGrey,
+                              ),
+                              onPressed: () {
+                                _showEditReasonDialog(
+                                  context,
+                                  recordId: r['id'] as int,
+                                  currentReason: reason,
+                                );
+                              },
+                            ),
                           if (isUnlocked)
                             IconButton(
                               icon: const Icon(Icons.delete, size: 20),

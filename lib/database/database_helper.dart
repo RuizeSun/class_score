@@ -32,7 +32,7 @@ class DatabaseHelper {
     final db = await databaseFactoryFfi.openDatabase(
       dbPath,
       options: OpenDatabaseOptions(
-        version: 6,
+        version: 7,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       ),
@@ -77,6 +77,7 @@ class DatabaseHelper {
     await _createV4Tables(db);
     await _createV5Tables(db);
     await _createV6Tables(db);
+    await _createV7Tables(db);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -106,6 +107,9 @@ class DatabaseHelper {
     if (oldVersion < 6) {
       await _createV6Tables(db);
     }
+    if (oldVersion < 7) {
+      await _createV7Tables(db);
+    }
   }
 
   Future<void> _createV6Tables(Database db) async {
@@ -127,6 +131,15 @@ class DatabaseHelper {
         'key': 'current_period',
         'value': '1',
       }, conflictAlgorithm: ConflictAlgorithm.replace);
+    } catch (_) {}
+  }
+
+  Future<void> _createV7Tables(Database db) async {
+    // 为 score_records 表添加 is_quick 字段，用于标识快速评分产生的记录
+    try {
+      await db.execute(
+        'ALTER TABLE score_records ADD COLUMN is_quick INTEGER NOT NULL DEFAULT 0',
+      );
     } catch (_) {}
   }
 
@@ -488,6 +501,17 @@ class DatabaseHelper {
   Future<int> deleteScoreRecord(int id) async {
     final db = await database;
     return db.delete('score_records', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// 更新评分记录的变动原因（用于快速评分记录补充原因）
+  Future<int> updateScoreRecordReason(int id, String? reason) async {
+    final db = await database;
+    return db.update(
+      'score_records',
+      {'reason': reason ?? ''},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   // ---- Score Items ----

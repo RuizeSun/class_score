@@ -6,6 +6,7 @@ class ScoreRecord {
   final String? reason;
   final String createTime;
   final int period; // 评分周期，默认从1开始
+  final bool isQuick; // 是否由快速评分产生
 
   ScoreRecord({
     this.id,
@@ -15,6 +16,7 @@ class ScoreRecord {
     this.reason,
     required this.createTime,
     this.period = 1,
+    this.isQuick = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -26,6 +28,7 @@ class ScoreRecord {
       'reason': reason,
       'create_time': createTime,
       'period': period,
+      'is_quick': isQuick ? 1 : 0,
     };
   }
 
@@ -38,6 +41,7 @@ class ScoreRecord {
       reason: map['reason'] as String?,
       createTime: map['create_time'] as String,
       period: (map['period'] as int?) ?? 1,
+      isQuick: (map['is_quick'] as num? ?? 0) != 0,
     );
   }
 }

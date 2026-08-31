@@ -25,6 +25,10 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
   // 已选择的学生ID列表
   final Set<int> _selectedStudentIds = {};
 
+  // 快速评分模式相关状态
+  bool _quickMode = false;
+  double _quickScore = 1;
+
   @override
   void initState() {
     super.initState();
@@ -33,6 +37,10 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
       context.read<StudentProvider>().loadStudents();
       context.read<ScoreItemProvider>().loadItems();
       context.read<ScoreProvider>().loadRecords(targetType: 'student');
+      // 根据设置初始化快速评分模式（默认关）
+      setState(() {
+        _quickMode = context.read<ScoreProvider>().defaultQuickScoring;
+      });
     });
   }
 
@@ -123,15 +131,22 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
   }
 
   Future<void> _submit() async {
-    final scoreText = _scoreController.text.trim();
-    if (scoreText.isEmpty) {
-      _showMsg('请输入分值');
-      return;
-    }
-    final score = double.tryParse(scoreText);
-    if (score == null) {
-      _showMsg('请输入有效的数值');
-      return;
+    // 快速评分模式下分值来自 _quickScore，否则从输入框解析
+    final double score;
+    if (_quickMode) {
+      score = _quickScore;
+    } else {
+      final scoreText = _scoreController.text.trim();
+      if (scoreText.isEmpty) {
+        _showMsg('请输入分值');
+        return;
+      }
+      final parsed = double.tryParse(scoreText);
+      if (parsed == null) {
+        _showMsg('请输入有效的数值');
+        return;
+      }
+      score = parsed;
     }
 
     if (_selectedStudentIds.isEmpty) {
@@ -169,7 +184,9 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
             const Divider(),
             Text('分值：$score'),
             Text(
-              '原因：${_reasonController.text.trim().isEmpty ? '（无）' : _reasonController.text.trim()}',
+              _quickMode
+                  ? '来源：快速评分（原因可在记录管理中补充）'
+                  : '原因：${_reasonController.text.trim().isEmpty ? '（无）' : _reasonController.text.trim()}',
             ),
           ],
         ),
@@ -191,9 +208,10 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
     final count = await context.read<ScoreProvider>().batchAddScoreRecords(
       targetIds: selectedStudents.map((s) => s.id!).toList(),
       score: score,
-      reason: _reasonController.text.trim(),
-      scoreItemId: _selectedItemId,
-      customName: _customNameController.text.trim(),
+      reason: _quickMode ? '' : _reasonController.text.trim(),
+      scoreItemId: _quickMode ? null : _selectedItemId,
+      customName: _quickMode ? '' : _customNameController.text.trim(),
+      isQuick: _quickMode,
     );
     setState(() => _loading = false);
 
@@ -211,6 +229,162 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
   void _showMsg(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
+    );
+  }
+
+  void _setQuickMode(bool value) {
+    setState(() {
+      _quickMode = value;
+      _selectedItemId = null;
+    });
+  }
+
+  void _setQuickScore(double value) {
+    setState(() {
+      _quickScore = value;
+    });
+  }
+
+  /// 快速评分模式切换开关
+  Widget _buildQuickModeToggle() {
+    return Card(
+      elevation: 0,
+      color: _quickMode ? Colors.green.shade50 : Colors.grey.shade100,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: _quickMode ? Colors.green : Colors.grey.shade300,
+          width: _quickMode ? 1.5 : 1,
+        ),
+      ),
+      child: SwitchListTile(
+        secondary: Icon(
+          _quickMode ? Icons.bolt : Icons.tune,
+          color: _quickMode ? Colors.green.shade700 : Colors.grey.shade600,
+        ),
+        title: const Text(
+          '快速评分',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(
+          _quickMode
+              ? '使用快速加减分，无需预设评分项（可后续补充原因）'
+              : '使用预设评分项进行评分',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+        ),
+        value: _quickMode,
+        onChanged: _setQuickMode,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+      ),
+    );
+  }
+
+  /// 快速评分：分值加减 + 预设按钮
+  Widget _buildQuickScoreControls() {
+    final isPositive = _quickScore >= 0;
+    final sign = isPositive ? '+' : '-';
+    final absText =
+        (_quickScore.abs() % 1 == 0)
+            ? _quickScore.abs().toStringAsFixed(0)
+            : _quickScore.abs().toString();
+
+    const presetValues = [-3.0, -2.0, -1.0, 1.0, 2.0, 3.0];
+
+    Widget stepperButton(IconData icon, VoidCallback onTap, Color color) {
+      return Material(
+        color: color,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 64,
+            height: 64,
+            child: Icon(icon, color: Colors.white, size: 40),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '分值（快速加减）',
+          style: TextStyle(fontWeight: FontWeight.bold, height: 1.2),
+        ),
+        const SizedBox(height: 12),
+        // 大号易触控的加减号与当前分值
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            stepperButton(
+              Icons.remove,
+              () => _setQuickScore(_quickScore - 1),
+              Colors.red.shade600,
+            ),
+            const SizedBox(width: 20),
+            SizedBox(
+              width: 160,
+              child: Text(
+                '$sign$absText',
+                style: TextStyle(
+                  fontSize: 56,
+                  fontWeight: FontWeight.bold,
+                  color: isPositive
+                      ? Colors.green.shade700
+                      : Colors.red.shade700,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(width: 20),
+            stepperButton(
+              Icons.add,
+              () => _setQuickScore(_quickScore + 1),
+              Colors.green.shade600,
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Center(
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 12,
+            children: presetValues.map((v) {
+            final isPos = v > 0;
+            final label = isPos ? '+${v.toStringAsFixed(0)}' : v.toStringAsFixed(0);
+            final color = isPos ? Colors.green : Colors.red;
+            final isSelected = _quickScore == v;
+            return SizedBox(
+              width: 96,
+              height: 52,
+              child: OutlinedButton(
+                onPressed: () => _setQuickScore(v),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: color.shade700,
+                  backgroundColor: isSelected ? color.withValues(alpha: 0.15) : null,
+                  side: BorderSide(
+                    color: isSelected ? color : color.shade200,
+                    width: isSelected ? 2 : 1,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                child: Text(label),
+              ),
+            );
+          }).toList(),
+          ),
+        ),
+      ],
     );
   }
 
@@ -260,6 +434,10 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // 快速评分模式切换
+                _buildQuickModeToggle(),
+                const SizedBox(height: 16),
+
                 // 筛选小组
                 const Text(
                   '筛选小组（可选）',
@@ -429,6 +607,9 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
 
                 const SizedBox(height: 10),
 
+                // ===== 标准评分模式 =====
+                if (!_quickMode) ...[
+
                 // 预设评分项
                 const Text(
                   '预设评分项（可选）',
@@ -565,6 +746,10 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                     hintText: '请输入评分原因（可选）',
                   ),
                 ),
+                ] else ...[
+                  // ===== 快速评分模式 =====
+                  _buildQuickScoreControls(),
+                ],
                 const SizedBox(height: 24),
               ],
             ),

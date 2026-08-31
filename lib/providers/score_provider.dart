@@ -33,6 +33,10 @@ class ScoreProvider extends ChangeNotifier {
   double get groupInitialScore => _groupInitialScore;
   String get groupScoreMode => _groupScoreMode;
 
+  // 默认是否使用快速评分（默认为关）
+  bool _defaultQuickScoring = false;
+  bool get defaultQuickScoring => _defaultQuickScoring;
+
   // 当前加载记录时使用的筛选状态，用于 add/delete 后保持筛选
   String? _lastRecordTargetType;
   int? _lastRecordTargetId;
@@ -131,6 +135,9 @@ class ScoreProvider extends ChangeNotifier {
       'current_period',
     );
     _currentPeriod = int.tryParse(periodStr ?? '1') ?? 1;
+    _defaultQuickScoring =
+        (await DatabaseHelper.instance.getSetting('default_quick_scoring')) ==
+        'true';
     notifyListeners();
   }
 
@@ -190,6 +197,7 @@ class ScoreProvider extends ChangeNotifier {
     String? reason,
     int? scoreItemId,
     String? customName,
+    bool isQuick = false,
   }) async {
     await BackupService.instance.createBackup();
     final map = <String, dynamic>{
@@ -199,6 +207,7 @@ class ScoreProvider extends ChangeNotifier {
       'reason': reason ?? '',
       'create_time': DateTime.now().toIso8601String(),
       'period': _currentPeriod, // 当前周期
+      'is_quick': isQuick ? 1 : 0,
     };
     if (scoreItemId != null) map['score_item_id'] = scoreItemId;
     if (customName != null && customName.isNotEmpty) {
@@ -216,6 +225,7 @@ class ScoreProvider extends ChangeNotifier {
     String? reason,
     int? scoreItemId,
     String? customName,
+    bool isQuick = false,
   }) async {
     await BackupService.instance.createBackup();
     final now = DateTime.now().toIso8601String();
@@ -228,6 +238,7 @@ class ScoreProvider extends ChangeNotifier {
         'reason': reason ?? '',
         'create_time': now,
         'period': _currentPeriod, // 添加当前周期
+        'is_quick': isQuick ? 1 : 0,
       };
       if (scoreItemId != null) map['score_item_id'] = scoreItemId;
       if (customName != null && customName.isNotEmpty) {
@@ -240,6 +251,13 @@ class ScoreProvider extends ChangeNotifier {
     );
     await loadRecords();
     return count;
+  }
+
+  /// 补充/更新评分记录的变动原因
+  Future<void> updateScoreRecordReason(int id, String reason) async {
+    await BackupService.instance.createBackup();
+    await DatabaseHelper.instance.updateScoreRecordReason(id, reason);
+    await loadRecords();
   }
 
   /// 切换到下一个评分周期
@@ -340,6 +358,18 @@ class ScoreProvider extends ChangeNotifier {
         double.tryParse((await db.getSetting('group_initial_score')) ?? '') ??
         0.0;
     _groupScoreMode = await db.getSetting('group_score_mode') ?? 'sum';
+    _defaultQuickScoring = (await db.getSetting('default_quick_scoring')) ==
+        'true';
+    notifyListeners();
+  }
+
+  /// 设置是否默认使用快速评分（持久化到设置）
+  Future<void> setDefaultQuickScoring(bool value) async {
+    await DatabaseHelper.instance.setSetting(
+      'default_quick_scoring',
+      value.toString(),
+    );
+    _defaultQuickScoring = value;
     notifyListeners();
   }
 
