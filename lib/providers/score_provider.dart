@@ -24,6 +24,15 @@ class ScoreProvider extends ChangeNotifier {
   int _currentPeriod = 1;
   int get currentPeriod => _currentPeriod;
 
+  // ---- 计分规则（全局设置） ----
+  double _studentInitialScore = 0;
+  double _groupInitialScore = 0;
+  String _groupScoreMode = 'sum'; // 'sum' | 'group_init' | 'avg'
+
+  double get studentInitialScore => _studentInitialScore;
+  double get groupInitialScore => _groupInitialScore;
+  String get groupScoreMode => _groupScoreMode;
+
   // 当前加载记录时使用的筛选状态，用于 add/delete 后保持筛选
   String? _lastRecordTargetType;
   int? _lastRecordTargetId;
@@ -317,6 +326,50 @@ class ScoreProvider extends ChangeNotifier {
       period: _currentPeriod,
     );
     _filterGroupId = groupId;
+    notifyListeners();
+  }
+
+  // ---- 计分规则配置 ----
+  /// 从数据库加载计分规则全局设置
+  Future<void> loadScoreConfig() async {
+    final db = DatabaseHelper.instance;
+    _studentInitialScore =
+        double.tryParse((await db.getSetting('student_initial_score')) ?? '') ??
+        0.0;
+    _groupInitialScore =
+        double.tryParse((await db.getSetting('group_initial_score')) ?? '') ??
+        0.0;
+    _groupScoreMode = await db.getSetting('group_score_mode') ?? 'sum';
+    notifyListeners();
+  }
+
+  /// 设置学生初始分（统一值）
+  Future<void> setStudentInitialScore(double value) async {
+    await BackupService.instance.createBackup();
+    await DatabaseHelper.instance.setSetting(
+      'student_initial_score',
+      value.toString(),
+    );
+    _studentInitialScore = value;
+    notifyListeners();
+  }
+
+  /// 设置小组初始分（统一值）
+  Future<void> setGroupInitialScore(double value) async {
+    await BackupService.instance.createBackup();
+    await DatabaseHelper.instance.setSetting(
+      'group_initial_score',
+      value.toString(),
+    );
+    _groupInitialScore = value;
+    notifyListeners();
+  }
+
+  /// 设置小组总分计算方式：'sum' | 'group_init' | 'avg'
+  Future<void> setGroupScoreMode(String mode) async {
+    await BackupService.instance.createBackup();
+    await DatabaseHelper.instance.setSetting('group_score_mode', mode);
+    _groupScoreMode = mode;
     notifyListeners();
   }
 }

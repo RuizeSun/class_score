@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../providers/student_provider.dart';
 import '../../providers/score_item_provider.dart';
@@ -13,6 +12,7 @@ import 'usb_key_management.dart';
 import 'system_settings.dart';
 import 'period_management.dart';
 import 'personalization_card.dart';
+import 'scoring_rules_card.dart';
 import '../../models/group.dart';
 import '../../models/student.dart';
 import '../../models/score_item.dart';
@@ -29,6 +29,7 @@ enum SettingsSection {
   group,
   student,
   scoreItems,
+  scoringRules,
   courseSchedule,
   period,
   usbKey,
@@ -107,6 +108,7 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
           item(Icons.group, '分组管理', SettingsSection.group),
           item(Icons.person, '学生管理', SettingsSection.student),
           item(Icons.list_alt, '预设评分项', SettingsSection.scoreItems),
+          item(Icons.rule, '计分规则', SettingsSection.scoringRules),
           item(Icons.calendar_month, '课程表管理', SettingsSection.courseSchedule),
           item(Icons.calendar_today, '评分周期', SettingsSection.period),
           item(Icons.usb, '物理密钥', SettingsSection.usbKey),
@@ -212,6 +214,8 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
           onShowItemDialog: ({ScoreItem? item}) =>
               showScoreItemDialog(context, item: item),
         );
+      case SettingsSection.scoringRules:
+        return const ScoringRulesCard();
       case SettingsSection.courseSchedule:
         return CourseScheduleManagementView(
           onShowCourseDialog: ({Map<String, dynamic>? schedule}) =>
@@ -242,6 +246,8 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
         return '学生管理';
       case SettingsSection.scoreItems:
         return '预设评分项';
+      case SettingsSection.scoringRules:
+        return '计分规则';
       case SettingsSection.courseSchedule:
         return '课程表管理';
       case SettingsSection.period:

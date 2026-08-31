@@ -218,6 +218,48 @@ class DatabaseHelper {
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
+  // ---- Score Config ----
+  /// 读取计分规则全局设置（学生初始分、小组初始分、小组总分计算方式）
+  Future<({double studentInitial, double groupInitial, String mode})>
+      _getScoreConfig() async {
+    final studentInitial =
+        double.tryParse((await getSetting('student_initial_score')) ?? '') ??
+        0.0;
+    final groupInitial =
+        double.tryParse((await getSetting('group_initial_score')) ?? '') ??
+        0.0;
+    final mode = await getSetting('group_score_mode') ?? 'sum';
+    return (
+      studentInitial: studentInitial,
+      groupInitial: groupInitial,
+      mode: mode,
+    );
+  }
+
+  /// 根据小组总分计算方式生成 SQL 表达式（针对已按小组聚合的子查询 m）
+  /// m.member_count：小组人数；m.score_sum：小组成员当期积分变动总和
+  String _groupTotalExpr({
+    required ({double studentInitial, double groupInitial, String mode})
+        config,
+  }) {
+    final si = config.studentInitial;
+    final gi = config.groupInitial;
+    final mc = 'COALESCE(m.member_count, 0)';
+    final ss = 'COALESCE(m.score_sum, 0)';
+    switch (config.mode) {
+      case 'group_init':
+        // 小组自定初始分：小组总分 = 小组初始分 + 成员当期积分变动总和
+        return '$ss + $gi';
+      case 'avg':
+        // 人均得分：小组总分 = (成员数 × 学生初始分 + 成员当期积分变动总和) ÷ 成员数
+        return 'CASE WHEN $mc > 0 THEN ($mc * $si + $ss) / $mc ELSE 0 END';
+      case 'sum':
+      default:
+        // 学生得分总和：小组总分 = 成员数 × 学生初始分 + 成员当期积分变动总和
+        return '$mc * $si + $ss';
+    }
+  }
+
   // ---- USB Keys ----
   Future<List<Map<String, dynamic>>> getUsbKeys() async {
     final db = await database;
@@ -753,15 +795,26 @@ class DatabaseHelper {
       return getGroupTotalScores();
     }
     final db = await database;
-    String query = '''
-      SELECT groups.id, groups.name, COALESCE(SUM(score_records.score), 0) as total_score
+    final config = await _getScoreConfig();
+    final groupExpr = _groupTotalExpr(config: config);
+    final query = '''
+      SELECT groups.id, groups.name,
+             $groupExpr as total_score,
+             COALESCE(m.member_count, 0) as member_count
       FROM groups
-      LEFT JOIN students ON students.group_id = groups.id
-      LEFT JOIN score_records ON score_records.target_type = 'student' AND score_records.target_id = students.id
-        AND score_records.period >= ? AND score_records.period <= ?
+      LEFT JOIN (
+        SELECT s.group_id,
+               COUNT(DISTINCT s.id) as member_count,
+               COALESCE(SUM(sr.score), 0) as score_sum
+        FROM students s
+        LEFT JOIN score_records sr
+          ON sr.target_type = 'student' AND sr.target_id = s.id
+             AND sr.period >= $startPeriod AND sr.period <= $endPeriod
+        GROUP BY s.group_id
+      ) m ON m.group_id = groups.id
       GROUP BY groups.id ORDER BY total_score DESC
     ''';
-    return db.rawQuery(query, [startPeriod, endPeriod]);
+    return db.rawQuery(query);
   }
 
   /// 获取指定周期范围内的学生总分
@@ -775,9 +828,10 @@ class DatabaseHelper {
       return getStudentTotalScores(groupId: groupId);
     }
     final db = await database;
+    final config = await _getScoreConfig();
     String query = '''
       SELECT students.id, students.name, students.student_number, students.group_id, groups.name as group_name,
-             COALESCE(SUM(score_records.score), 0) as total_score
+             COALESCE(SUM(score_records.score), 0) + ${config.studentInitial} as total_score
       FROM students
       LEFT JOIN groups ON students.group_id = groups.id
       LEFT JOIN score_records ON score_records.target_type = 'student' AND score_records.target_id = students.id
@@ -825,24 +879,27 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getGroupTotalScores({int? period}) async {
     final db = await database;
-    String query = '''
-      SELECT groups.id, groups.name, COALESCE(SUM(score_records.score), 0) as total_score
+    final config = await _getScoreConfig();
+    final periodOn = period != null ? 'AND sr.period = $period' : '';
+    // 根据计算方式生成小组总分表达式
+    final groupExpr = _groupTotalExpr(config: config);
+    final query = '''
+      SELECT groups.id, groups.name,
+             $groupExpr as total_score,
+             COALESCE(m.member_count, 0) as member_count
       FROM groups
-      LEFT JOIN students ON students.group_id = groups.id
-      LEFT JOIN score_records ON score_records.target_type = 'student' AND score_records.target_id = students.id
+      LEFT JOIN (
+        SELECT s.group_id,
+               COUNT(DISTINCT s.id) as member_count,
+               COALESCE(SUM(sr.score), 0) as score_sum
+        FROM students s
+        LEFT JOIN score_records sr
+          ON sr.target_type = 'student' AND sr.target_id = s.id $periodOn
+        GROUP BY s.group_id
+      ) m ON m.group_id = groups.id
+      GROUP BY groups.id ORDER BY total_score DESC
     ''';
-    List<dynamic> whereArgs = [];
-    if (period != null) {
-      // period 条件必须放在 LEFT JOIN ON 子句中，而非 WHERE 子句，
-      // 否则会过滤掉没有当前周期评分记录的小组（LEFT JOIN 降级为 INNER JOIN）。
-      query = query.replaceFirst(
-        'LEFT JOIN score_records ON score_records.target_type = \'student\' AND score_records.target_id = students.id',
-        'LEFT JOIN score_records ON score_records.target_type = \'student\' AND score_records.target_id = students.id AND score_records.period = ?',
-      );
-      whereArgs.add(period);
-    }
-    query += ' GROUP BY groups.id ORDER BY total_score DESC';
-    return db.rawQuery(query, whereArgs);
+    return db.rawQuery(query);
   }
 
   Future<List<Map<String, dynamic>>> getStudentTotalScores({
@@ -850,9 +907,10 @@ class DatabaseHelper {
     int? period,
   }) async {
     final db = await database;
+    final config = await _getScoreConfig();
     String query = '''
       SELECT students.id, students.name, students.student_number, students.group_id, groups.name as group_name,
-             COALESCE(SUM(score_records.score), 0) as total_score
+             COALESCE(SUM(score_records.score), 0) + ${config.studentInitial} as total_score
       FROM students
       LEFT JOIN groups ON students.group_id = groups.id
       LEFT JOIN score_records ON score_records.target_type = 'student' AND score_records.target_id = students.id
