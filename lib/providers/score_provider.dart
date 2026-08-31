@@ -29,9 +29,17 @@ class ScoreProvider extends ChangeNotifier {
   double _groupInitialScore = 0;
   String _groupScoreMode = 'sum'; // 'sum' | 'group_init' | 'avg'
 
+  // 允许分值范围：'only_add' | 'only_deduct' | 'unlimited' | 'custom'
+  String _scoreRangeMode = 'unlimited';
+  double _scoreRangeMin = 0;
+  double _scoreRangeMax = 0;
+
   double get studentInitialScore => _studentInitialScore;
   double get groupInitialScore => _groupInitialScore;
   String get groupScoreMode => _groupScoreMode;
+  String get scoreRangeMode => _scoreRangeMode;
+  double get scoreRangeMin => _scoreRangeMin;
+  double get scoreRangeMax => _scoreRangeMax;
 
   // 默认是否使用快速评分（默认为关）
   bool _defaultQuickScoring = false;
@@ -138,7 +146,7 @@ class ScoreProvider extends ChangeNotifier {
     _defaultQuickScoring =
         (await DatabaseHelper.instance.getSetting('default_quick_scoring')) ==
         'true';
-    notifyListeners();
+    await loadScoreConfig();
   }
 
   /// 加载评分记录。支持按 targetType + targetId 筛选，也支持按 groupId 筛选（查小组内所有成员记录）。
@@ -360,6 +368,11 @@ class ScoreProvider extends ChangeNotifier {
     _groupScoreMode = await db.getSetting('group_score_mode') ?? 'sum';
     _defaultQuickScoring = (await db.getSetting('default_quick_scoring')) ==
         'true';
+    _scoreRangeMode = await db.getSetting('score_range_mode') ?? 'unlimited';
+    _scoreRangeMin =
+        double.tryParse((await db.getSetting('score_range_min')) ?? '') ?? 0;
+    _scoreRangeMax =
+        double.tryParse((await db.getSetting('score_range_max')) ?? '') ?? 0;
     notifyListeners();
   }
 
@@ -401,5 +414,38 @@ class ScoreProvider extends ChangeNotifier {
     await DatabaseHelper.instance.setSetting('group_score_mode', mode);
     _groupScoreMode = mode;
     notifyListeners();
+  }
+
+  /// 设置允许分值范围模式：'only_add' | 'only_deduct' | 'unlimited' | 'custom'
+  Future<void> setScoreRangeMode(String mode) async {
+    await BackupService.instance.createBackup();
+    await DatabaseHelper.instance.setSetting('score_range_mode', mode);
+    _scoreRangeMode = mode;
+    notifyListeners();
+  }
+
+  /// 设置自定义允许分值范围：n1 <= 分值 <= n2
+  Future<void> setScoreRange(double min, double max) async {
+    await BackupService.instance.createBackup();
+    await DatabaseHelper.instance.setSetting('score_range_min', min.toString());
+    await DatabaseHelper.instance.setSetting('score_range_max', max.toString());
+    _scoreRangeMin = min;
+    _scoreRangeMax = max;
+    notifyListeners();
+  }
+
+  /// 根据允许分值范围规则判断某个分值是否允许使用。
+  bool isScoreAllowed(double score) {
+    switch (_scoreRangeMode) {
+      case 'only_add':
+        return score >= 0;
+      case 'only_deduct':
+        return score <= 0;
+      case 'custom':
+        return score >= _scoreRangeMin && score <= _scoreRangeMax;
+      case 'unlimited':
+      default:
+        return true;
+    }
   }
 }

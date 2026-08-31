@@ -37,9 +37,13 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
       context.read<StudentProvider>().loadStudents();
       context.read<ScoreItemProvider>().loadItems();
       context.read<ScoreProvider>().loadRecords(targetType: 'student');
-      // 根据设置初始化快速评分模式（默认关）
-      setState(() {
-        _quickMode = context.read<ScoreProvider>().defaultQuickScoring;
+      // 加载计分规则（含允许分值范围），并据此初始化快速评分状态
+      context.read<ScoreProvider>().loadScoreConfig().then((_) {
+        if (!mounted) return;
+        setState(() {
+          _quickMode = context.read<ScoreProvider>().defaultQuickScoring;
+          _quickScore = _clampQuickScore(_quickScore);
+        });
       });
     });
   }
@@ -134,7 +138,7 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
     // 快速评分模式下分值来自 _quickScore，否则从输入框解析
     final double score;
     if (_quickMode) {
-      score = _quickScore;
+      score = _clampQuickScore(_quickScore);
     } else {
       final scoreText = _scoreController.text.trim();
       if (scoreText.isEmpty) {
@@ -147,6 +151,12 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
         return;
       }
       score = parsed;
+    }
+
+    // 校验分值是否符合允许分值范围规则
+    if (!context.read<ScoreProvider>().isScoreAllowed(score)) {
+      _showMsg('该分值不在允许的分值范围内，无法评分');
+      return;
     }
 
     if (_selectedStudentIds.isEmpty) {
@@ -236,13 +246,49 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
     setState(() {
       _quickMode = value;
       _selectedItemId = null;
+      _quickScore = _clampQuickScore(_quickScore);
     });
   }
 
   void _setQuickScore(double value) {
     setState(() {
-      _quickScore = value;
+      _quickScore = _clampQuickScore(value);
     });
+  }
+
+  /// 根据允许分值范围规则，将分值钳制到合法范围内。
+  double _clampQuickScore(double value) {
+    final p = context.read<ScoreProvider>();
+    switch (p.scoreRangeMode) {
+      case 'only_add':
+        return value < 0 ? 0 : value;
+      case 'only_deduct':
+        return value > 0 ? 0 : value;
+      case 'custom':
+        final lo = p.scoreRangeMin;
+        final hi = p.scoreRangeMax;
+        if (lo <= hi) return value.clamp(lo, hi).toDouble();
+        return value;
+      case 'unlimited':
+      default:
+        return value;
+    }
+  }
+
+  /// 判断某个预设分值按钮在允许分值范围规则下是否显示。
+  bool _presetAllowed(double value) {
+    final p = context.read<ScoreProvider>();
+    switch (p.scoreRangeMode) {
+      case 'only_add':
+        return value > 0;
+      case 'only_deduct':
+        return value < 0;
+      case 'custom':
+        return value >= p.scoreRangeMin && value <= p.scoreRangeMax;
+      case 'unlimited':
+      default:
+        return true;
+    }
   }
 
   /// 快速评分模式切换开关
@@ -281,18 +327,27 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
 
   /// 快速评分：分值加减 + 预设按钮
   Widget _buildQuickScoreControls() {
-    final isPositive = _quickScore >= 0;
+    final displayValue = _clampQuickScore(_quickScore);
+    final isPositive = displayValue >= 0;
     final sign = isPositive ? '+' : '-';
     final absText =
-        (_quickScore.abs() % 1 == 0)
-            ? _quickScore.abs().toStringAsFixed(0)
-            : _quickScore.abs().toString();
+        (displayValue.abs() % 1 == 0)
+            ? displayValue.abs().toStringAsFixed(0)
+            : displayValue.abs().toString();
 
     const presetValues = [-3.0, -2.0, -1.0, 1.0, 2.0, 3.0];
 
-    Widget stepperButton(IconData icon, VoidCallback onTap, Color color) {
+    // 根据允许分值范围决定显示哪些快捷按钮
+    final p = context.read<ScoreProvider>();
+    final visiblePresets = presetValues.where(_presetAllowed).toList();
+    // 加减按钮根据当前值判断是否可用：按下后得到的分值必须仍在允许范围内
+    final minusEnabled = p.isScoreAllowed(_quickScore - 1);
+    final plusEnabled = p.isScoreAllowed(_quickScore + 1);
+
+    Widget stepperButton(IconData icon, VoidCallback? onTap, Color color) {
+      final enabled = onTap != null;
       return Material(
-        color: color,
+        color: enabled ? color : Colors.grey.shade400,
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
@@ -320,7 +375,7 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
           children: [
             stepperButton(
               Icons.remove,
-              () => _setQuickScore(_quickScore - 1),
+              minusEnabled ? () => _setQuickScore(_quickScore - 1) : null,
               Colors.red.shade600,
             ),
             const SizedBox(width: 20),
@@ -341,7 +396,7 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
             const SizedBox(width: 20),
             stepperButton(
               Icons.add,
-              () => _setQuickScore(_quickScore + 1),
+              plusEnabled ? () => _setQuickScore(_quickScore + 1) : null,
               Colors.green.shade600,
             ),
           ],
@@ -353,7 +408,7 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
             crossAxisAlignment: WrapCrossAlignment.center,
             spacing: 12,
             runSpacing: 12,
-            children: presetValues.map((v) {
+            children: visiblePresets.map((v) {
             final isPos = v > 0;
             final label = isPos ? '+${v.toStringAsFixed(0)}' : v.toStringAsFixed(0);
             final color = isPos ? Colors.green : Colors.red;
