@@ -268,6 +268,69 @@ class ScoreProvider extends ChangeNotifier {
     await loadRecords();
   }
 
+  /// 批量删除评分记录（ID 可为空时安全跳过）
+  Future<void> deleteScoreRecords(List<int> ids) async {
+    if (ids.isEmpty) return;
+    await BackupService.instance.createBackup();
+    await DatabaseHelper.instance.deleteScoreRecords(ids);
+    await loadRecords();
+  }
+
+  /// 批量补充/修改变动原因。
+  /// [scoreItemId] 非空时将该记录绑定到预设评分项；否则视为自定义（[customName] 可为空串）。
+  /// 自定义且 [customName] 为空时仅写原因、不改变分值/来源标记。
+  Future<void> batchUpdateRecordComplements({
+    required List<int> ids,
+    required String reason,
+    int? scoreItemId,
+    String? customName,
+    double? presetScore,
+    bool applyPresetScore = false,
+  }) async {
+    if (ids.isEmpty) return;
+    await BackupService.instance.createBackup();
+    for (final id in ids) {
+      final values = <String, dynamic>{'reason': reason};
+      if (scoreItemId != null) {
+        // 绑定预设评分项：作为普通（非快速）记录，原因可另附文字说明
+        values['score_item_id'] = scoreItemId;
+        values['custom_name'] = '';
+        values['is_quick'] = 0;
+        if (applyPresetScore && presetScore != null) {
+          values['score'] = presetScore;
+        }
+      } else {
+        // 自定义：写入自定义名称（可为空串），清除已绑定的预设项，不改变分值
+        values['custom_name'] = customName ?? '';
+        values['score_item_id'] = null;
+        if (customName != null && customName.isNotEmpty) {
+          values['is_quick'] = 0;
+        }
+      }
+      await DatabaseHelper.instance.updateScoreRecordFields(id, values);
+    }
+    await loadRecords();
+  }
+
+  /// 单条记录补充/修改变动原因（复用批量逻辑）
+  Future<void> updateRecordComplement({
+    required int id,
+    required String reason,
+    int? scoreItemId,
+    String? customName,
+    double? presetScore,
+    bool applyPresetScore = false,
+  }) async {
+    await batchUpdateRecordComplements(
+      ids: [id],
+      reason: reason,
+      scoreItemId: scoreItemId,
+      customName: customName,
+      presetScore: presetScore,
+      applyPresetScore: applyPresetScore,
+    );
+  }
+
   /// 切换到下一个评分周期
   /// 会清空新周期的所有评分记录
   Future<void> switchToNextPeriod() async {

@@ -503,6 +503,27 @@ class DatabaseHelper {
     return db.delete('score_records', where: 'id = ?', whereArgs: [id]);
   }
 
+  /// 批量删除评分记录（事务保证原子性）
+  Future<int> deleteScoreRecords(List<int> ids) async {
+    if (ids.isEmpty) return 0;
+    final db = await database;
+    int count = 0;
+    await db.transaction((txn) async {
+      for (final id in ids) {
+        await txn.delete('score_records', where: 'id = ?', whereArgs: [id]);
+        count++;
+      }
+    });
+    return count;
+  }
+
+  /// 通用更新 score_records 指定字段（用于补充/修改变动原因时绑定预设项/分值等）
+  Future<int> updateScoreRecordFields(int id, Map<String, dynamic> values) async {
+    if (values.isEmpty) return 0;
+    final db = await database;
+    return db.update('score_records', values, where: 'id = ?', whereArgs: [id]);
+  }
+
   /// 更新评分记录的变动原因（用于快速评分记录补充原因）
   Future<int> updateScoreRecordReason(int id, String? reason) async {
     final db = await database;

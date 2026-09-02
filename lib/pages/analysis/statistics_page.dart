@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../models/score_item.dart';
 import '../../providers/score_provider.dart';
+import '../../providers/score_item_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../providers/student_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -280,12 +282,17 @@ class _RecordManagementViewState extends State<RecordManagementView> {
   int? _filterGroupId;
   int? _filterStudentId;
 
+  // 批量操作状态
+  bool _batchMode = false;
+  final Set<int> _selectedRecordIds = {};
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<GroupProvider>().loadGroups();
       context.read<StudentProvider>().loadStudents();
+      context.read<ScoreItemProvider>().loadItems();
       _checkPendingGroupFilter();
       _loadRecords();
     });
@@ -342,59 +349,408 @@ class _RecordManagementViewState extends State<RecordManagementView> {
     }
   }
 
-  /// 弹出对话框，用于补充/修改快速评分记录的变动原因
-  Future<void> _showEditReasonDialog(
-    BuildContext dialogContext, {
-    required int recordId,
-    required String currentReason,
-  }) async {
-    final controller = TextEditingController(text: currentReason);
-    final confirmed = await showDialog<bool>(
-      context: dialogContext,
-      builder: (ctx) => AlertDialog(
-        title: const Text('补充变动原因'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '为该条快速评分记录补充变动原因（如：课堂表现加分、作业未交扣分等）。',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: '变动原因',
-                border: OutlineInputBorder(),
-                hintText: '请输入变动原因',
+  // ===== 补充/修改变动原因与批量操作逻辑 =====
+  /// 补充/修改变动原因：单选或批量。可关联预设评分项或自定义说明。
+  /// [targets] 为待处理的记录 map 列表（来自 recordsWithName）。
+  Future<void> _runSupplementFlow(List<Map<String, dynamic>> targets) async {
+    if (targets.isEmpty || !mounted) return;
+    final result = await _showSupplementFormDialog(targets);
+    if (result == null || !mounted) return;
+
+    final ids = targets.map((r) => r['id'] as int).toList();
+    final reason = result.reason.trim();
+    final provider = context.read<ScoreProvider>();
+
+    try {
+      if (result.scoreItemId != null && result.item != null) {
+        // 关联预设评分项
+        final presetScore = result.item!.defaultScore;
+        final conflicting = targets.where((r) {
+          final orig = (r['score'] as num).toDouble();
+          return orig != presetScore;
+        }).toList();
+
+        bool applyPreset = false;
+        if (conflicting.isNotEmpty) {
+          final decision = await _showScoreConflictDialog(
+            item: result.item!,
+            conflicting: conflicting,
+          );
+          if (decision == null || !mounted) return; // 用户取消
+          applyPreset = decision;
+        }
+
+        await provider.batchUpdateRecordComplements(
+          ids: ids,
+          reason: reason,
+          scoreItemId: result.scoreItemId,
+          presetScore: presetScore,
+          applyPresetScore: applyPreset,
+        );
+      } else {
+        // 自定义：仅写自定义名称与原因，不改变分值
+        await provider.batchUpdateRecordComplements(
+          ids: ids,
+          reason: reason,
+          customName: result.customName.trim(),
+        );
+      }
+
+      _selectedRecordIds.removeAll(ids);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('已为 ${ids.length} 条记录保存变动原因'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('保存失败，请重试')),
+      );
+    }
+  }
+  /// 弹出补充/修改变动原因表单。返回 null 表示取消。
+  Future<_SupplementResult?> _showSupplementFormDialog(
+    List<Map<String, dynamic>> targets,
+  ) async {
+    final items = context.read<ScoreItemProvider>().items;
+    final isBatch = targets.length > 1;
+    // 单选时预填已有原因
+    final initialReason =
+        !isBatch ? (targets.first['reason'] as String? ?? '') : '';
+
+    final reasonController = TextEditingController(text: initialReason);
+    final customNameController = TextEditingController();
+    int? chosenItemId; // null => 自定义
+
+    final result = await showDialog<_SupplementResult>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final isCustom = chosenItemId == null;
+          return AlertDialog(
+            title: Text(isBatch ? '批量补充变动原因' : '补充变动原因'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isBatch
+                        ? '为选中的 ${targets.length} 条记录补充原因，可关联预设评分项或自定义说明。'
+                        : '为该条记录补充原因，可关联预设评分项或自定义说明。',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 12),
+                  // 预设评分项 / 自定义 选择
+                  DropdownButtonFormField<int?>(
+                    key: ValueKey('item_$chosenItemId'),
+                    initialValue: chosenItemId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: '预设评分项',
+                      border: OutlineInputBorder(),
+                      hintText: '选择预设（自定义则不填）',
+                    ),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('自定义'),
+                        ),
+                      ),
+                      ...items.map(
+                        (item) => DropdownMenuItem<int?>(
+                          value: item.id,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  item.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _scoreChip(item.defaultScore),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: (v) => setDialogState(() => chosenItemId = v),
+                  ),
+                  if (isCustom) ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: customNameController,
+                      decoration: const InputDecoration(
+                        labelText: '评分项名称（自定义）',
+                        border: OutlineInputBorder(),
+                        hintText: '如：考勤扣分、作业加分',
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: reasonController,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: '变动原因',
+                      border: OutlineInputBorder(),
+                      hintText: '请输入具体变动原因（可选）',
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(
+                  ctx,
+                  _SupplementResult(
+                    scoreItemId: chosenItemId,
+                    item: chosenItemId == null
+                        ? null
+                        : items.firstWhere((i) => i.id == chosenItemId),
+                    customName: customNameController.text,
+                    reason: reasonController.text,
+                  ),
+                ),
+                child: const Text('保存'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    reasonController.dispose();
+    customNameController.dispose();
+    return result;
+  }
+  /// 分值冲突确认弹窗。返回 true=应用预设分值；false=保留原分值；null=取消。
+  Future<bool?> _showScoreConflictDialog({
+    required ScoreItem item,
+    required List<Map<String, dynamic>> conflicting,
+  }) async {
+    final preset = item.defaultScore;
+    final presetLabel = _scoreLabel(preset);
+    final isMultiple = conflicting.length > 1;
+
+    String content;
+    if (isMultiple) {
+      content = '所选评分项「${item.name}」的预设分值为 $presetLabel，'
+          '与选中的 ${conflicting.length} 条记录当前分值不一致。\n\n'
+          '请选择保留各记录当前分值，还是统一改为该评分项的预设分值 $presetLabel。';
+    } else {
+      final orig = (conflicting.first['score'] as num).toDouble();
+      content = '所选评分项「${item.name}」的预设分值为 $presetLabel，'
+          '与该条记录当前分值 ${_scoreLabel(orig)} 不一致。\n\n'
+          '请选择保留记录当前分值，还是改为该评分项的预设分值。';
+    }
+
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('分值不一致'),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('保留原分值'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('应用预设分值'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 批量删除确认并执行
+  Future<void> _runBatchDelete(List<Map<String, dynamic>> targets) async {
+    if (targets.isEmpty) return;
+    final ids = targets.map((r) => r['id'] as int).toList();
+    final isSingle = targets.length == 1;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(isSingle ? '确认删除' : '批量删除'),
+        content: Text(
+          isSingle
+              ? '确定删除这条评分记录吗？此操作不可撤销。'
+              : '确定删除选中的 ${targets.length} 条评分记录吗？此操作不可撤销。',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('取消'),
           ),
-          ElevatedButton(
+          TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('保存'),
+            child: const Text('删除'),
           ),
         ],
       ),
     );
+    if (confirmed != true || !mounted) return;
+    await context.read<ScoreProvider>().deleteScoreRecords(ids);
+    if (!mounted) return;
+    setState(() => _selectedRecordIds.removeAll(ids));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('已删除 ${targets.length} 条评分记录'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
 
-    final text = controller.text.trim();
-    if (confirmed == true && text.isNotEmpty) {
-      final scoreProvider = context.read<ScoreProvider>();
-      await scoreProvider.updateScoreRecordReason(recordId, text);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('变动原因已保存'), duration: Duration(seconds: 2)),
+  String _scoreLabel(double v) {
+    if (v > 0) return '+${v.toStringAsFixed(1)}';
+    if (v < 0) return v.toStringAsFixed(1);
+    return '0.0';
+  }
+
+  Widget _scoreChip(double score) {
+    final Color color;
+    if (score > 0) {
+      color = Colors.green.shade700;
+    } else if (score < 0) {
+      color = Colors.red.shade700;
+    } else {
+      color = Colors.grey.shade600;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        _scoreLabel(score),
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w600,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+
+  void _enterBatchMode() {
+    setState(() {
+      _batchMode = true;
+      _selectedRecordIds.clear();
+    });
+  }
+
+  void _exitBatchMode() {
+    setState(() {
+      _batchMode = false;
+      _selectedRecordIds.clear();
+    });
+  }
+
+  void _toggleRecordSelection(int id) {
+    setState(() {
+      if (!_selectedRecordIds.add(id)) {
+        _selectedRecordIds.remove(id);
+      }
+    });
+  }
+
+  void _toggleSelectAll(List<Map<String, dynamic>> records) {
+    final allIds = records.map((r) => r['id'] as int).toSet();
+    if (allIds.isEmpty) return;
+    final allSelected = allIds.every(_selectedRecordIds.contains);
+    setState(() {
+      if (allSelected) {
+        _selectedRecordIds.removeAll(allIds);
+      } else {
+        _selectedRecordIds.addAll(allIds);
+      }
+    });
+  }
+
+  bool _allSelected(List<Map<String, dynamic>> records) {
+    final allIds = records.map((r) => r['id'] as int).toSet();
+    return allIds.isNotEmpty && allIds.every(_selectedRecordIds.contains);
+  }
+
+  List<Map<String, dynamic>> _selectedRecords(
+    List<Map<String, dynamic>> records,
+  ) =>
+      records.where((r) => _selectedRecordIds.contains(r['id'])).toList();
+
+  /// 批量操作控制栏：非批量时显示「批量操作」入口，批量时显示选择信息与操作按钮
+  Widget _buildBatchBar(List<Map<String, dynamic>> records) {
+    if (!_batchMode) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: _enterBatchMode,
+            icon: const Icon(Icons.checklist, size: 18),
+            label: const Text('批量操作'),
+          ),
+        ),
       );
     }
+    final selected = _selectedRecords(records);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '已选 ${selected.length} 条',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Colors.blueGrey.shade700,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          TextButton(
+            onPressed: () => _toggleSelectAll(records),
+            child: Text(_allSelected(records) ? '取消全选' : '全选'),
+          ),
+          TextButton(
+            onPressed: selected.isNotEmpty
+                ? () => _runSupplementFlow(selected)
+                : null,
+            child: const Text('补充原因'),
+          ),
+          TextButton(
+            onPressed:
+                selected.isNotEmpty ? () => _runBatchDelete(selected) : null,
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('删除'),
+          ),
+          IconButton(
+            tooltip: '完成',
+            icon: const Icon(Icons.close),
+            onPressed: _exitBatchMode,
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -481,6 +837,9 @@ class _RecordManagementViewState extends State<RecordManagementView> {
             ],
           ),
         ),
+        // 批量操作控制栏
+        if (isUnlocked && records.isNotEmpty) _buildBatchBar(records),
+
         // 记录列表
         Expanded(
           child: records.isEmpty
@@ -489,6 +848,8 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                   itemCount: records.length,
                   itemBuilder: (_, i) {
                     final r = records[i];
+                    final recordId = r['id'] as int;
+                    final isSelected = _selectedRecordIds.contains(recordId);
                     final score = (r['score'] as num).toDouble();
                     final isPositive = score >= 0;
                     final time = r['create_time'] as String;
@@ -545,6 +906,20 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                     }
 
                     return ListTile(
+                      leading: _batchMode
+                          ? Checkbox(
+                              value: isSelected,
+                              onChanged: (_) =>
+                                  _toggleRecordSelection(recordId),
+                            )
+                          : null,
+                      selected: isSelected,
+                      tileColor: _batchMode && isSelected
+                          ? Colors.blueGrey.withValues(alpha: 0.08)
+                          : null,
+                      onTap: _batchMode
+                          ? () => _toggleRecordSelection(recordId)
+                          : null,
                       title: Text(titleText),
                       subtitle: Text(
                         subtitleContent,
@@ -565,54 +940,26 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                               color: isPositive ? Colors.green : Colors.red,
                             ),
                           ),
-                          // 快速评分记录：解锁状态下可补充/修改变动原因
-                          if (isUnlocked && isQuick)
+                          // 补充/修改变动原因（快速评分或缺失评分项的记录）
+                          if (!_batchMode &&
+                              isUnlocked &&
+                              (isQuick || !hasScoreItem))
                             IconButton(
-                              tooltip: reason.isNotEmpty ? '修改变动原因' : '补充变动原因',
+                              tooltip: hasReason ? '修改变动原因' : '补充变动原因',
                               icon: Icon(
-                                reason.isNotEmpty
+                                hasReason
                                     ? Icons.edit_note
                                     : Icons.note_add,
                                 size: 20,
                                 color: Colors.blueGrey,
                               ),
-                              onPressed: () {
-                                _showEditReasonDialog(
-                                  context,
-                                  recordId: r['id'] as int,
-                                  currentReason: reason,
-                                );
-                              },
+                              onPressed: () => _runSupplementFlow([r]),
                             ),
-                          if (isUnlocked)
+                          // 单条删除（批量模式下交由批量删除处理）
+                          if (!_batchMode && isUnlocked)
                             IconButton(
                               icon: const Icon(Icons.delete, size: 20),
-                              onPressed: () {
-                                showDialog(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: const Text('确认删除'),
-                                    content: const Text('确定删除这条评分记录吗？'),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(ctx),
-                                        child: const Text('取消'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () {
-                                          context
-                                              .read<ScoreProvider>()
-                                              .deleteScoreRecord(
-                                                r['id'] as int,
-                                              );
-                                          Navigator.pop(ctx);
-                                        },
-                                        child: const Text('删除'),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
+                              onPressed: () => _runBatchDelete([r]),
                             ),
                         ],
                       ),
@@ -624,3 +971,19 @@ class _RecordManagementViewState extends State<RecordManagementView> {
     );
   }
 }
+
+/// 补充/修改变动原因表单的返回结果
+class _SupplementResult {
+  final int? scoreItemId; // null 表示自定义
+  final ScoreItem? item; // 选中的预设评分项（自定义时为 null）
+  final String customName;
+  final String reason;
+
+  _SupplementResult({
+    this.scoreItemId,
+    this.item,
+    this.customName = '',
+    this.reason = '',
+  });
+}
+
