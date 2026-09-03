@@ -291,9 +291,10 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
     }
   }
 
-  /// 快速评分模式切换开关
-  Widget _buildQuickModeToggle() {
+  /// 快速评分模式切换开关（紧凑版，与筛选小组下拉框同排右侧展示）
+  Widget _buildQuickModeCompactToggle() {
     return Card(
+      margin: EdgeInsets.zero,
       elevation: 0,
       color: _quickMode ? Colors.green.shade50 : Colors.grey.shade100,
       shape: RoundedRectangleBorder(
@@ -303,24 +304,29 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
           width: _quickMode ? 1.5 : 1,
         ),
       ),
-      child: SwitchListTile(
-        secondary: Icon(
-          _quickMode ? Icons.bolt : Icons.tune,
-          color: _quickMode ? Colors.green.shade700 : Colors.grey.shade600,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _quickMode ? Icons.bolt : Icons.tune,
+                size: 20,
+                color: _quickMode ? Colors.green.shade700 : Colors.grey.shade600,
+              ),
+              const SizedBox(width: 6),
+              const Text(
+                '快速评分',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Switch(
+                value: _quickMode,
+                onChanged: _setQuickMode,
+              ),
+            ],
+          ),
         ),
-        title: const Text(
-          '快速评分',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(
-          _quickMode
-              ? '使用快速加减分，无需预设评分项（可后续补充原因）'
-              : '使用预设评分项进行评分',
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-        ),
-        value: _quickMode,
-        onChanged: _setQuickMode,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
       ),
     );
   }
@@ -489,38 +495,53 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 快速评分模式切换
-                _buildQuickModeToggle(),
-                const SizedBox(height: 16),
-
-                // 筛选小组
+                // 筛选小组（左） + 快速评分切换（右，同一行、与下拉框本体对齐）
                 const Text(
                   '筛选小组（可选）',
                   style: TextStyle(fontWeight: FontWeight.bold, height: 1.2),
                 ),
                 const SizedBox(height: 4),
-                DropdownButtonFormField<int?>(
-                  initialValue: _selectedGroupId,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    hintText: '不选择则显示所有学生',
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // 左侧：筛选小组下拉框
+                      Expanded(
+                        child: DropdownButtonFormField<int?>(
+                          initialValue: _selectedGroupId,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            hintText: '不选择则显示所有学生',
+                          ),
+                          items: [
+                            const DropdownMenuItem(
+                              value: null,
+                              child: Text('全部小组'),
+                            ),
+                            ...groups.map(
+                              (g) => DropdownMenuItem(
+                                value: g.id,
+                                child: Text(g.name),
+                              ),
+                            ),
+                          ],
+                          onChanged: (v) => setState(() {
+                            _selectedGroupId = v;
+                            // 筛选变化时，清除不在新范围内的已选学生
+                            final filtered = v == null
+                                ? students
+                                : students.where((s) => s.groupId == v);
+                            _selectedStudentIds.retainWhere(
+                              (id) => filtered.any((s) => s.id == id),
+                            );
+                          }),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // 右侧：快速评分切换开关（与下拉框本体等高对齐）
+                      _buildQuickModeCompactToggle(),
+                    ],
                   ),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('全部小组')),
-                    ...groups.map(
-                      (g) => DropdownMenuItem(value: g.id, child: Text(g.name)),
-                    ),
-                  ],
-                  onChanged: (v) => setState(() {
-                    _selectedGroupId = v;
-                    // 筛选变化时，清除不在新范围内的已选学生
-                    final filtered = v == null
-                        ? students
-                        : students.where((s) => s.groupId == v);
-                    _selectedStudentIds.retainWhere(
-                      (id) => filtered.any((s) => s.id == id),
-                    );
-                  }),
                 ),
 
                 const SizedBox(height: 10),
