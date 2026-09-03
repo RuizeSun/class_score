@@ -32,7 +32,7 @@ class DatabaseHelper {
     final db = await databaseFactoryFfi.openDatabase(
       dbPath,
       options: OpenDatabaseOptions(
-        version: 7,
+        version: 8,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       ),
@@ -78,6 +78,7 @@ class DatabaseHelper {
     await _createV5Tables(db);
     await _createV6Tables(db);
     await _createV7Tables(db);
+    await _createV8Tables(db);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -110,6 +111,9 @@ class DatabaseHelper {
     if (oldVersion < 7) {
       await _createV7Tables(db);
     }
+    if (oldVersion < 8) {
+      await _createV8Tables(db);
+    }
   }
 
   Future<void> _createV6Tables(Database db) async {
@@ -139,6 +143,47 @@ class DatabaseHelper {
     try {
       await db.execute(
         'ALTER TABLE score_records ADD COLUMN is_quick INTEGER NOT NULL DEFAULT 0',
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _createV8Tables(Database db) async {
+    // 回收站：保存被删除的评分记录，供“恢复/永久删除/7天后自动清理”
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS score_record_archives (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        record_id INTEGER NOT NULL,
+        target_type TEXT NOT NULL,
+        target_id INTEGER NOT NULL,
+        score REAL NOT NULL,
+        reason TEXT,
+        score_item_id INTEGER,
+        custom_name TEXT,
+        create_time TEXT NOT NULL,
+        period INTEGER NOT NULL DEFAULT 1,
+        is_quick INTEGER NOT NULL DEFAULT 0,
+        deleted_at TEXT NOT NULL
+      )
+    ''');
+    // 单条评分记录的修改历史（新增/补充变动原因/修改/删除）
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS score_record_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        record_id INTEGER NOT NULL,
+        action_type TEXT NOT NULL,
+        field TEXT,
+        old_value TEXT,
+        new_value TEXT,
+        content TEXT,
+        log_time TEXT NOT NULL
+      )
+    ''');
+    try {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_score_record_logs_record_id ON score_record_logs(record_id)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_score_record_archives_deleted_at ON score_record_archives(deleted_at)',
       );
     } catch (_) {}
   }
@@ -533,6 +578,251 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  // ---- Score Record Logs / Archive (回收站与修改历史) ----
+
+  /// 读取单条评分记录（不含连表），用于写库前计算变更历史。
+  Future<Map<String, dynamic>?> getScoreRecordRaw(int id) async {
+    final db = await database;
+    final rows = await db.query(
+      'score_records',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  /// 写入一条修改记录历史。actionType: create/supplement/update/delete。
+  Future<int> insertScoreRecordLog(Map<String, dynamic> map) async {
+    final db = await database;
+    return db.insert('score_record_logs', map);
+  }
+
+  /// 获取某条评分记录的修改历史（按时间倒序，最新在前）。
+  Future<List<Map<String, dynamic>>> getScoreRecordLogs(int recordId) async {
+    final db = await database;
+    return db.query(
+      'score_record_logs',
+      where: 'record_id = ?',
+      whereArgs: [recordId],
+      orderBy: 'id DESC',
+    );
+  }
+
+  /// 批量插入评分记录并返回每条新记录的主键 id（用于写入“新增”历史）。
+  Future<List<int>> insertScoreRecordsReturningIds(
+    List<Map<String, dynamic>> records,
+  ) async {
+    final db = await database;
+    final ids = <int>[];
+    await db.transaction((txn) async {
+      for (final record in records) {
+        final id = await txn.insert('score_records', record);
+        ids.add(id);
+      }
+    });
+    return ids;
+  }
+
+  /// 将指定评分记录移入回收站（同时写“删除”历史），并物理移出 score_records。
+  /// 返回实际归档的数量。
+  Future<int> archiveScoreRecords(List<int> ids, String deletedAt) async {
+    if (ids.isEmpty) return 0;
+    final db = await database;
+    int count = 0;
+    await db.transaction((txn) async {
+      for (final id in ids) {
+        final rows = await txn.query(
+          'score_records',
+          where: 'id = ?',
+          whereArgs: [id],
+          limit: 1,
+        );
+        if (rows.isEmpty) continue;
+        final r = rows.first;
+        await txn.insert('score_record_archives', {
+          'record_id': id,
+          'target_type': r['target_type'],
+          'target_id': r['target_id'],
+          'score': r['score'],
+          'reason': r['reason'],
+          'score_item_id': r['score_item_id'],
+          'custom_name': r['custom_name'],
+          'create_time': r['create_time'],
+          'period': r['period'],
+          'is_quick': r['is_quick'] ?? 0,
+          'deleted_at': deletedAt,
+        });
+        await txn.insert('score_record_logs', {
+          'record_id': id,
+          'action_type': 'delete',
+          'field': null,
+          'old_value': null,
+          'new_value': null,
+          'content': '记录已删除，进入回收站',
+          'log_time': deletedAt,
+        });
+        await txn.delete('score_records', where: 'id = ?', whereArgs: [id]);
+        count++;
+      }
+    });
+    return count;
+  }
+
+  /// 从回收站恢复指定记录到 score_records（保留原主键，从而延续其修改历史）。
+  /// 若其目标学生/小组已被删除则无法恢复，返回 0。
+  Future<int> restoreArchivedRecord(int archiveId) async {
+    final db = await database;
+    int restored = 0;
+    await db.transaction((txn) async {
+      final rows = await txn.query(
+        'score_record_archives',
+        where: 'id = ?',
+        whereArgs: [archiveId],
+        limit: 1,
+      );
+      if (rows.isEmpty) return;
+      final a = rows.first;
+      final targetType = a['target_type'] as String;
+      final targetId = a['target_id'] as int;
+
+      // 校验目标对象是否仍存在，避免恢复成“未知”对象
+      bool targetExists;
+      if (targetType == 'student') {
+        targetExists =
+            (await txn.query(
+              'students',
+              columns: ['id'],
+              where: 'id = ?',
+              whereArgs: [targetId],
+              limit: 1,
+            )).isNotEmpty;
+      } else if (targetType == 'group') {
+        targetExists =
+            (await txn.query(
+              'groups',
+              columns: ['id'],
+              where: 'id = ?',
+              whereArgs: [targetId],
+              limit: 1,
+            )).isNotEmpty;
+      } else {
+        targetExists = true;
+      }
+      if (!targetExists) return;
+
+      await txn.insert('score_records', {
+        'id': a['record_id'],
+        'target_type': targetType,
+        'target_id': targetId,
+        'score': a['score'],
+        'reason': a['reason'],
+        'score_item_id': a['score_item_id'],
+        'custom_name': a['custom_name'],
+        'create_time': a['create_time'],
+        'period': a['period'],
+        'is_quick': a['is_quick'] ?? 0,
+      });
+      await txn.delete(
+        'score_record_archives',
+        where: 'id = ?',
+        whereArgs: [archiveId],
+      );
+      restored = 1;
+    });
+    return restored;
+  }
+
+  /// 永久删除回收站记录（同时清除其修改历史）。返回删除的数量。
+  Future<int> permanentlyDeleteArchivedRecords(List<int> archiveIds) async {
+    if (archiveIds.isEmpty) return 0;
+    final db = await database;
+    int count = 0;
+    await db.transaction((txn) async {
+      for (final archiveId in archiveIds) {
+        final rows = await txn.query(
+          'score_record_archives',
+          columns: ['record_id'],
+          where: 'id = ?',
+          whereArgs: [archiveId],
+          limit: 1,
+        );
+        if (rows.isEmpty) continue;
+        final recordId = rows.first['record_id'] as int;
+        await txn.delete(
+          'score_record_logs',
+          where: 'record_id = ?',
+          whereArgs: [recordId],
+        );
+        await txn.delete(
+          'score_record_archives',
+          where: 'id = ?',
+          whereArgs: [archiveId],
+        );
+        count++;
+      }
+    });
+    return count;
+  }
+
+  /// 清理回收站中超过保留期（默认 7 天）的记录，同时清除其修改历史。
+  Future<int> purgeExpiredArchives({
+    required DateTime now,
+    required Duration retention,
+  }) async {
+    final db = await database;
+    final cutoff = now.subtract(retention).toIso8601String();
+    final rows = await db.query(
+      'score_record_archives',
+      columns: ['id', 'record_id'],
+      where: 'deleted_at < ?',
+      whereArgs: [cutoff],
+    );
+    if (rows.isEmpty) return 0;
+    final archiveIds = rows.map((r) => r['id'] as int).toList();
+    final recordIds = rows.map((r) => r['record_id'] as int).toList();
+    int count = 0;
+    await db.transaction((txn) async {
+      for (final recordId in recordIds) {
+        await txn.delete(
+          'score_record_logs',
+          where: 'record_id = ?',
+          whereArgs: [recordId],
+        );
+      }
+      for (final archiveId in archiveIds) {
+        await txn.delete(
+          'score_record_archives',
+          where: 'id = ?',
+          whereArgs: [archiveId],
+        );
+        count++;
+      }
+    });
+    return count;
+  }
+
+  /// 读取回收站记录（含被删除记录的目标名/学号/评分项名）。
+  Future<List<Map<String, dynamic>>> getArchivedRecords() async {
+    final db = await database;
+    return db.rawQuery('''
+      SELECT a.*,
+             CASE
+               WHEN a.target_type = 'group' THEN g.name
+               WHEN a.target_type = 'student' THEN s.name
+             END as target_name,
+             CASE
+               WHEN a.target_type = 'student' THEN s.student_number
+             END as target_student_number,
+             si.name as score_item_name
+      FROM score_record_archives a
+      LEFT JOIN groups g ON a.target_type = 'group' AND a.target_id = g.id
+      LEFT JOIN students s ON a.target_type = 'student' AND a.target_id = s.id
+      LEFT JOIN score_items si ON a.score_item_id = si.id
+      ORDER BY a.deleted_at DESC
+    ''');
   }
 
   // ---- Score Items ----

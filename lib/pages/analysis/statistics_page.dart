@@ -293,6 +293,7 @@ class _RecordManagementViewState extends State<RecordManagementView> {
       context.read<GroupProvider>().loadGroups();
       context.read<StudentProvider>().loadStudents();
       context.read<ScoreItemProvider>().loadItems();
+      context.read<ScoreProvider>().loadScoreConfig();
       _checkPendingGroupFilter();
       _loadRecords();
     });
@@ -620,6 +621,64 @@ class _RecordManagementViewState extends State<RecordManagementView> {
     );
   }
 
+  /// 编辑单条记录（分值/变动原因/评分项关联）。返回后校验并落库。
+  Future<void> _editRecordFlow(Map<String, dynamic> r) async {
+    final scoreProvider = context.read<ScoreProvider>();
+    final result = await showDialog<_EditRecordResult>(
+      context: context,
+      builder: (_) => _EditRecordDialog(
+        currentScore: (r['score'] as num).toDouble(),
+        currentReason: (r['reason'] as String? ?? ''),
+        currentItemId: r['score_item_id'] as int?,
+        currentCustom: (r['custom_name'] as String? ?? ''),
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    if (!scoreProvider.isScoreAllowed(result.score)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('分值不在允许范围内，无法保存')),
+      );
+      return;
+    }
+    await scoreProvider.editScoreRecord(
+      id: r['id'] as int,
+      score: result.score,
+      reason: result.reason,
+      scoreItemId: result.scoreItemId,
+      customName: result.customName,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('记录已修改'), duration: Duration(seconds: 2)),
+    );
+  }
+
+  /// 查看某条记录的修改记录（新增/补充变动原因/修改/删除）。
+  Future<void> _showRecordHistory(Map<String, dynamic> r) async {
+    final logs =
+        await context.read<ScoreProvider>().getRecordLogs(r['id'] as int);
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _RecordHistoryDialog(
+        title: '${r['target_name'] ?? '(未知)'} 的修改记录',
+        logs: logs,
+      ),
+    );
+  }
+
+  /// 打开回收站（先清理超过 7 天的记录，再展示剩余被删记录）。
+  Future<void> _openRecycleBin() async {
+    final provider = context.read<ScoreProvider>();
+    await provider.purgeExpiredArchives();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => const RecycleBinDialog(),
+    );
+  }
+
   String _scoreLabel(double v) {
     if (v > 0) return '+${v.toStringAsFixed(1)}';
     if (v < 0) return v.toStringAsFixed(1);
@@ -702,13 +761,21 @@ class _RecordManagementViewState extends State<RecordManagementView> {
     if (!_batchMode) {
       return Padding(
         padding: const EdgeInsets.only(right: 8),
-        child: Align(
-          alignment: Alignment.centerRight,
-          child: TextButton.icon(
-            onPressed: _enterBatchMode,
-            icon: const Icon(Icons.checklist, size: 18),
-            label: const Text('批量操作'),
-          ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            TextButton.icon(
+              onPressed: _openRecycleBin,
+              icon: const Icon(Icons.delete_outline, size: 18),
+              label: const Text('回收站'),
+            ),
+            if (records.isNotEmpty)
+              TextButton.icon(
+                onPressed: _enterBatchMode,
+                icon: const Icon(Icons.checklist, size: 18),
+                label: const Text('批量操作'),
+              ),
+          ],
         ),
       );
     }
@@ -837,8 +904,8 @@ class _RecordManagementViewState extends State<RecordManagementView> {
             ],
           ),
         ),
-        // 批量操作控制栏
-        if (isUnlocked && records.isNotEmpty) _buildBatchBar(records),
+        // 批量操作/回收站控制栏
+        if (isUnlocked) _buildBatchBar(records),
 
         // 记录列表
         Expanded(
@@ -940,22 +1007,23 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                               color: isPositive ? Colors.green : Colors.red,
                             ),
                           ),
-                          // 补充/修改变动原因（快速评分或缺失评分项的记录）
-                          if (!_batchMode &&
-                              isUnlocked &&
-                              (isQuick || !hasScoreItem))
+                          // 编辑记录（修改分值/变动原因/评分项关联；所有记录可用）
+                          if (!_batchMode && isUnlocked)
                             IconButton(
-                              tooltip: hasReason ? '修改变动原因' : '补充变动原因',
-                              icon: Icon(
-                                hasReason
-                                    ? Icons.edit_note
-                                    : Icons.note_add,
-                                size: 20,
-                                color: Colors.blueGrey,
-                              ),
-                              onPressed: () => _runSupplementFlow([r]),
+                              tooltip: '编辑记录',
+                              icon: const Icon(Icons.edit, size: 20),
+                              color: Colors.blueGrey,
+                              onPressed: () => _editRecordFlow(r),
                             ),
-                          // 单条删除（批量模式下交由批量删除处理）
+                          // 查看该记录的修改记录
+                          if (!_batchMode && isUnlocked)
+                            IconButton(
+                              tooltip: '查看修改记录',
+                              icon: const Icon(Icons.history, size: 20),
+                              color: Colors.blueGrey,
+                              onPressed: () => _showRecordHistory(r),
+                            ),
+                          // 单条删除（移入回收站；批量模式下交由批量删除处理）
                           if (!_batchMode && isUnlocked)
                             IconButton(
                               icon: const Icon(Icons.delete, size: 20),
@@ -985,5 +1053,482 @@ class _SupplementResult {
     this.customName = '',
     this.reason = '',
   });
+}
+
+
+/// 编辑记录对话框的返回结果。
+class _EditRecordResult {
+  final double score;
+  final int? scoreItemId; // null 表示自定义/不关联预设
+  final String customName;
+  final String reason;
+
+  _EditRecordResult({
+    required this.score,
+    this.scoreItemId,
+    this.customName = '',
+    this.reason = '',
+  });
+}
+
+/// 编辑单条评分记录（分值/变动原因/评分项关联）对话框。
+class _EditRecordDialog extends StatefulWidget {
+  final double currentScore;
+  final String currentReason;
+  final int? currentItemId;
+  final String currentCustom;
+
+  const _EditRecordDialog({
+    required this.currentScore,
+    required this.currentReason,
+    this.currentItemId,
+    this.currentCustom = '',
+  });
+
+  @override
+  State<_EditRecordDialog> createState() => _EditRecordDialogState();
+}
+
+class _EditRecordDialogState extends State<_EditRecordDialog> {
+  late final TextEditingController _scoreController;
+  late final TextEditingController _reasonController;
+  late final TextEditingController _customController;
+  late int? _chosenItemId;
+  String _error = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _scoreController = TextEditingController(
+      text: widget.currentScore.toString(),
+    );
+    _reasonController = TextEditingController(text: widget.currentReason);
+    _customController = TextEditingController(text: widget.currentCustom);
+    _chosenItemId = widget.currentItemId;
+  }
+
+  @override
+  void dispose() {
+    _scoreController.dispose();
+    _reasonController.dispose();
+    _customController.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final score = double.tryParse(_scoreController.text.trim());
+    if (score == null) {
+      setState(() => _error = '请输入有效的分值（可含负号与小数，如 0.5 或 -1）');
+      return;
+    }
+    if (!context.read<ScoreProvider>().isScoreAllowed(score)) {
+      setState(() => _error = '分值不在当前允许范围内，无法保存');
+      return;
+    }
+    Navigator.pop(
+      context,
+      _EditRecordResult(
+        score: score,
+        scoreItemId: _chosenItemId,
+        customName: _customController.text.trim(),
+        reason: _reasonController.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = context.read<ScoreItemProvider>().items;
+    final isCustom = _chosenItemId == null;
+    return AlertDialog(
+      title: const Text('编辑记录'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_error.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Text(
+                  _error,
+                  style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                ),
+              ),
+            TextField(
+              controller: _scoreController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+                signed: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: '分值',
+                border: OutlineInputBorder(),
+                hintText: '请输入分值（支持小数，如 0.5 或 -1）',
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<int?>(
+              key: ValueKey('item_$_chosenItemId'),
+              initialValue: _chosenItemId,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: '评分项',
+                border: OutlineInputBorder(),
+                hintText: '选择预设（自定义则不填）',
+              ),
+              items: [
+                const DropdownMenuItem<int?>(
+                  value: null,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('自定义'),
+                  ),
+                ),
+                ...items.map(
+                  (item) => DropdownMenuItem<int?>(
+                    value: item.id,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.name,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          (item.defaultScore > 0 ? '+' : '') +
+                              item.defaultScore.toStringAsFixed(1),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: (v) => setState(() => _chosenItemId = v),
+            ),
+            if (isCustom) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: _customController,
+                decoration: const InputDecoration(
+                  labelText: '评分项名称（自定义）',
+                  border: OutlineInputBorder(),
+                  hintText: '如：考勤扣分、作业加分（不填则清除评分项）',
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            TextField(
+              controller: _reasonController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: '变动原因',
+                border: OutlineInputBorder(),
+                hintText: '请输入具体变动原因（可选）',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        ElevatedButton(
+          onPressed: _save,
+          child: const Text('保存'),
+        ),
+      ],
+    );
+  }
+}
+
+
+/// 查看单条评分记录的修改记录对话框。
+class _RecordHistoryDialog extends StatelessWidget {
+  final String title;
+  final List<Map<String, dynamic>> logs;
+
+  const _RecordHistoryDialog({
+    required this.title,
+    required this.logs,
+  });
+
+  String _fmtTime(String iso) {
+    if (iso.length < 19) return iso;
+    return iso.replaceFirst('T', ' ').substring(0, 19);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(title),
+      content: SizedBox(
+        width: 460,
+        height: 420,
+        child: logs.isEmpty
+            ? const Center(child: Text('暂无修改记录'))
+            : ListView.builder(
+                itemCount: logs.length,
+                itemBuilder: (_, i) {
+                  final log = logs[i];
+                  final action = log['action_type'] as String? ?? 'update';
+                  final content = log['content'] as String? ?? '';
+                  final time = log['log_time'] as String? ?? '';
+                  final (IconData icon, String label, Color color) =
+                      switch (action) {
+                        'create' => (
+                            Icons.add_circle_outline,
+                            '新增记录',
+                            Colors.green.shade700,
+                          ),
+                        'supplement' => (
+                            Icons.note_add_outlined,
+                            '补充变动原因',
+                            Colors.blue.shade700,
+                          ),
+                        'delete' => (
+                            Icons.delete_outline,
+                            '删除',
+                            Colors.red.shade700,
+                          ),
+                        _ => (Icons.edit_outlined, '修改', Colors.orange.shade800),
+                      };
+                  final subtitle = content.isNotEmpty
+                      ? '$content\n${_fmtTime(time)}'
+                      : _fmtTime(time);
+                  return ListTile(
+                    leading: Icon(icon, color: color),
+                    title: Text(
+                      label,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: color,
+                        fontSize: 13,
+                      ),
+                    ),
+                    subtitle: Text(
+                      subtitle,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    dense: true,
+                  );
+                },
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('关闭'),
+        ),
+      ],
+    );
+  }
+}
+
+
+/// 回收站对话框：展示被删记录，支持恢复/永久删除。
+class RecycleBinDialog extends StatefulWidget {
+  const RecycleBinDialog({super.key});
+
+  @override
+  State<RecycleBinDialog> createState() => _RecycleBinDialogState();
+}
+
+class _RecycleBinDialogState extends State<RecycleBinDialog> {
+  List<Map<String, dynamic>> _items = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final items = await context.read<ScoreProvider>().fetchArchivedRecords();
+    if (!mounted) return;
+    setState(() {
+      _items = items;
+      _loading = false;
+    });
+  }
+
+  String _fmtTime(String iso) {
+    if (iso.length < 19) return iso;
+    return iso.replaceFirst('T', ' ').substring(0, 19);
+  }
+
+  String _scoreText(double v) {
+    if (v > 0) return '+${v.toStringAsFixed(1)}';
+    if (v < 0) return v.toStringAsFixed(1);
+    return '0.0';
+  }
+
+  String _remainingLabel(String deletedAt) {
+    final deleted = DateTime.tryParse(deletedAt);
+    if (deleted == null) return '';
+    final leftDays = 7 - DateTime.now().difference(deleted).inDays;
+    if (leftDays <= 0) return '今日将自动清理';
+    return '$leftDays 天后自动清理';
+  }
+
+  Future<void> _restore(Map<String, dynamic> item) async {
+    final restored =
+        await context.read<ScoreProvider>().restoreRecordFromArchive(
+              item['id'] as int,
+            );
+    if (!mounted) return;
+    if (restored == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('目标学生/小组已不存在，无法恢复')),
+      );
+      return;
+    }
+    setState(() => _items.removeWhere((e) => e['id'] == item['id']));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已恢复该记录'), duration: Duration(seconds: 2)),
+    );
+  }
+
+  Future<void> _permanentlyDelete(Map<String, dynamic> item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('永久删除'),
+        content: const Text('该记录将被永久删除，其修改记录也将一并清除，且不可恢复。确定继续吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('永久删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await context
+        .read<ScoreProvider>()
+        .permanentlyDeleteArchivedRecords([item['id'] as int]);
+    if (!mounted) return;
+    setState(() => _items.removeWhere((e) => e['id'] == item['id']));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('回收站'),
+      content: SizedBox(
+        width: 540,
+        height: 440,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _items.isEmpty
+                ? const Center(child: Text('回收站为空'))
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '被删除的记录保留 7 天，可恢复或手动永久删除。',
+                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      ),
+                      const SizedBox(height: 8),
+
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: _items.length,
+                          itemBuilder: (_, i) {
+                            final it = _items[i];
+                            final score = (it['score'] as num).toDouble();
+                            final name = it['target_name'] as String? ?? '(未知)';
+                            final number =
+                                it['target_student_number'] as String? ?? '';
+                            final titleText =
+                                number.isNotEmpty ? '$name ($number)' : name;
+                            final period = it['period'] as int? ?? 1;
+                            final reason = it['reason'] as String? ?? '';
+                            final deletedAt = it['deleted_at'] as String? ?? '';
+                            final subtitle = reason.isNotEmpty
+                                ? '周期$period · $reason\n删除于 ${_fmtTime(deletedAt)}'
+                                : '周期$period\n删除于 ${_fmtTime(deletedAt)}';
+                            return ListTile(
+                              dense: true,
+                              title: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      titleText,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  Text(
+                                    _scoreText(score),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: score >= 0
+                                          ? Colors.green.shade700
+                                          : Colors.red.shade700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              subtitle: Text(
+                                subtitle,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    _remainingLabel(deletedAt),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    tooltip: '恢复',
+                                    icon: const Icon(Icons.restore, size: 20),
+                                    onPressed: () => _restore(it),
+                                  ),
+                                  IconButton(
+                                    tooltip: '永久删除',
+                                    icon: const Icon(
+                                      Icons.delete_forever,
+                                      size: 20,
+                                    ),
+                                    color: Colors.red,
+                                    onPressed: () => _permanentlyDelete(it),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('关闭'),
+        ),
+      ],
+    );
+  }
 }
 

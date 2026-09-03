@@ -221,7 +221,8 @@ class ScoreProvider extends ChangeNotifier {
     if (customName != null && customName.isNotEmpty) {
       map['custom_name'] = customName;
     }
-    await DatabaseHelper.instance.insertScoreRecord(map);
+    final id = await DatabaseHelper.instance.insertScoreRecord(map);
+    await _logRecordCreate(id, map);
     await loadRecords();
   }
 
@@ -254,25 +255,39 @@ class ScoreProvider extends ChangeNotifier {
       }
       records.add(map);
     }
-    final count = await DatabaseHelper.instance.batchInsertScoreRecords(
+    final ids = await DatabaseHelper.instance.insertScoreRecordsReturningIds(
       records,
     );
+    for (var i = 0; i < ids.length; i++) {
+      await _logRecordCreate(ids[i], records[i]);
+    }
     await loadRecords();
-    return count;
+    return ids.length;
   }
 
   /// 补充/更新评分记录的变动原因
   Future<void> updateScoreRecordReason(int id, String reason) async {
     await BackupService.instance.createBackup();
-    await DatabaseHelper.instance.updateScoreRecordReason(id, reason);
+    await _updateRecordFieldsWithLog(
+      id: id,
+      values: {'reason': reason},
+      action: 'supplement',
+    );
     await loadRecords();
   }
 
-  /// 批量删除评分记录（ID 可为空时安全跳过）
+  /// 批量删除评分记录：移入回收站（保留 7 天，可恢复），并清理过期回收站。
   Future<void> deleteScoreRecords(List<int> ids) async {
     if (ids.isEmpty) return;
     await BackupService.instance.createBackup();
-    await DatabaseHelper.instance.deleteScoreRecords(ids);
+    await DatabaseHelper.instance.purgeExpiredArchives(
+      now: DateTime.now(),
+      retention: _archiveRetention,
+    );
+    await DatabaseHelper.instance.archiveScoreRecords(
+      ids,
+      DateTime.now().toIso8601String(),
+    );
     await loadRecords();
   }
 
@@ -307,7 +322,7 @@ class ScoreProvider extends ChangeNotifier {
           values['is_quick'] = 0;
         }
       }
-      await DatabaseHelper.instance.updateScoreRecordFields(id, values);
+      await _updateRecordFieldsWithLog(id: id, values: values, action: 'supplement');
     }
     await loadRecords();
   }
@@ -385,9 +400,183 @@ class ScoreProvider extends ChangeNotifier {
   }
 
   Future<void> deleteScoreRecord(int id) async {
+    await deleteScoreRecords([id]);
+  }
+
+  // ---- 修改记录历史 / 编辑 / 回收站 ----
+
+  /// 回收站保留时长：7 天。
+  static const Duration _archiveRetention = Duration(days: 7);
+
+  String _scoreLabel(double v) {
+    if (v > 0) return '+${v.toStringAsFixed(1)}';
+    if (v < 0) return v.toStringAsFixed(1);
+    return '0.0';
+  }
+
+  /// 记录一条“新增”历史。
+  Future<void> _logRecordCreate(
+    int id,
+    Map<String, dynamic> map,
+  ) async {
+    final score = (map['score'] as num).toDouble();
+    await DatabaseHelper.instance.insertScoreRecordLog({
+      'record_id': id,
+      'action_type': 'create',
+      'field': null,
+      'old_value': null,
+      'new_value': null,
+      'content': '新增评分记录（分值 ${_scoreLabel(score)}）',
+      'log_time': (map['create_time'] as String?) ??
+          DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// 通用：更新单条评分记录字段，并在变更时写入修改历史。
+  /// [action] 'supplement'=补充/修改变动原因；'update'=编辑记录。
+  Future<void> _updateRecordFieldsWithLog({
+    required int id,
+    required Map<String, dynamic> values,
+    required String action,
+  }) async {
+    final dbh = DatabaseHelper.instance;
+    final before = await dbh.getScoreRecordRaw(id);
+    if (before == null) return;
+
+    final logTime = DateTime.now().toIso8601String();
+    final changed = <String>[];
+    Map<String, dynamic>? extra;
+
+    if (values.containsKey('score')) {
+      final o = (before['score'] as num).toDouble();
+      final n = (values['score'] as num).toDouble();
+      if (o != n) {
+        changed.add('分值 ${_scoreLabel(o)} → ${_scoreLabel(n)}');
+        extra = {
+          'field': 'score',
+          'old_value': _scoreLabel(o),
+          'new_value': _scoreLabel(n),
+        };
+      }
+    }
+    if (values.containsKey('reason')) {
+      final o = (before['reason'] as String? ?? '');
+      final n = (values['reason'] as String? ?? '');
+      if (o != n) {
+        if (o.isEmpty && n.isNotEmpty) {
+          changed.add('补充变动原因：$n');
+        } else if (n.isEmpty) {
+          changed.add('清空变动原因');
+        } else {
+          changed.add('修改变动原因：$n');
+        }
+      }
+    }
+    if (values.containsKey('score_item_id') ||
+        values.containsKey('custom_name')) {
+      final oItem = before['score_item_id'] as int?;
+      final oCustom = (before['custom_name'] as String? ?? '');
+      final nItem = values.containsKey('score_item_id')
+          ? values['score_item_id'] as int?
+          : oItem;
+      final nCustom = values.containsKey('custom_name')
+          ? (values['custom_name'] as String? ?? '')
+          : oCustom;
+      final oLabel = oItem != null
+          ? '关联预设评分项'
+          : (oCustom.isNotEmpty ? '自定义：$oCustom' : '');
+      final nLabel = nItem != null
+          ? '关联预设评分项'
+          : (nCustom.isNotEmpty ? '自定义：$nCustom' : '');
+      if (oLabel != nLabel) {
+        if (oLabel.isEmpty) {
+          changed.add('设置$nLabel');
+        } else if (nLabel.isEmpty) {
+          changed.add('清除$oLabel');
+        } else {
+          changed.add('$oLabel → $nLabel');
+        }
+      }
+    }
+
+    await dbh.updateScoreRecordFields(id, values);
+    if (changed.isEmpty) return;
+    await dbh.insertScoreRecordLog({
+      'record_id': id,
+      'action_type': action,
+      'field': extra?['field'],
+      'old_value': extra?['old_value'],
+      'new_value': extra?['new_value'],
+      'content': changed.join('；'),
+      'log_time': logTime,
+    });
+  }
+
+  /// 编辑单条评分记录：可修改分值、变动原因以及评分项关联（预设或自定义）。
+  /// 分值允许范围校验由调用方负责，此处仅落库并写“修改”历史。
+  Future<void> editScoreRecord({
+    required int id,
+    required double score,
+    String reason = '',
+    int? scoreItemId,
+    String customName = '',
+  }) async {
     await BackupService.instance.createBackup();
-    await DatabaseHelper.instance.deleteScoreRecord(id);
+    final before = await DatabaseHelper.instance.getScoreRecordRaw(id);
+    if (before == null) return;
+
+    final values = <String, dynamic>{
+      'score': score,
+      'reason': reason,
+    };
+    if (scoreItemId != null) {
+      values['score_item_id'] = scoreItemId;
+      values['custom_name'] = '';
+      values['is_quick'] = 0;
+    } else {
+      values['score_item_id'] = null;
+      values['custom_name'] = customName;
+      if (customName.isNotEmpty) values['is_quick'] = 0;
+    }
+
+    await _updateRecordFieldsWithLog(id: id, values: values, action: 'update');
     await loadRecords();
+  }
+
+  /// 读取某条评分记录的修改历史（最新在前）。
+  Future<List<Map<String, dynamic>>> getRecordLogs(int recordId) {
+    return DatabaseHelper.instance.getScoreRecordLogs(recordId);
+  }
+
+  /// 读取回收站记录。
+  Future<List<Map<String, dynamic>>> fetchArchivedRecords() {
+    return DatabaseHelper.instance.getArchivedRecords();
+  }
+
+  /// 恢复回收站记录到列表（其目标被删则无法恢复，返回 0）。
+  Future<int> restoreRecordFromArchive(int archiveId) async {
+    await BackupService.instance.createBackup();
+    final restored =
+        await DatabaseHelper.instance.restoreArchivedRecord(archiveId);
+    if (restored > 0) {
+      await loadRecords();
+    }
+    return restored;
+  }
+
+  /// 永久删除回收站记录。
+  Future<int> permanentlyDeleteArchivedRecords(List<int> archiveIds) async {
+    if (archiveIds.isEmpty) return 0;
+    await BackupService.instance.createBackup();
+    return DatabaseHelper.instance.permanentlyDeleteArchivedRecords(archiveIds);
+  }
+
+  /// 清理回收站中超过 7 天的记录。
+  Future<int> purgeExpiredArchives() async {
+    return DatabaseHelper.instance.purgeExpiredArchives(
+      now: DateTime.now(),
+      retention: _archiveRetention,
+    );
   }
 
   // Statistics
