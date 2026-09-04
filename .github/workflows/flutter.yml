@@ -9,11 +9,9 @@ on:
 jobs:
     build-windows:
         runs-on: windows-latest
-        # 仅当 commit 消息匹配 'build: ' 开头才触发
         if: startsWith(github.event.head_commit.message, 'build:')
         steps:
             - uses: actions/checkout@v4
-              # 需要 fetch 所有标签以便后续创建 tag，且要有 push 权限
               with:
                   fetch-depth: 0
 
@@ -32,16 +30,25 @@ jobs:
 
             - run: flutter build windows
 
-            # ---------- 新增：解析版本号并创建 Release ----------
+            # ---------- 提取版本号 ----------
             - name: Extract version from commit message
               id: extract_version
               shell: bash
               run: |
-                  # 提取 'build: ' 后面的部分，去掉首尾空格
                   VERSION=$(echo "${{ github.event.head_commit.message }}" | sed -n 's/^build:[[:space:]]*//p' | head -n1)
                   echo "VERSION=$VERSION" >> $GITHUB_ENV
                   echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+            # ======== 新增：压缩 Release 文件夹 ========
+            - name: Package Release
+              if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+              shell: bash
+              run: |
+                  cd build/windows/x64/runner
+                  # 使用 Windows 自带的 7z 压缩（GitHub Actions 环境自带）
+                  7z a -tzip release.zip ./Release/*
+
+            # ---------- 创建 Tag 和 Release ----------
             - name: Create Tag and Release
               if: github.event_name == 'push' && github.ref == 'refs/heads/main'
               env:
@@ -49,31 +56,29 @@ jobs:
               shell: bash
               run: |
                   VERSION="${{ steps.extract_version.outputs.version }}"
-                  # 如果版本号为空则退出
                   if [ -z "$VERSION" ]; then
                     echo "No version found in commit message"
                     exit 1
                   fi
 
-                  TAG="$VERSION"   # 例如 1.2.3
-                  # 检查 tag 是否已存在
+                  TAG="$VERSION"
                   if git rev-parse "$TAG" >/dev/null 2>&1; then
                     echo "Tag $TAG already exists. Skipping release creation."
                     exit 0
                   fi
 
-                  # 创建轻量 tag（或使用 -a 创建附注 tag，但需配置 git user）
                   git tag "$TAG"
                   git push origin "$TAG"
 
-                  # 创建 Release，并指定生成说明（可选）
+                  # ======== 修改：上传 ZIP 文件，而非文件夹 ========
                   gh release create "$TAG" \
                     --title "Release $VERSION" \
                     --notes "Automated release for version $VERSION" \
                     --target "${{ github.sha }}" \
-                    build/windows/x64/runner/Release*
+                    build/windows/x64/runner/release.zip
 
-            - name: Upload artifact (optional, 保留原来的上传)
+            # ---------- 保留原 artifact 上传（可选） ----------
+            - name: Upload artifact (optional)
               uses: actions/upload-artifact@v4
               with:
                   name: windows-release
