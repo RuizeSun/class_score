@@ -37,7 +37,9 @@ class PersonalizationProvider extends ChangeNotifier {
       'theme_seed_color',
     );
     if (colorStr != null && colorStr.isNotEmpty) {
-      final colorValue = int.tryParse(colorStr);
+      // setSeedColor 以十六进制字符串存储（toRadixString(16)），
+      // 因此这里必须按 radix: 16 解析，否则含字母的颜色值会解析失败。
+      final colorValue = int.tryParse(colorStr, radix: 16);
       if (colorValue != null) {
         _seedColor = Color(colorValue);
       }
