@@ -45,6 +45,48 @@ class _SystemSettingsCardState extends State<SystemSettingsCard> {
     }
   }
 
+  /// 将自动回锁间隔（分钟）转换为展示文案，0 表示永不自动回锁。
+  String _autoLockLabel(int minutes) {
+    if (minutes <= 0) return '永不自动回锁';
+    if (minutes < 60) return '解锁后 $minutes 分钟自动上锁';
+    final hours = minutes ~/ 60;
+    final remaining = minutes % 60;
+    if (remaining == 0) return '解锁后 $hours 小时自动上锁';
+    return '解锁后 $hours 小时 $remaining 分钟自动上锁';
+  }
+
+  Future<void> _showAutoLockDialog(AuthProvider auth) async {
+    const options = <int>[1, 3, 5, 10, 15, 30, 60, 0];
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('自动回锁间隔'),
+        children: options
+            .map(
+              (minutes) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(ctx, minutes),
+                child: Row(
+                  children: [
+                    Icon(
+                      auth.autoLockMinutes == minutes
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(minutes <= 0 ? '永不自动回锁' : '$minutes 分钟'),
+                  ],
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+    if (selected != null) {
+      await auth.setAutoLockMinutes(selected);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -66,6 +108,13 @@ class _SystemSettingsCardState extends State<SystemSettingsCard> {
               subtitle: const Text('开启后解锁时可输入最多100位密码，只要包含原始6位PIN码即可成功解锁'),
               value: auth.useLongPin,
               onChanged: (value) => auth.setUseLongPin(value),
+            ),
+            ListTile(
+              leading: const Icon(Icons.lock_clock),
+              title: const Text('自动回锁间隔'),
+              subtitle: Text(_autoLockLabel(auth.autoLockMinutes)),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _showAutoLockDialog(auth),
             ),
             const Divider(),
             ListTile(

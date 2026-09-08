@@ -49,6 +49,12 @@ class AuthProvider extends ChangeNotifier {
   bool _useLongPin = false;
   bool get useLongPin => _useLongPin;
 
+  // Auto-lock interval (in minutes) after a manual PIN unlock.
+  // 0 means never auto-lock (keep unlocked until manually locked or schedule rule applies).
+  static const int defaultAutoLockMinutes = 10;
+  int _autoLockMinutes = defaultAutoLockMinutes;
+  int get autoLockMinutes => _autoLockMinutes;
+
   // Weekday names
   static const weekdayNames = {
     1: '周一',
@@ -72,6 +78,13 @@ class AuthProvider extends ChangeNotifier {
       'use_long_pin',
     );
     _useLongPin = useLongPinSetting == 'true';
+
+    // Load auto-lock interval setting (defaults to 10 minutes)
+    final autoLockSetting = await DatabaseHelper.instance.getSetting(
+      'auto_lock_minutes',
+    );
+    _autoLockMinutes =
+        int.tryParse(autoLockSetting ?? '') ?? defaultAutoLockMinutes;
 
     _isUnlocked = false;
     _unlockedByManual = false;
@@ -238,6 +251,22 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Set the auto-lock interval (in minutes) applied after a manual PIN unlock.
+  /// A value of 0 disables auto-lock (the app stays unlocked until it is
+  /// manually locked or the schedule rule re-applies).
+  Future<void> setAutoLockMinutes(int minutes) async {
+    _autoLockMinutes = minutes;
+    await DatabaseHelper.instance.setSetting(
+      'auto_lock_minutes',
+      minutes.toString(),
+    );
+    // Restart the countdown immediately if currently unlocked manually.
+    if (_unlockedByManual) {
+      _startManualTimer();
+    }
+    notifyListeners();
+  }
+
   Future<bool> unlock(String pin) async {
     if (!verifyPin(pin)) {
       _errorMessage = 'PIN 码错误';
@@ -269,10 +298,12 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Manual override timer: 10 minutes, then revert to schedule rule
+  // Manual override timer: after the configured interval, revert to schedule rule.
+  // When _autoLockMinutes is 0, auto-lock is disabled.
   void _startManualTimer() {
     _manualUnlockTimer?.cancel();
-    _manualUnlockTimer = Timer(const Duration(minutes: 10), () {
+    if (_autoLockMinutes <= 0) return;
+    _manualUnlockTimer = Timer(Duration(minutes: _autoLockMinutes), () {
       if (_unlockedByManual) {
         _unlockedByManual = false;
         // Re-apply schedule rule after manual timer expires
