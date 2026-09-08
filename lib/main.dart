@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:window_manager/window_manager.dart';
+import 'services/window_service.dart';
 import 'providers/group_provider.dart';
 import 'providers/student_provider.dart';
 import 'providers/score_provider.dart';
@@ -12,17 +12,7 @@ import 'pages/core/pin_setup_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await windowManager.ensureInitialized();
-  const windowOptions = WindowOptions(
-    size: Size(1200, 800),
-    minimumSize: Size(1200, 800),
-    maximumSize: Size(1200, 800),
-    center: true,
-  );
-  await windowManager.waitUntilReadyToShow(windowOptions, () async {
-    await windowManager.show();
-    await windowManager.focus();
-  });
+  await WindowService.setup();
   runApp(const MyApp());
 }
 

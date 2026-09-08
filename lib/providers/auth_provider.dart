@@ -131,9 +131,10 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // ---- Course Schedule Management ----
-  Future<void> addCourseSchedule(Map<String, dynamic> map) async {
-    // Normalize time format before saving to database
-    final normalizedMap = Map<String, dynamic>.from(map);
+
+  /// Normalize a schedule map: drop the id and normalize time fields.
+  Map<String, dynamic> _normalizeScheduleMap(Map<String, dynamic> map) {
+    final normalizedMap = Map<String, dynamic>.from(map)..remove('id');
     if (normalizedMap.containsKey('start_time')) {
       normalizedMap['start_time'] = normalizeTime(
         normalizedMap['start_time'] as String,
@@ -144,30 +145,52 @@ class AuthProvider extends ChangeNotifier {
         normalizedMap['end_time'] as String,
       );
     }
-    await DatabaseHelper.instance.insertCourseSchedule(normalizedMap);
+    return normalizedMap;
+  }
+
+  Future<void> addCourseSchedule(Map<String, dynamic> map) async {
+    await DatabaseHelper.instance.insertCourseSchedule(
+      _normalizeScheduleMap(map),
+    );
     await loadCourseSchedules();
   }
 
   Future<void> updateCourseSchedule(int id, Map<String, dynamic> map) async {
-    // Normalize time format before saving to database
-    final normalizedMap = Map<String, dynamic>.from(map);
-    if (normalizedMap.containsKey('start_time')) {
-      normalizedMap['start_time'] = normalizeTime(
-        normalizedMap['start_time'] as String,
-      );
-    }
-    if (normalizedMap.containsKey('end_time')) {
-      normalizedMap['end_time'] = normalizeTime(
-        normalizedMap['end_time'] as String,
-      );
-    }
-    await DatabaseHelper.instance.updateCourseSchedule(id, normalizedMap);
+    await DatabaseHelper.instance.updateCourseSchedule(
+      id,
+      _normalizeScheduleMap(map),
+    );
     await loadCourseSchedules();
   }
 
   Future<void> deleteCourseSchedule(int id) async {
     await DatabaseHelper.instance.deleteCourseSchedule(id);
     await loadCourseSchedules();
+  }
+
+  /// Replace the whole course schedule with [maps].
+  /// Used by the in-app table editor (explicit save).
+  Future<void> replaceCourseSchedules(List<Map<String, dynamic>> maps) async {
+    final normalized = maps.map(_normalizeScheduleMap).toList();
+    await DatabaseHelper.instance.replaceAllCourseSchedules(normalized);
+    await loadCourseSchedules();
+  }
+
+  /// Batch import course schedules. When [overwrite] is true the existing
+  /// schedules are cleared first, otherwise rows are appended.
+  /// Returns the number of imported rows.
+  Future<int> importCourseSchedules(
+    List<Map<String, dynamic>> maps, {
+    bool overwrite = false,
+  }) async {
+    final normalized = maps.map(_normalizeScheduleMap).toList();
+    if (overwrite) {
+      await DatabaseHelper.instance.replaceAllCourseSchedules(normalized);
+    } else {
+      await DatabaseHelper.instance.insertCourseSchedules(normalized);
+    }
+    await loadCourseSchedules();
+    return normalized.length;
   }
 
   // ---- PIN ----

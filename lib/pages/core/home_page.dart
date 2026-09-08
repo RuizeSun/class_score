@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/personalization_provider.dart';
+import '../../services/window_service.dart';
 import '../score/score_input_page.dart';
 import '../analysis/statistics_page.dart';
 import 'unlock_page.dart';
@@ -37,8 +38,7 @@ class _HomePageState extends State<HomePage>
     _pageController = PageController(initialPage: _currentIndex);
 
     // Disable maximize button since window size is fixed
-    windowManager.setMaximumSize(const Size(1200, 800));
-    windowManager.setMinimumSize(const Size(1200, 800));
+    WindowService.applyFixedSize();
 
     // Listen to auth state changes to toggle prevent close
     _updatePreventClose();

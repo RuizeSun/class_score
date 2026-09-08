@@ -20,6 +20,7 @@ dependencies:
     excel: ^4.0.4
     win32: ^5.15.0
     window_manager: ^0.4.3
+    screen_retriever: ^0.2.0
     package_info_plus: ^8.0.0
 
 dev_dependencies:

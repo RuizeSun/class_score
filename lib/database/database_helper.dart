@@ -377,6 +377,29 @@ class DatabaseHelper {
     return db.delete('course_schedule', where: 'id = ?', whereArgs: [id]);
   }
 
+  /// Replace the whole course schedule table with [rows] in one transaction.
+  /// Used by the table editor and the "overwrite" import mode.
+  Future<void> replaceAllCourseSchedules(List<Map<String, dynamic>> rows) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('course_schedule');
+      for (final row in rows) {
+        await txn.insert('course_schedule', row);
+      }
+    });
+  }
+
+  /// Append multiple course schedules in one transaction.
+  Future<void> insertCourseSchedules(List<Map<String, dynamic>> rows) async {
+    if (rows.isEmpty) return;
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final row in rows) {
+        await txn.insert('course_schedule', row);
+      }
+    });
+  }
+
   // ---- Groups ----
   Future<List<Map<String, dynamic>>> getGroups() async {
     final db = await database;

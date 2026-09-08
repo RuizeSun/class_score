@@ -28,7 +28,7 @@ class _CourseSchedulePageState extends State<CourseSchedulePage> {
         onShowCourseDialog: ({Map<String, dynamic>? schedule}) =>
             showCourseScheduleDialog(context, schedule: schedule),
       ),
-      // FAB is already included in CourseScheduleManagementView, no need to duplicate
+      // 添加 / 导入按钮已包含在 CourseScheduleManagementView 的工具栏中
     );
   }
 }
