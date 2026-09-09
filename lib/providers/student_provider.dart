@@ -30,8 +30,9 @@ class StudentProvider extends ChangeNotifier {
   Future<void> addStudent(
     String name,
     String studentNumber,
-    int? groupId,
-  ) async {
+    int? groupId, {
+    bool includeInGroupTotal = true,
+  }) async {
     await BackupService.instance.createBackup();
 
     // If the student number is empty, generate the next sequential number.
@@ -45,6 +46,7 @@ class StudentProvider extends ChangeNotifier {
       'name': name,
       'student_number': finalStudentNumber,
       'group_id': groupId ?? 0,
+      'include_in_group_total': includeInGroupTotal ? 1 : 0,
     });
     await loadStudents(groupId: _filterGroupId);
   }
@@ -53,14 +55,16 @@ class StudentProvider extends ChangeNotifier {
     int id,
     String name,
     String studentNumber,
-    int? groupId,
-  ) async {
+    int? groupId, {
+    bool includeInGroupTotal = true,
+  }) async {
     await BackupService.instance.createBackup();
     // groupId 为 null 表示"未分组"，使用 0 作为"未分组"的标记值
     await DatabaseHelper.instance.updateStudent(id, {
       'name': name,
       'student_number': studentNumber,
       'group_id': groupId ?? 0,
+      'include_in_group_total': includeInGroupTotal ? 1 : 0,
     });
     await loadStudents(groupId: _filterGroupId);
   }
@@ -150,6 +154,7 @@ class StudentProvider extends ChangeNotifier {
             'name': student.name,
             'student_number': finalStudentNumber,
             'group_id': resolvedGroupId,
+            'include_in_group_total': 1,
           });
           successCount++;
         } catch (_) {

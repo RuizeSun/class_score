@@ -89,8 +89,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('1280x720 含侧边栏时网格与表格视图均无溢出', (tester) async {
-    tester.view.physicalSize = const Size(1280, 720);
+  testWidgets('1280x800 含侧边栏时网格与表格视图均无溢出', (tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -118,7 +118,10 @@ void main() {
         home: Scaffold(
           body: Row(
             children: [
-              const SizedBox(width: 260, child: ColoredBox(color: Colors.black12)),
+              const SizedBox(
+                width: 260,
+                child: ColoredBox(color: Colors.black12),
+              ),
               const VerticalDivider(width: 1),
               Expanded(
                 child: ChangeNotifierProvider<AuthProvider>.value(

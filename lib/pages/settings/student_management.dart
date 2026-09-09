@@ -34,6 +34,9 @@ void showStudentDialog(BuildContext context, {Student? student}) {
     selectedGroupId = student.groupId;
   }
 
+  // 是否参与小组总分统计，默认开启
+  bool includeInGroupTotal = student?.includeInGroupTotal ?? true;
+
   showDialog(
     context: context,
     builder: (ctx) => StatefulBuilder(
@@ -73,6 +76,18 @@ void showStudentDialog(BuildContext context, {Student? student}) {
                 });
               },
             ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: includeInGroupTotal,
+              onChanged: (v) {
+                setDialogState(() {
+                  includeInGroupTotal = v;
+                });
+              },
+              title: const Text('加入小组总分统计'),
+              subtitle: const Text('关闭后该学生的分数不计入其小组总分'),
+            ),
           ],
         ),
         actions: [
@@ -90,6 +105,7 @@ void showStudentDialog(BuildContext context, {Student? student}) {
                     name,
                     studentNumber,
                     selectedGroupId,
+                    includeInGroupTotal: includeInGroupTotal,
                   );
                   // 可能会自动创建"未分组"默认分组，因此这里刷新一次分组列表。
                   await context.read<GroupProvider>().loadGroups();
@@ -99,6 +115,7 @@ void showStudentDialog(BuildContext context, {Student? student}) {
                     name,
                     studentNumber,
                     selectedGroupId,
+                    includeInGroupTotal: includeInGroupTotal,
                   );
                   await context.read<GroupProvider>().loadGroups();
                 }
@@ -335,6 +352,16 @@ class _StudentManagementViewState extends State<StudentManagementView> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(s['group_name'] as String? ?? ''),
+                              if (((s['include_in_group_total'] as int?) ??
+                                      1) ==
+                                  0)
+                                Text(
+                                  '不参与小组总分',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.orange[700],
+                                  ),
+                                ),
                               if ((s['student_number'] as String?)
                                       ?.isNotEmpty ==
                                   true)
@@ -362,6 +389,11 @@ class _StudentManagementViewState extends State<StudentManagementView> {
                                             (s['student_number'] as String?) ??
                                             '',
                                         groupId: s['group_id'] as int?,
+                                        includeInGroupTotal:
+                                            ((s['include_in_group_total']
+                                                        as int?) ??
+                                                    1) ==
+                                                1,
                                       ),
                                     );
                                   },

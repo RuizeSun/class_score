@@ -931,6 +931,12 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                         ? '${r['target_name'] ?? '(未知)'} ($studentNumber)'
                         : '${r['target_name'] ?? '(未知)'}';
 
+                    // 该学生是否不参与小组总分统计
+                    final notInGroupTotal =
+                        r['target_type'] == 'student' &&
+                        ((r['target_include_in_group_total'] as int?) ?? 1) ==
+                            0;
+
                     // 是否由快速评分产生
                     final isQuick = (r['is_quick'] as num? ?? 0) != 0;
 
@@ -987,7 +993,36 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                       onTap: _batchMode
                           ? () => _toggleRecordSelection(recordId)
                           : null,
-                      title: Text(titleText),
+                      title: Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              titleText,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (notInGroupTotal) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade100,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '不参与小组总分',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.orange.shade800,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                       subtitle: Text(
                         subtitleContent,
                         maxLines:
@@ -1460,9 +1495,17 @@ class _RecycleBinDialogState extends State<RecycleBinDialog> {
                             final period = it['period'] as int? ?? 1;
                             final reason = it['reason'] as String? ?? '';
                             final deletedAt = it['deleted_at'] as String? ?? '';
-                            final subtitle = reason.isNotEmpty
-                                ? '周期$period · $reason\n删除于 ${_fmtTime(deletedAt)}'
-                                : '周期$period\n删除于 ${_fmtTime(deletedAt)}';
+                            // 该学生是否不参与小组总分统计
+                            final notInGroupTotal =
+                                it['target_type'] == 'student' &&
+                                ((it['target_include_in_group_total'] as int?) ??
+                                        1) ==
+                                    0;
+                            final baseSubtitle = reason.isNotEmpty
+                                ? '周期$period · $reason'
+                                : '周期$period';
+                            final subtitle =
+                                '${notInGroupTotal ? '不参与小组总分 · ' : ''}$baseSubtitle\n删除于 ${_fmtTime(deletedAt)}';
                             return ListTile(
                               dense: true,
                               title: Row(

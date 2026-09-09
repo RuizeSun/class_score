@@ -32,7 +32,7 @@ class DatabaseHelper {
     final db = await databaseFactoryFfi.openDatabase(
       dbPath,
       options: OpenDatabaseOptions(
-        version: 8,
+        version: 9,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       ),
@@ -79,6 +79,7 @@ class DatabaseHelper {
     await _createV6Tables(db);
     await _createV7Tables(db);
     await _createV8Tables(db);
+    await _createV9Tables(db);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -113,6 +114,9 @@ class DatabaseHelper {
     }
     if (oldVersion < 8) {
       await _createV8Tables(db);
+    }
+    if (oldVersion < 9) {
+      await _createV9Tables(db);
     }
   }
 
@@ -184,6 +188,15 @@ class DatabaseHelper {
       );
       await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_score_record_archives_deleted_at ON score_record_archives(deleted_at)',
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _createV9Tables(Database db) async {
+    // 学生是否参与其小组总分统计：1 参与（默认），0 不参与
+    try {
+      await db.execute(
+        'ALTER TABLE students ADD COLUMN include_in_group_total INTEGER NOT NULL DEFAULT 1',
       );
     } catch (_) {}
   }
@@ -513,6 +526,9 @@ class DatabaseHelper {
              CASE
                WHEN score_records.target_type = 'student' THEN students.student_number
              END as target_student_number,
+             CASE
+               WHEN score_records.target_type = 'student' THEN students.include_in_group_total
+             END as target_include_in_group_total,
              score_items.name as score_item_name
        FROM score_records
        LEFT JOIN groups ON score_records.target_type = 'group' AND score_records.target_id = groups.id
@@ -839,6 +855,9 @@ class DatabaseHelper {
              CASE
                WHEN a.target_type = 'student' THEN s.student_number
              END as target_student_number,
+             CASE
+               WHEN a.target_type = 'student' THEN s.include_in_group_total
+             END as target_include_in_group_total,
              si.name as score_item_name
       FROM score_record_archives a
       LEFT JOIN groups g ON a.target_type = 'group' AND a.target_id = g.id
@@ -893,6 +912,9 @@ class DatabaseHelper {
                CASE
                  WHEN score_records.target_type = 'student' THEN students.student_number
                END as target_student_number,
+               CASE
+                 WHEN score_records.target_type = 'student' THEN students.include_in_group_total
+               END as target_include_in_group_total,
                score_items.name as score_item_name
         FROM score_records
         LEFT JOIN groups ON score_records.target_type = 'group' AND score_records.target_id = groups.id
@@ -918,6 +940,9 @@ class DatabaseHelper {
                CASE
                  WHEN score_records.target_type = 'student' THEN students.student_number
                END as target_student_number,
+               CASE
+                 WHEN score_records.target_type = 'student' THEN students.include_in_group_total
+               END as target_include_in_group_total,
                score_items.name as score_item_name
         FROM score_records
         LEFT JOIN groups ON score_records.target_type = 'group' AND score_records.target_id = groups.id
@@ -1168,6 +1193,7 @@ class DatabaseHelper {
         LEFT JOIN score_records sr
           ON sr.target_type = 'student' AND sr.target_id = s.id
              AND sr.period >= $startPeriod AND sr.period <= $endPeriod
+        WHERE s.include_in_group_total = 1
         GROUP BY s.group_id
       ) m ON m.group_id = groups.id
       GROUP BY groups.id ORDER BY total_score DESC
@@ -1253,6 +1279,7 @@ class DatabaseHelper {
         FROM students s
         LEFT JOIN score_records sr
           ON sr.target_type = 'student' AND sr.target_id = s.id $periodOn
+        WHERE s.include_in_group_total = 1
         GROUP BY s.group_id
       ) m ON m.group_id = groups.id
       GROUP BY groups.id ORDER BY total_score DESC

@@ -71,10 +71,12 @@ class _AppEntryState extends State<AppEntry> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       context.read<PersonalizationProvider>().init();
       context.read<AuthProvider>().init();
       context.read<ScoreProvider>().init();
+      // 首帧后按真实非客户区再校准一次窗口尺寸，确保内容区为 1280x800。
+      await WindowService.refresh();
     });
   }
 

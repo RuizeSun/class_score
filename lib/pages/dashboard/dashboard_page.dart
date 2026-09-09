@@ -106,10 +106,11 @@ class _DashboardPageState extends State<DashboardPage> {
               (studentTodayScores[studentId] ?? 0) + score;
         }
       }
-      // 获取学生-小组映射
+      // 获取学生-小组映射（仅统计参与小组总分的学生）
       final allStudents = await db.getStudents();
       final studentGroupMap = <int, int>{};
       for (final s in allStudents) {
+        if (((s['include_in_group_total'] as int?) ?? 1) == 0) continue;
         studentGroupMap[s['id'] as int] = s['group_id'] as int;
       }
       // 获取每个小组的成员数量
