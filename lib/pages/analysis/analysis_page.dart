@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../database/database_helper.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/student_provider.dart';
 import '../../providers/group_provider.dart';
+import '../../providers/score_item_provider.dart';
 import '../../providers/score_provider.dart';
+import '../../widgets/score_record_tile.dart';
 
 class AnalysisView extends StatefulWidget {
   const AnalysisView({super.key});
@@ -41,6 +44,8 @@ class _AnalysisViewState extends State<AnalysisView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<StudentProvider>().loadStudents();
       context.read<GroupProvider>().loadGroups();
+      // 编辑记录对话框需要评分项预设列表
+      context.read<ScoreItemProvider>().loadItems();
       _loadData();
     });
   }
@@ -530,50 +535,14 @@ class _AnalysisViewState extends State<AnalysisView> {
                     ),
                   )
                 else
-                  ...(_records.take(100).map((r) {
-                    final score = (r['score'] as num).toDouble();
-                    final time = (r['create_time'] as String)
-                        .replaceFirst('T', ' ')
-                        .substring(0, 19);
-                    final itemName =
-                        r['score_item_name'] as String? ??
-                        r['custom_name'] as String? ??
-                        '-';
-                    // 根据 targetType 显示不同的名称
-                    String displayName;
-                    if (_targetType == 'group') {
-                      displayName = r['target_name'] as String? ?? '(未知)';
-                    } else {
-                      final studentNumber =
-                          r['target_student_number'] as String? ?? '';
-                      displayName = studentNumber.isNotEmpty
-                          ? '${r['target_name'] ?? '(未知)'} ($studentNumber)'
-                          : '${r['target_name'] ?? '(未知)'}';
-                    }
-                    return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 2),
-                      child: ListTile(
-                        dense: true,
-                        title: Text(
-                          '$displayName  •  $itemName',
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                        subtitle: Text(
-                          '${r['reason'] ?? ''}\n$time',
-                          style: const TextStyle(fontSize: 11),
-                          maxLines: 2,
-                        ),
-                        trailing: Text(
-                          score.toStringAsFixed(1),
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: score >= 0 ? Colors.green : Colors.red,
-                          ),
-                        ),
-                      ),
-                    );
-                  })),
+                  // 条目样式与操作逻辑复用「记录管理」的 ScoreRecordTile
+                  ...(_records.take(100).map(
+                    (r) => ScoreRecordTile(
+                      record: r,
+                      isUnlocked: context.watch<AuthProvider>().isUnlocked,
+                      onMutated: _loadData,
+                    ),
+                  )),
               ],
             ),
           ),
