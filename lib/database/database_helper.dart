@@ -889,12 +889,19 @@ class DatabaseHelper {
   }
 
   // ---- Advanced Queries ----
+  /// 排除"不参与小组总分"（students.include_in_group_total = 0）的学生评分记录。
+  /// 用于小组维度的统计（图表分析等）；记录目标为小组类型、或目标学生已不存在时不受影响。
+  static const String _excludeNotInGroupTotalFilter =
+      "(score_records.target_type <> 'student' OR score_records.target_id IN "
+      "(SELECT id FROM students WHERE include_in_group_total = 1))";
+
   Future<List<Map<String, dynamic>>> getScoreRecordsAdvanced({
     String? targetType,
     int? targetId,
     String? startDate,
     String? endDate,
     int? period,
+    bool excludeNotInGroupTotal = false,
   }) async {
     final db = await database;
     String query;
@@ -924,6 +931,10 @@ class DatabaseHelper {
           SELECT id FROM students WHERE group_id = ?
         )
       ''';
+      // 小组维度统计时排除"不参与小组总分"的学生记录
+      if (excludeNotInGroupTotal) {
+        query += ' AND $_excludeNotInGroupTotalFilter';
+      }
       whereArgs = [targetId];
       // 周期条件追加到 WHERE 子句后面
       if (period != null) {
@@ -964,6 +975,10 @@ class DatabaseHelper {
           whereArgs.add(targetId);
         }
       }
+      // 小组维度统计时排除"不参与小组总分"的学生记录
+      if (excludeNotInGroupTotal) {
+        conditions.add(_excludeNotInGroupTotalFilter);
+      }
     }
     if (startDate != null) {
       conditions.add('score_records.create_time >= ?');
@@ -988,6 +1003,7 @@ class DatabaseHelper {
     String? startDate,
     String? endDate,
     int? period,
+    bool excludeNotInGroupTotal = false,
   }) async {
     final db = await database;
     List<dynamic> whereArgs = [];
@@ -1011,6 +1027,10 @@ class DatabaseHelper {
       if (period != null) {
         query += ' AND score_records.period = ?';
         whereArgs.add(period);
+      }
+      // 小组维度统计时排除"不参与小组总分"的学生记录
+      if (excludeNotInGroupTotal) {
+        conditions.add(_excludeNotInGroupTotalFilter);
       }
       if (startDate != null) {
         conditions.add('score_records.create_time >= ?');
@@ -1049,6 +1069,10 @@ class DatabaseHelper {
           whereArgs.add(targetId);
         }
       }
+      // 小组维度统计时排除"不参与小组总分"的学生记录
+      if (excludeNotInGroupTotal) {
+        conditions.add(_excludeNotInGroupTotalFilter);
+      }
       if (startDate != null) {
         conditions.add('score_records.create_time >= ?');
         whereArgs.add(startDate);
@@ -1070,6 +1094,7 @@ class DatabaseHelper {
     String? targetType,
     int? targetId,
     int? period,
+    bool excludeNotInGroupTotal = false,
   }) async {
     final db = await database;
 
@@ -1090,6 +1115,10 @@ class DatabaseHelper {
       if (period != null) {
         query += ' AND score_records.period = ?';
         whereArgs.add(period);
+      }
+      // 小组维度统计时排除"不参与小组总分"的学生记录
+      if (excludeNotInGroupTotal) {
+        query += ' AND $_excludeNotInGroupTotalFilter';
       }
       final result = await db.rawQuery(query, whereArgs);
 
@@ -1131,6 +1160,10 @@ class DatabaseHelper {
         conditions.add('score_records.target_id = ?');
         whereArgs.add(targetId);
       }
+    }
+    // 小组维度统计时排除"不参与小组总分"的学生记录
+    if (excludeNotInGroupTotal) {
+      conditions.add(_excludeNotInGroupTotalFilter);
     }
     final whereClause = conditions.isNotEmpty
         ? 'WHERE ${conditions.join(' AND ')}'

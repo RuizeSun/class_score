@@ -22,6 +22,10 @@ class _AnalysisViewState extends State<AnalysisView> {
   int? _filterGroupId;
   String _timeRange = 'all'; // '7d', '30d', 'all'
 
+  /// 仅「小组 + 全部小组」视图可用：
+  /// 统计时是否排除"不参与小组总分"（未参加小组评分）的学生记录。
+  bool _excludeNotInGroupTotal = true;
+
   // Data
   List<Map<String, dynamic>> _records = [];
   List<Map<String, dynamic>> _distribution = [];
@@ -77,12 +81,19 @@ class _AnalysisViewState extends State<AnalysisView> {
 
     final currentPeriod = context.read<ScoreProvider>().currentPeriod;
 
+    // 小组维度统计：选中具体小组时强制排除"不参与小组总分"的学生记录，
+    // 选择「全部小组」时由开关 _excludeNotInGroupTotal 决定。
+    final excludeNotInGroupTotal =
+        _targetType == 'group' &&
+        (_filterGroupId != null || _excludeNotInGroupTotal);
+
     _records = await db.getScoreRecordsAdvanced(
       targetType: _targetType,
       targetId: targetId,
       startDate: _startDate,
       endDate: _endDate,
       period: currentPeriod,
+      excludeNotInGroupTotal: excludeNotInGroupTotal,
     );
 
     _distribution = await db.getScoreDistributionByItem(
@@ -91,12 +102,14 @@ class _AnalysisViewState extends State<AnalysisView> {
       startDate: _startDate,
       endDate: _endDate,
       period: currentPeriod,
+      excludeNotInGroupTotal: excludeNotInGroupTotal,
     );
 
     _dailyAverages = await db.getAverageDailyScores(
       targetType: _targetType,
       targetId: targetId,
       period: currentPeriod,
+      excludeNotInGroupTotal: excludeNotInGroupTotal,
     );
 
     if (!mounted) return;
@@ -207,6 +220,27 @@ class _AnalysisViewState extends State<AnalysisView> {
                     _loadData();
                   },
                 ),
+              // 「全部小组」视图下可选择是否统计未参加小组评分的学生
+              if (_targetType == 'group' && _filterGroupId == null) ...[
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  value: _excludeNotInGroupTotal,
+                  title: const Text(
+                    '统计时排除未参加小组评分的学生',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                  subtitle: const Text(
+                    '关闭后将包含这些学生的评分记录与分值',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                  onChanged: (v) {
+                    setState(() => _excludeNotInGroupTotal = v);
+                    _loadData();
+                  },
+                ),
+              ],
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -237,212 +271,244 @@ class _AnalysisViewState extends State<AnalysisView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Pie charts - score distribution (positive and negative separated, side by side)
-                Text(
-                  _targetType == 'student' ? '评分项分布（按分值占比）' : '评分项分布（按分值占比）',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 8),
+                // 评分项分布（左栏）与汇总统计（右栏）并排，提升信息密度
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 加分项饼图 - 左半部分
+                    // ===== 左栏：评分项分布 =====
                     Expanded(
                       flex: 3,
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            '加分项',
+                          const Text(
+                            '评分项分布（按分值占比）',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                              color: Colors.green,
+                              fontSize: 16,
                             ),
                           ),
-                          SizedBox(
-                            height: 200,
-                            child: _getPositiveDistribution().isEmpty
-                                ? const Center(child: Text('暂无加分项'))
-                                : PieChart(
-                                    PieChartData(
-                                      sections: _buildPositivePieSections(),
-                                      centerSpaceRadius: 40,
-                                      sectionsSpace: 2,
-                                    ),
-                                  ),
-                          ),
                           const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
-                            children: _buildPositiveLegend(),
+                          Row(
+                            children: [
+                              // 加分项饼图 - 左半部分
+                              Expanded(
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      '加分项',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      height: 200,
+                                      child: _getPositiveDistribution().isEmpty
+                                          ? const Center(
+                                              child: Text('暂无加分项'),
+                                            )
+                                          : PieChart(
+                                              PieChartData(
+                                                sections:
+                                                    _buildPositivePieSections(),
+                                                centerSpaceRadius: 40,
+                                                sectionsSpace: 2,
+                                              ),
+                                            ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 4,
+                                      children: _buildPositiveLegend(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              // 扣分项饼图 - 右半部分
+                              Expanded(
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      '扣分项',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        color: Colors.red,
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      height: 200,
+                                      child: _getNegativeDistribution().isEmpty
+                                          ? const Center(
+                                              child: Text('暂无扣分项'),
+                                            )
+                                          : PieChart(
+                                              PieChartData(
+                                                sections:
+                                                    _buildNegativePieSections(),
+                                                centerSpaceRadius: 40,
+                                                sectionsSpace: 2,
+                                              ),
+                                            ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 4,
+                                      children: _buildNegativeLegend(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
                     ),
+
                     const SizedBox(width: 16),
-                    // 扣分项饼图 - 右半部分
+
+                    // ===== 右栏：总加分/总扣分 与 日均加分/扣分 =====
                     Expanded(
-                      flex: 3,
+                      flex: 2,
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            '扣分项',
+                          const Text(
+                            '总加分/总扣分统计',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                              color: Colors.red,
+                              fontSize: 16,
                             ),
                           ),
-                          SizedBox(
-                            height: 200,
-                            child: _getNegativeDistribution().isEmpty
-                                ? const Center(child: Text('暂无扣分项'))
-                                : PieChart(
-                                    PieChartData(
-                                      sections: _buildNegativePieSections(),
-                                      centerSpaceRadius: 40,
-                                      sectionsSpace: 2,
+                          const SizedBox(height: 8),
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      children: [
+                                        Text(
+                                          ((_dailyAverages['total_positive'] as num?)
+                                                      ?.toDouble() ??
+                                                  0.0)
+                                              .toStringAsFixed(1),
+                                          style: const TextStyle(
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.green,
+                                          ),
+                                        ),
+                                        const Text('总加分'),
+                                      ],
                                     ),
                                   ),
+                                  const VerticalDivider(),
+                                  Expanded(
+                                    child: Column(
+                                      children: [
+                                        Text(
+                                          ((_dailyAverages['total_negative'] as num?)
+                                                      ?.toDouble() ??
+                                                  0.0)
+                                              .toStringAsFixed(1),
+                                          style: const TextStyle(
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.red,
+                                          ),
+                                        ),
+                                        const Text('总扣分'),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 24),
+
+                          // Average daily scores
+                          const Text(
+                            '日均加分/扣分统计',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
                           ),
                           const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
-                            children: _buildNegativeLegend(),
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      children: [
+                                        Text(
+                                          ((_dailyAverages['avg_positive'] as num?)
+                                                      ?.toDouble() ??
+                                                  0.0)
+                                              .toStringAsFixed(1),
+                                          style: const TextStyle(
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.green,
+                                          ),
+                                        ),
+                                        const Text('日均加分'),
+                                      ],
+                                    ),
+                                  ),
+                                  const VerticalDivider(),
+                                  Expanded(
+                                    child: Column(
+                                      children: [
+                                        Text(
+                                          ((_dailyAverages['avg_negative'] as num?)
+                                                      ?.toDouble() ??
+                                                  0.0)
+                                              .toStringAsFixed(1),
+                                          style: const TextStyle(
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.red,
+                                          ),
+                                        ),
+                                        const Text('日均扣分'),
+                                      ],
+                                    ),
+                                  ),
+                                  const VerticalDivider(),
+                                  Expanded(
+                                    child: Column(
+                                      children: [
+                                        Text(
+                                          '${_dailyAverages['scored_days']}',
+                                          style: const TextStyle(
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const Text('有评分天数'),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ],
                       ),
                     ),
                   ],
-                ),
-
-                const SizedBox(height: 24),
-
-                // Total scores
-                const Text(
-                  '总加分/总扣分统计',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                const SizedBox(height: 8),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            children: [
-                              Text(
-                                ((_dailyAverages['total_positive'] as num?)
-                                            ?.toDouble() ??
-                                        0.0)
-                                    .toStringAsFixed(1),
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green,
-                                ),
-                              ),
-                              const Text('总加分'),
-                            ],
-                          ),
-                        ),
-                        const VerticalDivider(),
-                        Expanded(
-                          child: Column(
-                            children: [
-                              Text(
-                                ((_dailyAverages['total_negative'] as num?)
-                                            ?.toDouble() ??
-                                        0.0)
-                                    .toStringAsFixed(1),
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.red,
-                                ),
-                              ),
-                              const Text('总扣分'),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // Average daily scores
-                const Text(
-                  '日均加分/扣分统计',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                const SizedBox(height: 8),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            children: [
-                              Text(
-                                ((_dailyAverages['avg_positive'] as num?)
-                                            ?.toDouble() ??
-                                        0.0)
-                                    .toStringAsFixed(1),
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green,
-                                ),
-                              ),
-                              const Text('日均加分'),
-                            ],
-                          ),
-                        ),
-                        const VerticalDivider(),
-                        Expanded(
-                          child: Column(
-                            children: [
-                              Text(
-                                ((_dailyAverages['avg_negative'] as num?)
-                                            ?.toDouble() ??
-                                        0.0)
-                                    .toStringAsFixed(1),
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.red,
-                                ),
-                              ),
-                              const Text('日均扣分'),
-                            ],
-                          ),
-                        ),
-                        const VerticalDivider(),
-                        Expanded(
-                          child: Column(
-                            children: [
-                              Text(
-                                '${_dailyAverages['scored_days']}',
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const Text('有评分天数'),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ),
 
                 const SizedBox(height: 24),
