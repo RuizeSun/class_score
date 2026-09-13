@@ -1,0 +1,211 @@
+import 'package:class_score/models/group.dart';
+import 'package:class_score/models/score_item.dart';
+import 'package:class_score/pages/settings/settings_common.dart';
+import 'package:class_score/pages/settings/settings_hub_page.dart';
+import 'package:class_score/providers/auth_provider.dart';
+import 'package:class_score/providers/group_provider.dart';
+import 'package:class_score/providers/personalization_provider.dart';
+import 'package:class_score/providers/score_item_provider.dart';
+import 'package:class_score/providers/score_provider.dart';
+import 'package:class_score/providers/student_provider.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+
+/// 仅提供内存数据的 Provider 集合，避免测试中访问数据库。
+
+class _FakeGroupProvider extends GroupProvider {
+  _FakeGroupProvider(this._data);
+
+  final List<Group> _data;
+
+  @override
+  List<Group> get groups => _data;
+
+  @override
+  Future<void> loadGroups() async {}
+}
+
+class _FakeStudentProvider extends StudentProvider {
+  _FakeStudentProvider(this._data);
+
+  final List<Map<String, dynamic>> _data;
+
+  @override
+  List<Map<String, dynamic>> get studentsWithGroup => _data;
+
+  @override
+  Future<void> loadStudents({int? groupId}) async {}
+}
+
+class _FakeScoreItemProvider extends ScoreItemProvider {
+  _FakeScoreItemProvider(this._data);
+
+  final List<ScoreItem> _data;
+
+  @override
+  List<ScoreItem> get items => _data;
+
+  @override
+  Future<void> loadItems() async {}
+}
+
+class _FakeScoreProvider extends ScoreProvider {
+  @override
+  Future<void> loadScoreConfig() async {}
+}
+
+class _FakeAuthProvider extends AuthProvider {
+  @override
+  List<Map<String, dynamic>> get courseSchedules => const [];
+}
+
+Widget _buildHub({
+  List<Group> groups = const [],
+  List<Map<String, dynamic>> students = const [],
+  List<ScoreItem> items = const [],
+}) {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<PersonalizationProvider>(
+        create: (_) => PersonalizationProvider(),
+      ),
+      ChangeNotifierProvider<AuthProvider>(create: (_) => _FakeAuthProvider()),
+      ChangeNotifierProvider<GroupProvider>(
+        create: (_) => _FakeGroupProvider(groups),
+      ),
+      ChangeNotifierProvider<StudentProvider>(
+        create: (_) => _FakeStudentProvider(students),
+      ),
+      ChangeNotifierProvider<ScoreProvider>(
+        create: (_) => _FakeScoreProvider(),
+      ),
+      ChangeNotifierProvider<ScoreItemProvider>(
+        create: (_) => _FakeScoreItemProvider(items),
+      ),
+    ],
+    child: const MaterialApp(home: SettingsHubPage()),
+  );
+}
+
+/// 设置 Tab 下的 9 个分项（与侧边栏文案一致）。
+const List<String> _sectionTitles = [
+  '个性化',
+  '分组管理',
+  '学生管理',
+  '预设评分项',
+  '计分规则',
+  '课程表管理',
+  '评分周期',
+  '物理密钥管理',
+  '系统设置',
+];
+
+Future<void> _openSection(WidgetTester tester, String title) async {
+  await tester.tap(find.widgetWithText(ListTile, title));
+  await tester.pumpAndSettle();
+}
+
+void _useDesktopViewport(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1280, 800);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+void main() {
+  testWidgets('各分项：统一页头且不再使用卡片（1280x800 无溢出）', (tester) async {
+    _useDesktopViewport(tester);
+    await tester.pumpWidget(_buildHub());
+    await tester.pumpAndSettle();
+
+    for (final title in _sectionTitles) {
+      await _openSection(tester, title);
+
+      expect(
+        find.byType(SettingsSectionScaffold),
+        findsOneWidget,
+        reason: '$title 应使用统一骨架',
+      );
+      // 页头标题唯一：分项内部不再重复渲染标题（侧边栏同名条目不计入）
+      expect(
+        find.descendant(
+          of: find.byType(SettingsSectionScaffold),
+          matching: find.text(title),
+        ),
+        findsOneWidget,
+        reason: '$title 页头标题应只出现一次',
+      );
+      // 设置页不再使用卡片
+      expect(find.byType(Card), findsNothing, reason: '$title 不应使用卡片');
+      expect(tester.takeException(), isNull, reason: '$title 渲染不应出错');
+    }
+  });
+
+  testWidgets('列表型分项空状态统一为图标 + 主提示 + 次要提示', (tester) async {
+    _useDesktopViewport(tester);
+    await tester.pumpWidget(_buildHub());
+    await tester.pumpAndSettle();
+
+    const expected = <String, String>{
+      '分组管理': '暂无分组',
+      '学生管理': '暂无学生',
+      '预设评分项': '暂无预设评分项',
+      '物理密钥管理': '暂无已注册的 U 盘密钥',
+    };
+
+    for (final entry in expected.entries) {
+      await _openSection(tester, entry.key);
+
+      final emptyState = find.byType(SettingsEmptyState);
+      expect(emptyState, findsOneWidget, reason: '${entry.key} 空状态应使用统一组件');
+      expect(
+        find.descendant(of: emptyState, matching: find.byType(Icon)),
+        findsOneWidget,
+        reason: '${entry.key} 空状态应包含图标',
+      );
+      expect(find.text(entry.value), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('主操作入口统一位于内容区顶部工具栏', (tester) async {
+    _useDesktopViewport(tester);
+    await tester.pumpWidget(_buildHub(groups: [Group(id: 1, name: '第一组')]));
+    await tester.pumpAndSettle();
+
+    const toolbarButtons = <String, String>{
+      '分组管理': '添加小组',
+      '学生管理': '添加学生',
+      '预设评分项': '添加评分项',
+      '物理密钥管理': '写入密钥',
+    };
+
+    for (final entry in toolbarButtons.entries) {
+      await _openSection(tester, entry.key);
+
+      final toolbar = find.byType(SettingsToolbar);
+      expect(toolbar, findsOneWidget, reason: '${entry.key} 应有统一工具栏');
+
+      final button = find.widgetWithText(FilledButton, entry.value);
+      expect(
+        button,
+        findsOneWidget,
+        reason: '${entry.key} 缺少 ${entry.value} 按钮',
+      );
+      expect(
+        find.descendant(of: toolbar, matching: button),
+        findsOneWidget,
+        reason: '${entry.key} 的 ${entry.value} 应位于工具栏内',
+      );
+
+      // 主操作不再使用悬浮 FAB
+      expect(
+        find.byType(FloatingActionButton),
+        findsNothing,
+        reason: '${entry.key} 不应再使用 FAB',
+      );
+      expect(tester.takeException(), isNull);
+    }
+  });
+}
