@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/group_provider.dart';
 import '../../models/group.dart';
-import '../../providers/auth_provider.dart';
 import '../settings/group_management.dart'
     show showGroupDialog, showGroupMembersWithBatch, GroupManagementView;
 
@@ -32,12 +31,7 @@ class _GroupPageState extends State<GroupPage> {
         onShowGroupMembers: (Group group) =>
             showGroupMembersWithBatch(context, group),
       ),
-      floatingActionButton: context.watch<AuthProvider>().isUnlocked
-          ? FloatingActionButton(
-              onPressed: () => showGroupDialog(context),
-              child: const Icon(Icons.add),
-            )
-          : null,
+      // 添加按钮已包含在 GroupManagementView 的工具栏中
     );
   }
 }

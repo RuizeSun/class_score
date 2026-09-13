@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/score_item.dart';
 import '../../providers/score_item_provider.dart';
-import '../../providers/auth_provider.dart';
 import '../settings/score_items_management.dart'
     show showScoreItemDialog, ScoreItemsManagementView;
 
@@ -30,12 +29,7 @@ class _ScoreItemsPageState extends State<ScoreItemsPage> {
         onShowItemDialog: ({ScoreItem? item}) =>
             showScoreItemDialog(context, item: item),
       ),
-      floatingActionButton: context.watch<AuthProvider>().isUnlocked
-          ? FloatingActionButton(
-              onPressed: () => showScoreItemDialog(context),
-              child: const Icon(Icons.add),
-            )
-          : null,
+      // 添加按钮已包含在 ScoreItemsManagementView 的工具栏中
     );
   }
 }

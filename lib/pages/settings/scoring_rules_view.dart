@@ -1,0 +1,355 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/score_provider.dart';
+import 'settings_common.dart';
+
+/// 计分规则设置分项（无卡片，可嵌入 SettingsHubPage）：
+/// 学生初始分、小组初始分、小组总分计算方式、允许分值范围、快速评分。
+class ScoringRulesView extends StatefulWidget {
+  const ScoringRulesView({super.key});
+
+  @override
+  State<ScoringRulesView> createState() => _ScoringRulesViewState();
+}
+
+class _ScoringRulesViewState extends State<ScoringRulesView> {
+  late final TextEditingController _studentInitialController;
+  late final TextEditingController _groupInitialController;
+  late final TextEditingController _rangeMinController;
+  late final TextEditingController _rangeMaxController;
+
+  @override
+  void initState() {
+    super.initState();
+    _studentInitialController = TextEditingController();
+    _groupInitialController = TextEditingController();
+    _rangeMinController = TextEditingController();
+    _rangeMaxController = TextEditingController();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ScoreProvider>().loadScoreConfig().then((_) {
+        if (!mounted) return;
+        final p = context.read<ScoreProvider>();
+        setState(() {
+          _studentInitialController.text = _trimNum(
+            p.studentInitialScore.toString(),
+          );
+          _groupInitialController.text = _trimNum(
+            p.groupInitialScore.toString(),
+          );
+          _rangeMinController.text = _trimNum(p.scoreRangeMin.toString());
+          _rangeMaxController.text = _trimNum(p.scoreRangeMax.toString());
+        });
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _studentInitialController.dispose();
+    _groupInitialController.dispose();
+    _rangeMinController.dispose();
+    _rangeMaxController.dispose();
+    super.dispose();
+  }
+
+  String _trimNum(String s) {
+    if (s.endsWith('.0')) return s.substring(0, s.length - 2);
+    return s;
+  }
+
+  Future<void> _saveInitialScores() async {
+    final p = context.read<ScoreProvider>();
+    final studentVal =
+        double.tryParse(_studentInitialController.text.trim()) ?? 0.0;
+    final groupVal =
+        double.tryParse(_groupInitialController.text.trim()) ?? 0.0;
+    await p.setStudentInitialScore(studentVal);
+    await p.setGroupInitialScore(groupVal);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('初始分已保存'), duration: Duration(seconds: 2)),
+    );
+  }
+
+  Future<void> _saveScoreRange() async {
+    final minVal = double.tryParse(_rangeMinController.text.trim());
+    final maxVal = double.tryParse(_rangeMaxController.text.trim());
+    if (minVal == null || maxVal == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('请输入有效的数值'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    if (minVal > maxVal) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('下限 n1 不能大于上限 n2'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    await context.read<ScoreProvider>().setScoreRange(minVal, maxVal);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('分值范围已保存'), duration: Duration(seconds: 2)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.watch<ScoreProvider>();
+    final mode = p.groupScoreMode;
+    final rangeMode = p.scoreRangeMode;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ---- 初始分 ----
+        const SettingsSectionTitle(
+          title: '初始分',
+          subtitle: '学生初始分计入个人总分，并参与小组“学生得分总和”与“人均得分”计算。',
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _studentInitialController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                  signed: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: '学生初始分',
+                  border: OutlineInputBorder(),
+                  hintText: '默认 0',
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: TextField(
+                controller: _groupInitialController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                  signed: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: '小组初始分',
+                  border: OutlineInputBorder(),
+                  hintText: '默认 0（小组自定初始分模式生效）',
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ElevatedButton.icon(
+            onPressed: _saveInitialScores,
+            icon: const Icon(Icons.save_outlined, size: 18),
+            label: const Text('保存初始分'),
+          ),
+        ),
+
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+        const Divider(height: 1),
+
+        // ---- 小组总分计算方式 ----
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+        const SettingsSectionTitle(title: '小组总分计算方式'),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(
+                value: 'sum',
+                label: Text('学生得分总和'),
+                icon: Icon(Icons.groups),
+              ),
+              ButtonSegment(
+                value: 'group_init',
+                label: Text('小组自定初始分'),
+                icon: Icon(Icons.flag),
+              ),
+              ButtonSegment(
+                value: 'avg',
+                label: Text('人均得分'),
+                icon: Icon(Icons.equalizer),
+              ),
+            ],
+            selected: {mode},
+            showSelectedIcon: false,
+            onSelectionChanged: (selection) {
+              context.read<ScoreProvider>().setGroupScoreMode(selection.first);
+            },
+          ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _formulaRow('学生得分总和', '组内学生初始分之和 + 成员当期积分变动总和'),
+              const SizedBox(height: 8),
+              _formulaRow('小组自定初始分', '小组初始分 + 成员当期积分变动总和'),
+              const SizedBox(height: 8),
+              _formulaRow('人均得分', '（组内学生初始分之和 + 成员当期积分变动总和）÷ 组人数'),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+        const Divider(height: 1),
+
+        // ---- 允许分值范围 ----
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+        const SettingsSectionTitle(
+          title: '允许分值范围',
+          subtitle: '限制新的评分只能使用指定范围内的分值，对所有学生/小组生效。',
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(
+                value: 'only_add',
+                label: Text('仅加分'),
+                icon: Icon(Icons.add),
+              ),
+              ButtonSegment(
+                value: 'only_deduct',
+                label: Text('仅扣分'),
+                icon: Icon(Icons.remove),
+              ),
+              ButtonSegment(
+                value: 'unlimited',
+                label: Text('无限制'),
+                icon: Icon(Icons.all_inclusive),
+              ),
+              ButtonSegment(
+                value: 'custom',
+                label: Text('自定义范围'),
+                icon: Icon(Icons.tune),
+              ),
+            ],
+            selected: {rangeMode},
+            showSelectedIcon: false,
+            onSelectionChanged: (selection) {
+              context.read<ScoreProvider>().setScoreRangeMode(selection.first);
+            },
+          ),
+        ),
+        if (rangeMode == 'custom') ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _rangeMinController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                    signed: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: '下限 n1',
+                    border: OutlineInputBorder(),
+                    hintText: '最小值',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: TextField(
+                  controller: _rangeMaxController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                    signed: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: '上限 n2',
+                    border: OutlineInputBorder(),
+                    hintText: '最大值',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '允许分值范围为：n1 ≤ 评分分值 ≤ n2',
+            style: TextStyle(
+              fontSize: SettingsLayout.hintFontSize,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ElevatedButton.icon(
+              onPressed: _saveScoreRange,
+              icon: const Icon(Icons.save_outlined, size: 18),
+              label: const Text('保存分值范围'),
+            ),
+          ),
+        ],
+
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+        const Divider(height: 1),
+
+        // ---- 快速评分 ----
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+        const SettingsSectionTitle(title: '快速评分'),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          secondary: Icon(
+            Icons.bolt,
+            color: p.defaultQuickScoring
+                ? Colors.green.shade700
+                : Colors.grey.shade600,
+          ),
+          title: const Text('默认使用快速评分'),
+          subtitle: const Text('开启后，进入「评分」标签页时将默认切换到快速评分模式（默认关闭）。'),
+          value: p.defaultQuickScoring,
+          onChanged: (value) =>
+              context.read<ScoreProvider>().setDefaultQuickScoring(value),
+          contentPadding: EdgeInsets.zero,
+        ),
+      ],
+    );
+  }
+
+  Widget _formulaRow(String name, String desc) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          margin: const EdgeInsets.only(top: 5),
+          width: 6,
+          height: 6,
+          decoration: const BoxDecoration(
+            color: Colors.grey,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text('$name：$desc', style: const TextStyle(fontSize: 13)),
+        ),
+      ],
+    );
+  }
+}

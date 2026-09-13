@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/score_provider.dart';
+import 'settings_common.dart';
 
 class PeriodManagementView extends StatelessWidget {
   const PeriodManagementView({super.key});
@@ -75,79 +76,58 @@ class PeriodManagementView extends StatelessWidget {
     final currentPeriod = scoreProvider.currentPeriod;
     final canGoPrevious = currentPeriod > 1;
 
-    return Card(
-      margin: const EdgeInsets.all(16),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.calendar_today,
-                  size: 28,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 12),
-                const Text(
-                  '评分周期管理',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-              ],
+            // 切换到上一周期按钮
+            IconButton.filled(
+              onPressed: canGoPrevious
+                  ? () => _switchToPreviousPeriod(context)
+                  : null,
+              icon: const Icon(Icons.arrow_back),
+              tooltip: '切换到上一周期',
             ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // 切换到上一周期按钮
-                IconButton.filled(
-                  onPressed: canGoPrevious
-                      ? () => _switchToPreviousPeriod(context)
-                      : null,
-                  icon: const Icon(Icons.arrow_back),
-                  tooltip: '切换到上一周期',
-                ),
-                const SizedBox(width: 16),
-                // 当前周期显示
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '第 $currentPeriod 期',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                // 切换到下一周期按钮
-                IconButton.filled(
-                  onPressed: () => _switchToNextPeriod(context),
-                  icon: const Icon(Icons.arrow_forward),
-                  tooltip: '切换到下一周期',
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Center(
-              child: Text(
-                '切换到下一周期后，新周期的评分记录将从 0 开始',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+            const SizedBox(width: 16),
+            // 当前周期显示
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(12),
               ),
+              child: Text(
+                '第 $currentPeriod 期',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            // 切换到下一周期按钮
+            IconButton.filled(
+              onPressed: () => _switchToNextPeriod(context),
+              icon: const Icon(Icons.arrow_forward),
+              tooltip: '切换到下一周期',
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 24),
+        Center(
+          child: Text(
+            '切换到下一周期后，新周期的评分记录将从 0 开始',
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: SettingsLayout.hintFontSize,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

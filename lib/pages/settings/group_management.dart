@@ -5,6 +5,7 @@ import '../../providers/group_provider.dart';
 import '../../providers/student_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../database/database_helper.dart';
+import 'settings_common.dart';
 
 /// Show dialog to add or edit a group.
 void showGroupDialog(BuildContext context, {Group? group}) {
@@ -364,77 +365,86 @@ class GroupManagementView extends StatelessWidget {
   Widget build(BuildContext context) {
     final groups = context.watch<GroupProvider>().groups;
 
-    return Stack(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        groups.isEmpty
-            ? const Center(child: Text('暂无分组，点击右下角添加'))
-            : ListView.builder(
-                itemCount: groups.length,
-                itemBuilder: (_, i) {
-                  final group = groups[i];
-                  return ListTile(
-                    title: Text(group.name),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.group),
-                          tooltip: '查看成员',
-                          onPressed: () => onShowGroupMembers(group),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.edit),
-                          onPressed: () => onShowGroupDialog(group: group),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete),
-                          onPressed: () {
-                            if (group.name == '未分组') {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('不能删除默认分组"未分组"'),
-                                  backgroundColor: Colors.orange,
+        SettingsToolbar(
+          children: [
+            FilledButton.icon(
+              onPressed: () => onShowGroupDialog(),
+              icon: const Icon(Icons.add),
+              label: const Text('添加小组'),
+            ),
+          ],
+        ),
+        Expanded(
+          child: groups.isEmpty
+              ? const SettingsEmptyState(
+                  icon: Icons.groups_outlined,
+                  message: '暂无分组',
+                  hint: '点击上方“添加小组”创建第一个小组',
+                )
+              : ListView.separated(
+                  itemCount: groups.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (_, i) {
+                    final group = groups[i];
+                    return ListTile(
+                      leading: const Icon(Icons.groups_outlined),
+                      title: Text(group.name),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.group),
+                            tooltip: '查看成员',
+                            onPressed: () => onShowGroupMembers(group),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.edit),
+                            onPressed: () => onShowGroupDialog(group: group),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete),
+                            onPressed: () {
+                              if (group.name == '未分组') {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('不能删除默认分组"未分组"'),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                                return;
+                              }
+                              showDialog(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text('确认删除'),
+                                  content: Text('确定删除"${group.name}"及其所有学生吗？'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(ctx),
+                                      child: const Text('取消'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () {
+                                        context
+                                            .read<GroupProvider>()
+                                            .deleteGroup(group.id!);
+                                        Navigator.pop(ctx);
+                                      },
+                                      child: const Text('删除'),
+                                    ),
+                                  ],
                                 ),
                               );
-                              return;
-                            }
-                            showDialog(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: const Text('确认删除'),
-                                content: Text('确定删除"${group.name}"及其所有学生吗？'),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx),
-                                    child: const Text('取消'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      context.read<GroupProvider>().deleteGroup(
-                                        group.id!,
-                                      );
-                                      Navigator.pop(ctx);
-                                    },
-                                    child: const Text('删除'),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-        Positioned(
-          right: 16,
-          bottom: 16,
-          child: FloatingActionButton(
-            heroTag: 'group_fab',
-            onPressed: () => onShowGroupDialog(),
-            child: const Icon(Icons.add),
-          ),
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
         ),
       ],
     );

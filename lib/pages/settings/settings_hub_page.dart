@@ -11,8 +11,9 @@ import 'course_schedule_management.dart';
 import 'usb_key_management.dart';
 import 'system_settings.dart';
 import 'period_management.dart';
-import 'personalization_card.dart';
-import 'scoring_rules_card.dart';
+import 'personalization_view.dart';
+import 'scoring_rules_view.dart';
+import 'settings_common.dart';
 import '../../models/group.dart';
 import '../../models/student.dart';
 import '../../models/score_item.dart';
@@ -111,7 +112,7 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
           item(Icons.rule, '计分规则', SettingsSection.scoringRules),
           item(Icons.calendar_month, '课程表管理', SettingsSection.courseSchedule),
           item(Icons.calendar_today, '评分周期', SettingsSection.period),
-          item(Icons.usb, '物理密钥', SettingsSection.usbKey),
+          item(Icons.usb, '物理密钥管理', SettingsSection.usbKey),
           const Divider(),
           item(Icons.settings, '系统设置', SettingsSection.system),
         ],
@@ -121,79 +122,53 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
 
   Widget _buildContent(BuildContext context) {
     final section = _current;
-    if (section != SettingsSection.system &&
-        section != SettingsSection.personalization) {
-      final hasToolbar = section == SettingsSection.student;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: Row(
-              children: [
-                Text(
-                  _titleOf(section),
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                if (hasToolbar)
-                  PopupMenuButton(
-                    icon: const Icon(Icons.file_download),
-                    tooltip: '导入学生',
-                    itemBuilder: (ctx) => [
-                      const PopupMenuItem(
-                        value: 'csv',
-                        child: Row(
-                          children: [
-                            Icon(Icons.file_download_outlined),
-                            SizedBox(width: 8),
-                            Text('从 CSV 导入'),
-                          ],
-                        ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'excel',
-                        child: Row(
-                          children: [
-                            Icon(Icons.file_download_outlined),
-                            SizedBox(width: 8),
-                            Text('从 Excel 导入'),
-                          ],
-                        ),
-                      ),
-                    ],
-                    onSelected: (value) async {
-                      if (value == 'csv' || value == 'excel') {
-                        await StudentProvider.showImportDialog(context);
-                      }
-                    },
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Expanded(child: _buildSectionActions(context)),
-        ],
-      );
-    }
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _titleOf(section),
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          _buildSectionActions(context),
-        ],
-      ),
+    return SettingsSectionScaffold(
+      title: _titleOf(section),
+      subtitle: _subtitleOf(section),
+      scrollable: _isScrollable(section),
+      child: _buildSectionActions(context),
     );
+  }
+
+  /// 表单型分项由骨架提供滚动；列表型分项由自身 ListView 滚动。
+  bool _isScrollable(SettingsSection section) {
+    switch (section) {
+      case SettingsSection.personalization:
+      case SettingsSection.scoringRules:
+      case SettingsSection.period:
+      case SettingsSection.system:
+        return true;
+      case SettingsSection.group:
+      case SettingsSection.student:
+      case SettingsSection.scoreItems:
+      case SettingsSection.courseSchedule:
+      case SettingsSection.usbKey:
+        return false;
+    }
+  }
+
+  /// 各分项统一页头说明。
+  String _subtitleOf(SettingsSection section) {
+    switch (section) {
+      case SettingsSection.personalization:
+        return '选择主题色，并控制锁定状态下的窗口行为。';
+      case SettingsSection.group:
+        return '维护小组，支持查看成员与批量调整分组。';
+      case SettingsSection.student:
+        return '维护学生信息与所属小组，支持从 CSV / Excel 批量导入。';
+      case SettingsSection.scoreItems:
+        return '维护评分页可快速使用的预设评分项。';
+      case SettingsSection.scoringRules:
+        return '统一设置初始分、小组总分计算方式与允许分值范围。';
+      case SettingsSection.courseSchedule:
+        return '维护课程表，支持网格 / 表格编辑与批量导入。';
+      case SettingsSection.period:
+        return '查看当前评分周期，并可切换到上一 / 下一周期。';
+      case SettingsSection.usbKey:
+        return '管理用于解锁应用的 U 盘物理密钥。';
+      case SettingsSection.system:
+        return '密码解锁、数据备份导出与重置操作。';
+    }
   }
 
   Widget _buildSectionActions(BuildContext context) {
@@ -215,7 +190,7 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
               showScoreItemDialog(context, item: item),
         );
       case SettingsSection.scoringRules:
-        return const ScoringRulesCard();
+        return const ScoringRulesView();
       case SettingsSection.courseSchedule:
         return CourseScheduleManagementView(
           onShowCourseDialog: ({Map<String, dynamic>? schedule}) =>
@@ -232,9 +207,9 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
           onVerifyPinForUsbActions: () async => verifyPinForUsbActions(context),
         );
       case SettingsSection.personalization:
-        return const PersonalizationCard();
+        return const PersonalizationView();
       case SettingsSection.system:
-        return const SystemSettingsCard();
+        return const SystemSettingsView();
     }
   }
 

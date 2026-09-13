@@ -11,16 +11,17 @@ import '../../providers/student_provider.dart';
 import '../../providers/score_item_provider.dart';
 import '../../services/backup_service.dart';
 import 'pin_dialogs.dart';
+import 'settings_common.dart';
 
-/// System settings card widget for use in SettingsHubPage.
-class SystemSettingsCard extends StatefulWidget {
-  const SystemSettingsCard({super.key});
+/// System settings view for use in SettingsHubPage.
+class SystemSettingsView extends StatefulWidget {
+  const SystemSettingsView({super.key});
 
   @override
-  State<SystemSettingsCard> createState() => _SystemSettingsCardState();
+  State<SystemSettingsView> createState() => _SystemSettingsViewState();
 }
 
-class _SystemSettingsCardState extends State<SystemSettingsCard> {
+class _SystemSettingsViewState extends State<SystemSettingsView> {
   String _version = '加载中...';
   String _buildNumber = '';
 
@@ -91,83 +92,88 @@ class _SystemSettingsCardState extends State<SystemSettingsCard> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ---- 解锁与安全 ----
+        const SettingsSectionTitle(title: '解锁与安全'),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          secondary: const Icon(Icons.password),
+          title: const Text('启用长密码解锁'),
+          subtitle: const Text('开启后解锁时可输入最多100位密码，只要包含原始6位PIN码即可成功解锁'),
+          value: auth.useLongPin,
+          onChanged: (value) => auth.setUseLongPin(value),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.lock_clock),
+          title: const Text('自动回锁间隔'),
+          subtitle: Text(_autoLockLabel(auth.autoLockMinutes)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => _showAutoLockDialog(auth),
+        ),
+
+        const Divider(height: 1),
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+
+        // ---- 数据与重置 ----
+        const SettingsSectionTitle(title: '数据与重置'),
+        const SizedBox(height: 8),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.download),
+          title: const Text('导出数据库'),
+          onTap: () => exportDatabase(context),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.upload),
+          title: const Text('导入数据库（覆盖）'),
+          onTap: () => importDatabase(context),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.table_chart),
+          title: const Text('导出积分为表格'),
+          onTap: () => exportScores(context),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.clear_all),
+          title: const Text('清除全部评分记录'),
+          onTap: () => clearAllScores(context),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.refresh),
+          title: const Text('重置数据库'),
+          onTap: () => resetDatabase(context),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.settings_backup_restore),
+          title: const Text('重置全部设置（数据库和设置）'),
+          onTap: () => resetAllSettings(context),
+        ),
+
+        const Divider(height: 1),
+        Row(
           children: [
-            const Text(
-              '系统设置',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            SwitchListTile(
-              secondary: const Icon(Icons.password),
-              title: const Text('启用长密码解锁'),
-              subtitle: const Text('开启后解锁时可输入最多100位密码，只要包含原始6位PIN码即可成功解锁'),
-              value: auth.useLongPin,
-              onChanged: (value) => auth.setUseLongPin(value),
-            ),
-            ListTile(
-              leading: const Icon(Icons.lock_clock),
-              title: const Text('自动回锁间隔'),
-              subtitle: Text(_autoLockLabel(auth.autoLockMinutes)),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _showAutoLockDialog(auth),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.download),
-              title: const Text('导出数据库'),
-              onTap: () => exportDatabase(context),
-            ),
-            ListTile(
-              leading: const Icon(Icons.upload),
-              title: const Text('导入数据库（覆盖）'),
-              onTap: () => importDatabase(context),
-            ),
-            ListTile(
-              leading: const Icon(Icons.table_chart),
-              title: const Text('导出积分为表格'),
-              onTap: () => exportScores(context),
-            ),
-            ListTile(
-              leading: const Icon(Icons.clear_all),
-              title: const Text('清除全部评分记录'),
-              onTap: () => clearAllScores(context),
-            ),
-            ListTile(
-              leading: const Icon(Icons.refresh),
-              title: const Text('重置数据库'),
-              onTap: () => resetDatabase(context),
-            ),
-            ListTile(
-              leading: const Icon(Icons.settings_backup_restore),
-              title: const Text('重置全部设置（数据库和设置）'),
-              onTap: () => resetAllSettings(context),
-            ),
-            const Divider(),
-            Row(
-              children: [
-                const Icon(Icons.info_outline, size: 20),
-                const SizedBox(width: 12),
-                Text(
-                  '版本号：$_version',
-                  style: const TextStyle(color: Colors.grey),
-                ),
-                if (_buildNumber.isNotEmpty) ...[
-                  const Text('  |  ', style: TextStyle(color: Colors.grey)),
-                  Text(
-                    'build $_buildNumber',
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                ],
-              ],
-            ),
+            const Icon(Icons.info_outline, size: 20),
+            const SizedBox(width: 12),
+            Text('版本号：$_version', style: const TextStyle(color: Colors.grey)),
+            if (_buildNumber.isNotEmpty) ...[
+              const Text('  |  ', style: TextStyle(color: Colors.grey)),
+              Text(
+                'build $_buildNumber',
+                style: const TextStyle(color: Colors.grey),
+              ),
+            ],
           ],
         ),
-      ),
+      ],
     );
   }
 }

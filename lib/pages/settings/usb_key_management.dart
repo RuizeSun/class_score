@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import 'settings_common.dart';
 
 /// Show dialog to write a USB key.
 void showWriteKeyDialog(BuildContext context) {
@@ -181,80 +182,79 @@ class UsbKeyManagementView extends StatelessWidget {
     final keys = context.watch<AuthProvider>().usbKeys;
     final needsPin = _needsPinVerification(context);
 
-    return Stack(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        keys.isEmpty
-            ? const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.usb, size: 64, color: Colors.grey),
-                    SizedBox(height: 16),
-                    Text('暂无已注册的 U 盘密钥'),
-                    SizedBox(height: 8),
-                    Text('点击右下角添加', style: TextStyle(color: Colors.grey)),
-                  ],
+        SettingsToolbar(
+          children: [
+            FilledButton.icon(
+              onPressed: () async {
+                if (needsPin && onVerifyPinForUsbActions != null) {
+                  final verified = await onVerifyPinForUsbActions!();
+                  if (!verified) return;
+                }
+                onWriteKey();
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('写入密钥'),
+            ),
+          ],
+        ),
+        Expanded(
+          child: keys.isEmpty
+              ? const SettingsEmptyState(
+                  icon: Icons.usb,
+                  message: '暂无已注册的 U 盘密钥',
+                  hint: '点击上方“写入密钥”注册第一个密钥',
+                )
+              : ListView.separated(
+                  itemCount: keys.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (_, i) {
+                    final key = keys[i];
+                    return ListTile(
+                      leading: const Icon(Icons.usb),
+                      title: Text(key['label'] as String? ?? ''),
+                      subtitle: Text(
+                        '创建于 ${(key['created_at'] as String).replaceFirst('T', ' ').substring(0, 19)}',
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit),
+                            tooltip: '重命名',
+                            onPressed: () async {
+                              if (needsPin &&
+                                  onVerifyPinForUsbActions != null) {
+                                final verified =
+                                    await onVerifyPinForUsbActions!();
+                                if (!verified) return;
+                              }
+                              onRenameKey(
+                                key['id'] as int,
+                                key['label'] as String? ?? '',
+                              );
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete),
+                            tooltip: '删除密钥',
+                            onPressed: () async {
+                              if (needsPin &&
+                                  onVerifyPinForUsbActions != null) {
+                                final verified =
+                                    await onVerifyPinForUsbActions!();
+                                if (!verified) return;
+                              }
+                              onDeleteKey(key['id'] as int);
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
-              )
-            : ListView.builder(
-                itemCount: keys.length,
-                itemBuilder: (_, i) {
-                  final key = keys[i];
-                  return ListTile(
-                    leading: const Icon(Icons.usb),
-                    title: Text(key['label'] as String? ?? ''),
-                    subtitle: Text(
-                      '创建于 ${(key['created_at'] as String).replaceFirst('T', ' ').substring(0, 19)}',
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit),
-                          tooltip: '重命名',
-                          onPressed: () async {
-                            if (needsPin && onVerifyPinForUsbActions != null) {
-                              final verified =
-                                  await onVerifyPinForUsbActions!();
-                              if (!verified) return;
-                            }
-                            onRenameKey(
-                              key['id'] as int,
-                              key['label'] as String? ?? '',
-                            );
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete),
-                          tooltip: '删除密钥',
-                          onPressed: () async {
-                            if (needsPin && onVerifyPinForUsbActions != null) {
-                              final verified =
-                                  await onVerifyPinForUsbActions!();
-                              if (!verified) return;
-                            }
-                            onDeleteKey(key['id'] as int);
-                          },
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-        Positioned(
-          right: 16,
-          bottom: 16,
-          child: FloatingActionButton(
-            heroTag: 'usb_key_fab',
-            onPressed: () async {
-              if (needsPin && onVerifyPinForUsbActions != null) {
-                final verified = await onVerifyPinForUsbActions!();
-                if (!verified) return;
-              }
-              onWriteKey();
-            },
-            child: const Icon(Icons.add),
-          ),
         ),
       ],
     );

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../models/score_item.dart';
 import '../../providers/score_item_provider.dart';
 import '../../providers/auth_provider.dart';
+import 'settings_common.dart';
 
 /// Show dialog to add or edit a score item.
 void showScoreItemDialog(BuildContext context, {ScoreItem? item}) {
@@ -85,78 +86,76 @@ class ScoreItemsManagementView extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = context.watch<ScoreItemProvider>().items;
 
-    return Stack(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        items.isEmpty
-            ? const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.list_alt, size: 64, color: Colors.grey),
-                    SizedBox(height: 16),
-                    Text('暂无预设评分项'),
-                    SizedBox(height: 8),
-                    Text('点击右下角添加', style: TextStyle(color: Colors.grey)),
-                  ],
+        SettingsToolbar(
+          children: [
+            FilledButton.icon(
+              onPressed: () => onShowItemDialog(),
+              icon: const Icon(Icons.add),
+              label: const Text('添加评分项'),
+            ),
+          ],
+        ),
+        Expanded(
+          child: items.isEmpty
+              ? const SettingsEmptyState(
+                  icon: Icons.list_alt_outlined,
+                  message: '暂无预设评分项',
+                  hint: '点击上方“添加评分项”创建第一个评分项',
+                )
+              : ListView.separated(
+                  itemCount: items.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (_, i) {
+                    final item = items[i];
+                    return ListTile(
+                      leading: const Icon(Icons.list_alt_outlined),
+                      title: Text(item.name),
+                      subtitle: Text(
+                        '${item.defaultScore.toStringAsFixed(1)} 分'
+                        '${item.description.isNotEmpty ? '  •  ${item.description}' : ''}',
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit),
+                            onPressed: () => onShowItemDialog(item: item),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete),
+                            onPressed: () {
+                              showDialog(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text('确认删除'),
+                                  content: Text('确定删除评分项"${item.name}"吗？'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(ctx),
+                                      child: const Text('取消'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () {
+                                        context
+                                            .read<ScoreItemProvider>()
+                                            .deleteItem(item.id!);
+                                        Navigator.pop(ctx);
+                                      },
+                                      child: const Text('删除'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
-              )
-            : ListView.builder(
-                itemCount: items.length,
-                itemBuilder: (_, i) {
-                  final item = items[i];
-                  return ListTile(
-                    title: Text(item.name),
-                    subtitle: Text(
-                      '${item.defaultScore.toStringAsFixed(1)} 分'
-                      '${item.description.isNotEmpty ? '  •  ${item.description}' : ''}',
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit, size: 20),
-                          onPressed: () => onShowItemDialog(item: item),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete, size: 20),
-                          onPressed: () {
-                            showDialog(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: const Text('确认删除'),
-                                content: Text('确定删除评分项"${item.name}"吗？'),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx),
-                                    child: const Text('取消'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      context
-                                          .read<ScoreItemProvider>()
-                                          .deleteItem(item.id!);
-                                      Navigator.pop(ctx);
-                                    },
-                                    child: const Text('删除'),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-        Positioned(
-          right: 16,
-          bottom: 16,
-          child: FloatingActionButton(
-            heroTag: 'score_item_fab',
-            onPressed: () => onShowItemDialog(),
-            child: const Icon(Icons.add),
-          ),
         ),
       ],
     );

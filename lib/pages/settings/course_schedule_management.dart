@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/schedule_import_service.dart';
+import 'settings_common.dart';
 
 /// Show dialog to add or edit a course schedule.
 ///
@@ -310,7 +311,6 @@ class _CourseScheduleManagementViewState
     _showMessage('已保存 ${maps.length} 条课程安排');
   }
 
-
   // ---- 导入 ----
 
   Future<void> _importSchedules() async {
@@ -340,9 +340,7 @@ class _CourseScheduleManagementViewState
     if (!mounted) return;
 
     _loadRowsFromProvider();
-    _showMessage(
-      overwrite ? '已覆盖导入 $count 条课程安排' : '已追加导入 $count 条课程安排',
-    );
+    _showMessage(overwrite ? '已覆盖导入 $count 条课程安排' : '已追加导入 $count 条课程安排');
   }
 
   Future<int?> _showImportPreview(
@@ -462,7 +460,6 @@ class _CourseScheduleManagementViewState
     );
   }
 
-
   // ---- 构建 ----
 
   @override
@@ -482,50 +479,44 @@ class _CourseScheduleManagementViewState
   }
 
   Widget _buildToolbar(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          SegmentedButton<CourseScheduleViewMode>(
-            segments: const [
-              ButtonSegment(
-                value: CourseScheduleViewMode.grid,
-                icon: Icon(Icons.grid_on),
-                label: Text('网格'),
-              ),
-              ButtonSegment(
-                value: CourseScheduleViewMode.table,
-                icon: Icon(Icons.table_rows),
-                label: Text('表格'),
-              ),
-            ],
-            selected: {_mode},
-            onSelectionChanged: (selection) => _switchMode(selection.first),
-            showSelectedIcon: false,
-          ),
-          OutlinedButton.icon(
-            onPressed: _importSchedules,
-            icon: const Icon(Icons.file_upload_outlined),
-            label: const Text('导入'),
-          ),
-          FilledButton.tonalIcon(
-            onPressed: () => widget.onShowCourseDialog(),
-            icon: const Icon(Icons.add),
-            label: const Text('添加课程'),
-          ),
-          if (_mode == CourseScheduleViewMode.table && _dirty) ...[
-            FilledButton.icon(
-              onPressed: _saveRows,
-              icon: const Icon(Icons.save_outlined),
-              label: const Text('保存'),
+    return SettingsToolbar(
+      children: [
+        SegmentedButton<CourseScheduleViewMode>(
+          segments: const [
+            ButtonSegment(
+              value: CourseScheduleViewMode.grid,
+              icon: Icon(Icons.grid_on),
+              label: Text('网格'),
             ),
-            TextButton(onPressed: _discardChanges, child: const Text('取消')),
+            ButtonSegment(
+              value: CourseScheduleViewMode.table,
+              icon: Icon(Icons.table_rows),
+              label: Text('表格'),
+            ),
           ],
+          selected: {_mode},
+          onSelectionChanged: (selection) => _switchMode(selection.first),
+          showSelectedIcon: false,
+        ),
+        OutlinedButton.icon(
+          onPressed: _importSchedules,
+          icon: const Icon(Icons.file_upload_outlined),
+          label: const Text('导入'),
+        ),
+        FilledButton.tonalIcon(
+          onPressed: () => widget.onShowCourseDialog(),
+          icon: const Icon(Icons.add),
+          label: const Text('添加课程'),
+        ),
+        if (_mode == CourseScheduleViewMode.table && _dirty) ...[
+          FilledButton.icon(
+            onPressed: _saveRows,
+            icon: const Icon(Icons.save_outlined),
+            label: const Text('保存'),
+          ),
+          TextButton(onPressed: _discardChanges, child: const Text('取消')),
         ],
-      ),
+      ],
     );
   }
 
@@ -587,7 +578,7 @@ class _CourseScheduleManagementViewState
     // 表格宽度自适应可用空间：时间列固定，星期列等分，避免横向滚动
     return Scrollbar(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        padding: EdgeInsets.zero,
         child: Table(
           border: TableBorder.all(color: theme.dividerColor, width: 0.5),
           columnWidths: {
@@ -626,7 +617,6 @@ class _CourseScheduleManagementViewState
     );
   }
 
-
   Widget _gridHeaderCell(BuildContext context, String text) {
     return Container(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -664,22 +654,14 @@ class _CourseScheduleManagementViewState
   ) {
     return InkWell(
       onTap: () => widget.onShowCourseDialog(
-        schedule: {
-          'weekday': weekday,
-          'start_time': start,
-          'end_time': end,
-        },
+        schedule: {'weekday': weekday, 'start_time': start, 'end_time': end},
       ),
       child: Container(
         constraints: const BoxConstraints(minHeight: 56),
         padding: const EdgeInsets.all(6),
         child: items.isEmpty
             ? Center(
-                child: Icon(
-                  Icons.add,
-                  size: 18,
-                  color: Colors.grey.shade400,
-                ),
+                child: Icon(Icons.add, size: 18, color: Colors.grey.shade400),
               )
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -705,10 +687,7 @@ class _CourseScheduleManagementViewState
               borderRadius: BorderRadius.circular(6),
               onTap: () => widget.onShowCourseDialog(schedule: schedule),
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 6,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 child: Text(
                   schedule['course_name'] as String,
                   style: TextStyle(
@@ -749,7 +728,6 @@ class _CourseScheduleManagementViewState
     );
   }
 
-
   // ---- 表格视图（行内直接编辑）----
 
   Widget _buildTableView(BuildContext context) {
@@ -766,7 +744,7 @@ class _CourseScheduleManagementViewState
                 )
               : Scrollbar(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    padding: const EdgeInsets.only(bottom: 8),
                     child: Table(
                       border: TableBorder(
                         horizontalInside: BorderSide(
@@ -796,7 +774,7 @@ class _CourseScheduleManagementViewState
         Align(
           alignment: Alignment.centerLeft,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: const EdgeInsets.symmetric(vertical: 4),
             child: TextButton.icon(
               onPressed: _addRow,
               icon: const Icon(Icons.add),
@@ -930,7 +908,6 @@ class _CourseScheduleManagementViewState
     );
   }
 
-
   // ---- 通用辅助 ----
 
   Widget _buildEmptyState({
@@ -938,18 +915,7 @@ class _CourseScheduleManagementViewState
     required String message,
     required String hint,
   }) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text(message),
-          const SizedBox(height: 8),
-          Text(hint, style: const TextStyle(color: Colors.grey)),
-        ],
-      ),
-    );
+    return SettingsEmptyState(icon: icon, message: message, hint: hint);
   }
 
   Future<bool?> _confirm({
@@ -1028,4 +994,3 @@ class _EditableScheduleRow {
     endController.dispose();
   }
 }
-
