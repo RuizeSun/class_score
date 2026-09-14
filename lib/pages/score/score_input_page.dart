@@ -6,6 +6,7 @@ import '../../providers/student_provider.dart';
 import '../../providers/score_provider.dart';
 import '../../providers/score_item_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/student_name_text.dart';
 
 class ScoreInputPage extends StatefulWidget {
   const ScoreInputPage({super.key});
@@ -184,10 +185,10 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
             ...selectedStudents.map(
               (s) => Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Text(
-                  s.studentNumber.isNotEmpty
-                      ? '${s.name} (${s.studentNumber})'
-                      : s.name,
+                // 姓名#学号（学号灰色）
+                child: StudentNameText(
+                  name: s.name,
+                  studentNumber: s.studentNumber,
                 ),
               ),
             ),
@@ -598,11 +599,13 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                     final textStyle = const TextStyle(fontSize: 12);
                     double maxCardWidth = 0;
                     for (final s in filteredStudents) {
-                      final displayName = s.studentNumber.isNotEmpty
-                          ? '${s.name}  ${s.studentNumber}'
-                          : s.name;
+                      // 与卡片渲染共用「姓名#学号」的富文本构造，保证测量宽度一致
                       final textPainter = TextPainter(
-                        text: TextSpan(text: displayName, style: textStyle),
+                        text: StudentDisplay.span(
+                          name: s.name,
+                          studentNumber: s.studentNumber,
+                          nameStyle: textStyle,
+                        ),
                         textDirection: TextDirection.ltr,
                       )..layout();
                       // 卡片内容宽度 = 图标(16) + 间距(6) + 文本宽度 + 水平内边距(16)
@@ -622,9 +625,10 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                       runSpacing: 8.0,
                       children: filteredStudents.map((s) {
                         final isSelected = _selectedStudentIds.contains(s.id);
-                        final displayName = s.studentNumber.isNotEmpty
-                            ? '${s.name}  ${s.studentNumber}'
-                            : s.name;
+                        // 选中时姓名变绿，学号跟随同色并降低不透明度
+                        final nameColor = isSelected
+                            ? Colors.green.shade700
+                            : Colors.black87;
                         return GestureDetector(
                           onTap: () => _toggleStudentSelection(s.id!),
                           child: Container(
@@ -659,16 +663,20 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                                 ),
                                 const SizedBox(width: 6),
                                 Expanded(
-                                  child: Text(
-                                    displayName,
+                                  // 姓名#学号（学号灰色；选中态跟随姓名色并降低不透明度）
+                                  child: StudentNameText(
+                                    name: s.name,
+                                    studentNumber: s.studentNumber,
                                     style: textStyle.copyWith(
                                       fontWeight: isSelected
                                           ? FontWeight.w600
                                           : FontWeight.normal,
-                                      color: isSelected
-                                          ? Colors.green.shade700
-                                          : Colors.black87,
+                                      color: nameColor,
                                     ),
+                                    numberColor: StudentDisplay.numberColorFor(
+                                      nameColor,
+                                    ),
+                                    maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),

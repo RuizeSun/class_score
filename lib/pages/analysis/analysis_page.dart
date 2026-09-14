@@ -8,6 +8,7 @@ import '../../providers/group_provider.dart';
 import '../../providers/score_item_provider.dart';
 import '../../providers/score_provider.dart';
 import '../../widgets/score_record_tile.dart';
+import '../../widgets/student_name_text.dart';
 
 class AnalysisView extends StatefulWidget {
   const AnalysisView({super.key});
@@ -189,10 +190,10 @@ class _AnalysisViewState extends State<AnalysisView> {
                     ...students.map(
                       (s) => DropdownMenuItem(
                         value: s.id,
-                        child: Text(
-                          s.studentNumber.isNotEmpty
-                              ? '${s.name} (${s.studentNumber})'
-                              : s.name,
+                        // 姓名#学号（学号灰色）
+                        child: StudentNameText(
+                          name: s.name,
+                          studentNumber: s.studentNumber,
                         ),
                       ),
                     ),

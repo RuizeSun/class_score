@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/score_provider.dart';
 import '../../providers/group_provider.dart';
+import '../../widgets/student_name_text.dart';
 
 class RankingSummaryPage extends StatefulWidget {
   const RankingSummaryPage({super.key});
@@ -498,8 +499,13 @@ class _RankingSummaryPageState extends State<RankingSummaryPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      name,
+                                    // 学生模式：姓名#学号（学号灰色）；小组模式只有名称
+                                    StudentNameText(
+                                      name: name,
+                                      studentNumber: _showGroup
+                                          ? ''
+                                          : (r['student_number'] as String? ??
+                                                ''),
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w500,
                                       ),

@@ -7,6 +7,7 @@ import '../../providers/group_provider.dart';
 import '../../providers/student_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/score_record_tile.dart';
+import '../../widgets/student_name_text.dart';
 import 'analysis_page.dart';
 import 'ranking_summary_page.dart';
 
@@ -237,22 +238,12 @@ class _StatisticsViewState extends State<StatisticsView> {
                             style: const TextStyle(fontSize: 12),
                           ),
                         ),
-                        title: Text(s['name'] as String),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(s['group_name'] as String? ?? ''),
-                            if (studentNumber.isNotEmpty)
-                              Text(
-                                '学号: $studentNumber',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                          ],
+                        // 姓名#学号（学号灰色）
+                        title: StudentNameText(
+                          name: s['name'] as String,
+                          studentNumber: studentNumber,
                         ),
+                        subtitle: Text(s['group_name'] as String? ?? ''),
                         trailing: Text(
                           score.toStringAsFixed(1),
                           style: TextStyle(
@@ -809,10 +800,10 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                     ...students.map(
                       (s) => DropdownMenuItem(
                         value: s.id,
-                        child: Text(
-                          s.studentNumber.isNotEmpty
-                              ? '${s.name} (${s.studentNumber})'
-                              : s.name,
+                        // 姓名#学号（学号灰色）
+                        child: StudentNameText(
+                          name: s.name,
+                          studentNumber: s.studentNumber,
                         ),
                       ),
                     ),
@@ -995,8 +986,11 @@ class _RecycleBinDialogState extends State<RecycleBinDialog> {
                             final name = it['target_name'] as String? ?? '(未知)';
                             final number =
                                 it['target_student_number'] as String? ?? '';
-                            final titleText =
-                                number.isNotEmpty ? '$name ($number)' : name;
+                            // 姓名#学号（学号灰色）
+                            final titleSpan = StudentDisplay.span(
+                              name: name,
+                              studentNumber: number,
+                            );
                             final period = it['period'] as int? ?? 1;
                             final reason = it['reason'] as String? ?? '';
                             final deletedAt = it['deleted_at'] as String? ?? '';
@@ -1016,8 +1010,8 @@ class _RecycleBinDialogState extends State<RecycleBinDialog> {
                               title: Row(
                                 children: [
                                   Expanded(
-                                    child: Text(
-                                      titleText,
+                                    child: Text.rich(
+                                      titleSpan,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),

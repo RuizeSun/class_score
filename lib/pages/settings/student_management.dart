@@ -5,6 +5,7 @@ import '../../models/group.dart';
 import '../../providers/student_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/student_name_text.dart';
 import 'settings_common.dart';
 
 /// Show dialog to add or edit a student.
@@ -368,7 +369,11 @@ class _StudentManagementViewState extends State<StudentManagementView> {
                         value: isSelected,
                         onChanged: (_) => _toggleSelection(studentId),
                       ),
-                      title: Text(s['name'] as String),
+                      // 姓名#学号（学号灰色）
+                      title: StudentNameText(
+                        name: s['name'] as String,
+                        studentNumber: (s['student_number'] as String?) ?? '',
+                      ),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
@@ -380,15 +385,6 @@ class _StudentManagementViewState extends State<StudentManagementView> {
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.orange[700],
-                              ),
-                            ),
-                          if ((s['student_number'] as String?)?.isNotEmpty ==
-                              true)
-                            Text(
-                              '学号: ${s['student_number']}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
                               ),
                             ),
                         ],

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/score_item_provider.dart';
 import '../providers/score_provider.dart';
+import 'student_name_text.dart';
 
 /// 评分记录条目（列表样式 + 操作逻辑的唯一实现）。
 ///
@@ -89,9 +90,11 @@ class ScoreRecordTile extends StatelessWidget {
         : time;
 
     final studentNumber = r['target_student_number'] as String? ?? '';
-    final titleText = studentNumber.isNotEmpty
-        ? '${r['target_name'] ?? '(未知)'} ($studentNumber)'
-        : '${r['target_name'] ?? '(未知)'}';
+    // 姓名#学号（学号灰色）；小组记录的学号为空，只显示名称
+    final titleSpan = StudentDisplay.span(
+      name: r['target_name'] as String? ?? '(未知)',
+      studentNumber: studentNumber,
+    );
 
     // 该学生是否不参与小组总分统计
     final notInGroupTotal =
@@ -150,7 +153,9 @@ class ScoreRecordTile extends StatelessWidget {
       onTap: batchMode ? () => onToggleSelect?.call() : null,
       title: Row(
         children: [
-          Flexible(child: Text(titleText, overflow: TextOverflow.ellipsis)),
+          Flexible(
+            child: Text.rich(titleSpan, overflow: TextOverflow.ellipsis),
+          ),
           if (notInGroupTotal) ...[
             const SizedBox(width: 6),
             Container(
@@ -266,7 +271,16 @@ class RecordActions {
     await showDialog<void>(
       context: context,
       builder: (_) => _RecordHistoryDialog(
-        title: '${r['target_name'] ?? '(未知)'} 的修改记录',
+        // 姓名#学号（学号灰色） + 「的修改记录」
+        title: TextSpan(
+          children: [
+            StudentDisplay.span(
+              name: r['target_name'] as String? ?? '(未知)',
+              studentNumber: r['target_student_number'] as String? ?? '',
+            ),
+            const TextSpan(text: ' 的修改记录'),
+          ],
+        ),
         logs: logs,
       ),
     );
@@ -510,7 +524,8 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
 
 /// 查看单条评分记录的修改记录对话框。
 class _RecordHistoryDialog extends StatelessWidget {
-  final String title;
+  /// 标题（富文本：姓名#学号，学号为灰色）
+  final InlineSpan title;
   final List<Map<String, dynamic>> logs;
 
   const _RecordHistoryDialog({required this.title, required this.logs});
@@ -523,7 +538,7 @@ class _RecordHistoryDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(title),
+      title: Text.rich(title),
       content: SizedBox(
         width: 460,
         height: 420,

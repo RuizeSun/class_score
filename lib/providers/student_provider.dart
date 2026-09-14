@@ -6,6 +6,7 @@ import '../database/database_helper.dart';
 import '../services/backup_service.dart';
 import '../services/import_service.dart';
 import '../providers/group_provider.dart';
+import '../widgets/student_name_text.dart';
 
 class StudentProvider extends ChangeNotifier {
   List<Student> _students = [];
@@ -267,8 +268,10 @@ class StudentProvider extends ChangeNotifier {
                     children: students.map((s) {
                       return ListTile(
                         dense: true,
-                        title: Text(
-                          '${s.name}${s.studentNumber.isNotEmpty ? ' (${s.studentNumber})' : ''}',
+                        // 姓名#学号（学号灰色）
+                        title: StudentNameText(
+                          name: s.name,
+                          studentNumber: s.studentNumber,
                         ),
                       );
                     }).toList(),
@@ -389,8 +392,19 @@ class StudentProvider extends ChangeNotifier {
                       children: students.take(10).map((s) {
                         return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Text(
-                            '姓名: ${s.name}${s.studentNumber != null && s.studentNumber!.isNotEmpty ? ', 学号: ${s.studentNumber}' : ''}${s.groupName != null && s.groupName!.isNotEmpty ? ', 小组: ${s.groupName}' : ''}',
+                          // 姓名#学号（学号灰色），后接所属小组
+                          child: Text.rich(
+                            TextSpan(
+                              children: [
+                                StudentDisplay.span(
+                                  name: s.name,
+                                  studentNumber: s.studentNumber ?? '',
+                                ),
+                                if (s.groupName != null &&
+                                    s.groupName!.isNotEmpty)
+                                  TextSpan(text: '，小组: ${s.groupName}'),
+                              ],
+                            ),
                           ),
                         );
                       }).toList(),

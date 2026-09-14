@@ -5,6 +5,7 @@ import '../../providers/group_provider.dart';
 import '../../providers/student_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../database/database_helper.dart';
+import '../../widgets/student_name_text.dart';
 import 'settings_common.dart';
 
 /// Show dialog to add or edit a group.
@@ -85,7 +86,12 @@ Future<void> showGroupMembers(BuildContext context, Group group) async {
                 itemCount: students.length,
                 itemBuilder: (_, i) => ListTile(
                   dense: true,
-                  title: Text(students[i]['name'] as String),
+                  // 姓名#学号（学号灰色）
+                  title: StudentNameText(
+                    name: students[i]['name'] as String,
+                    studentNumber:
+                        (students[i]['student_number'] as String?) ?? '',
+                  ),
                 ),
               ),
       ),
@@ -325,15 +331,11 @@ class _GroupMembersDialogState extends State<_GroupMembersDialog> {
                         dense: true,
                         value: isSelected,
                         onChanged: (_) => _toggleSelection(studentId),
-                        title: Text(s['name'] as String),
-                        subtitle:
-                            s['student_number'] != null &&
-                                (s['student_number'] as String).isNotEmpty
-                            ? Text(
-                                '学号: ${s['student_number']}',
-                                style: const TextStyle(fontSize: 12),
-                              )
-                            : null,
+                        // 姓名#学号（学号灰色）
+                        title: StudentNameText(
+                          name: s['name'] as String,
+                          studentNumber: (s['student_number'] as String?) ?? '',
+                        ),
                       );
                     },
                   ),

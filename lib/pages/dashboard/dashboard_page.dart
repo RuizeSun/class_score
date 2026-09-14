@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../database/database_helper.dart';
 import '../../providers/score_provider.dart';
+import '../../widgets/student_name_text.dart';
 import '../analysis/statistics_page.dart';
 
 class DashboardPage extends StatefulWidget {
@@ -429,8 +430,19 @@ class _RecentScoresCard extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              '$targetName · $scoreItemName',
+                            // 姓名#学号（学号灰色）· 评分项
+                            Text.rich(
+                              TextSpan(
+                                children: [
+                                  StudentDisplay.span(
+                                    name: targetName,
+                                    studentNumber:
+                                        r['target_student_number'] as String? ??
+                                        '',
+                                  ),
+                                  TextSpan(text: ' · $scoreItemName'),
+                                ],
+                              ),
                               style: const TextStyle(fontSize: 12),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
