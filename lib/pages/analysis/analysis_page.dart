@@ -11,7 +11,22 @@ import '../../widgets/score_record_tile.dart';
 import '../../widgets/student_name_text.dart';
 
 class AnalysisView extends StatefulWidget {
-  const AnalysisView({super.key});
+  const AnalysisView({
+    super.key,
+    this.initialTargetType = 'student',
+    this.initialTargetId,
+    this.showTargetSelector = true,
+  });
+
+  /// 初始目标类型：'student' | 'group'
+  final String initialTargetType;
+
+  /// 初始目标 ID；为 null 表示「全部」
+  final int? initialTargetId;
+
+  /// 是否显示学生/小组切换与筛选控件。
+  /// 从统计报表点击某个学生/小组进入时隐藏，仅展示该目标的图表。
+  final bool showTargetSelector;
 
   @override
   State<AnalysisView> createState() => _AnalysisViewState();
@@ -19,7 +34,7 @@ class AnalysisView extends StatefulWidget {
 
 class _AnalysisViewState extends State<AnalysisView> {
   // 目标类型切换：学生/小组
-  String _targetType = 'student'; // 'student' | 'group'
+  late String _targetType; // 'student' | 'group'
 
   // 筛选器
   int? _filterStudentId;
@@ -42,6 +57,13 @@ class _AnalysisViewState extends State<AnalysisView> {
   @override
   void initState() {
     super.initState();
+    // 按外部指定的目标初始化（点击统计报表中的学生/小组进入时）
+    _targetType = widget.initialTargetType;
+    if (_targetType == 'group') {
+      _filterGroupId = widget.initialTargetId;
+    } else {
+      _filterStudentId = widget.initialTargetId;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<StudentProvider>().loadStudents();
       context.read<GroupProvider>().loadGroups();
@@ -138,114 +160,123 @@ class _AnalysisViewState extends State<AnalysisView> {
           padding: const EdgeInsets.all(8),
           child: Column(
             children: [
-              // 目标类型切换
-              Center(
-                child: SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(
-                      value: 'student',
-                      label: Text('学生'),
-                      icon: Icon(Icons.person),
+              // 目标类型切换与筛选（单个目标详情页隐藏）
+              if (widget.showTargetSelector) ...[
+                Center(
+                  child: SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(
+                        value: 'student',
+                        label: Text('学生'),
+                        icon: Icon(Icons.person),
+                      ),
+                      ButtonSegment(
+                        value: 'group',
+                        label: Text('小组'),
+                        icon: Icon(Icons.groups),
+                      ),
+                    ],
+                    selected: {_targetType},
+                    onSelectionChanged: (v) {
+                      setState(() {
+                        _targetType = v.first;
+                        // 切换时重置筛选
+                        if (_targetType == 'student') {
+                          _filterStudentId = null;
+                        } else {
+                          _filterGroupId = null;
+                        }
+                      });
+                      _loadData();
+                    },
+                    style: const ButtonStyle(
+                      iconSize: WidgetStatePropertyAll(18),
                     ),
-                    ButtonSegment(
-                      value: 'group',
-                      label: Text('小组'),
-                      icon: Icon(Icons.groups),
-                    ),
-                  ],
-                  selected: {_targetType},
-                  onSelectionChanged: (v) {
-                    setState(() {
-                      _targetType = v.first;
-                      // 切换时重置筛选
-                      if (_targetType == 'student') {
-                        _filterStudentId = null;
-                      } else {
-                        _filterGroupId = null;
-                      }
-                    });
-                    _loadData();
-                  },
-                  style: const ButtonStyle(
-                    iconSize: WidgetStatePropertyAll(18),
                   ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              // 根据目标类型显示不同的筛选下拉框
-              if (_targetType == 'student')
-                DropdownButtonFormField<int?>(
-                  decoration: const InputDecoration(
-                    labelText: '筛选学生',
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+                const SizedBox(height: 8),
+                // 根据目标类型显示不同的筛选下拉框
+                if (_targetType == 'student')
+                  DropdownButtonFormField<int?>(
+                    decoration: const InputDecoration(
+                      labelText: '筛选学生',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      isDense: true,
                     ),
-                    isDense: true,
-                  ),
-                  initialValue: _filterStudentId,
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('全部学生')),
-                    ...students.map(
-                      (s) => DropdownMenuItem(
-                        value: s.id,
-                        // 姓名#学号（学号灰色）
-                        child: StudentNameText(
-                          name: s.name,
-                          studentNumber: s.studentNumber,
+                    initialValue: _filterStudentId,
+                    items: [
+                      const DropdownMenuItem(
+                        value: null,
+                        child: Text('全部学生'),
+                      ),
+                      ...students.map(
+                        (s) => DropdownMenuItem(
+                          value: s.id,
+                          // 姓名#学号（学号灰色）
+                          child: StudentNameText(
+                            name: s.name,
+                            studentNumber: s.studentNumber,
+                          ),
                         ),
                       ),
+                    ],
+                    onChanged: (v) {
+                      setState(() => _filterStudentId = v);
+                      _loadData();
+                    },
+                  )
+                else
+                  DropdownButtonFormField<int?>(
+                    decoration: const InputDecoration(
+                      labelText: '筛选小组',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      isDense: true,
                     ),
-                  ],
-                  onChanged: (v) {
-                    setState(() => _filterStudentId = v);
-                    _loadData();
-                  },
-                )
-              else
-                DropdownButtonFormField<int?>(
-                  decoration: const InputDecoration(
-                    labelText: '筛选小组',
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+                    initialValue: _filterGroupId,
+                    items: [
+                      const DropdownMenuItem(
+                        value: null,
+                        child: Text('全部小组'),
+                      ),
+                      ...groups.map(
+                        (g) =>
+                            DropdownMenuItem(value: g.id, child: Text(g.name)),
+                      ),
+                    ],
+                    onChanged: (v) {
+                      setState(() => _filterGroupId = v);
+                      _loadData();
+                    },
+                  ),
+                // 「全部小组」视图下可选择是否统计未参加小组评分的学生
+                if (_targetType == 'group' && _filterGroupId == null) ...[
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    value: _excludeNotInGroupTotal,
+                    title: const Text(
+                      '统计时排除未参加小组评分的学生',
+                      style: TextStyle(fontSize: 13),
                     ),
-                    isDense: true,
-                  ),
-                  initialValue: _filterGroupId,
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('全部小组')),
-                    ...groups.map(
-                      (g) => DropdownMenuItem(value: g.id, child: Text(g.name)),
+                    subtitle: const Text(
+                      '关闭后将包含这些学生的评分记录与分值',
+                      style: TextStyle(fontSize: 11),
                     ),
-                  ],
-                  onChanged: (v) {
-                    setState(() => _filterGroupId = v);
-                    _loadData();
-                  },
-                ),
-              // 「全部小组」视图下可选择是否统计未参加小组评分的学生
-              if (_targetType == 'group' && _filterGroupId == null) ...[
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  value: _excludeNotInGroupTotal,
-                  title: const Text(
-                    '统计时排除未参加小组评分的学生',
-                    style: TextStyle(fontSize: 13),
+                    onChanged: (v) {
+                      setState(() => _excludeNotInGroupTotal = v);
+                      _loadData();
+                    },
                   ),
-                  subtitle: const Text(
-                    '关闭后将包含这些学生的评分记录与分值',
-                    style: TextStyle(fontSize: 11),
-                  ),
-                  onChanged: (v) {
-                    setState(() => _excludeNotInGroupTotal = v);
-                    _loadData();
-                  },
-                ),
+                ],
               ],
               const SizedBox(height: 8),
               Row(

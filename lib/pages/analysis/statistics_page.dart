@@ -8,7 +8,7 @@ import '../../providers/student_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/score_record_tile.dart';
 import '../../widgets/student_name_text.dart';
-import 'analysis_page.dart';
+import 'analysis_detail_page.dart';
 import 'ranking_summary_page.dart';
 
 class StatisticsAnalysisPage extends StatefulWidget {
@@ -25,7 +25,7 @@ class _StatisticsAnalysisPageState extends State<StatisticsAnalysisPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
   }
 
   @override
@@ -34,9 +34,18 @@ class _StatisticsAnalysisPageState extends State<StatisticsAnalysisPage>
     super.dispose();
   }
 
-  // 切换到指定Tab的方法
-  void switchToTab(int index) {
-    _tabController.animateTo(index);
+  /// 打开图表分析页：targetId 为空时打开班级（全部）视图。
+  void _openAnalysis(String targetType, int? targetId, String name) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AnalysisDetailPage(
+          targetType: targetType,
+          targetId: targetId,
+          title: targetId == null ? '班级图表分析' : '图表分析 · $name',
+        ),
+      ),
+    );
   }
 
   @override
@@ -46,19 +55,14 @@ class _StatisticsAnalysisPageState extends State<StatisticsAnalysisPage>
         toolbarHeight: 0,
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: '统计报表'),
-            Tab(text: '记录管理'),
-            Tab(text: '图表分析'),
-          ],
+          tabs: const [Tab(text: '统计报表'), Tab(text: '记录管理')],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
         children: [
-          StatisticsView(onSwitchToRecord: () => switchToTab(1)),
+          StatisticsView(onOpenAnalysis: _openAnalysis),
           RecordManagementView(),
-          const AnalysisView(),
         ],
       ),
     );
@@ -68,8 +72,12 @@ class _StatisticsAnalysisPageState extends State<StatisticsAnalysisPage>
 // ==================== 统计报表 ====================
 
 class StatisticsView extends StatefulWidget {
-  final VoidCallback? onSwitchToRecord;
-  const StatisticsView({super.key, this.onSwitchToRecord});
+  /// 点击学生/小组行时回调：跳转到对应目标的图表分析页。
+  /// [targetType] = 'student' | 'group'，[targetId] 为空表示班级（全部）视图。
+  final void Function(String targetType, int? targetId, String name)?
+      onOpenAnalysis;
+
+  const StatisticsView({super.key, this.onOpenAnalysis});
 
   @override
   State<StatisticsView> createState() => _StatisticsViewState();
@@ -90,36 +98,88 @@ class _StatisticsViewState extends State<StatisticsView> {
 
   @override
   Widget build(BuildContext context) {
-    final studentScores = context.watch<ScoreProvider>().studentTotalScores;
-    final groupScores = context.watch<ScoreProvider>().groupTotalScores;
+    final scoreProvider = context.watch<ScoreProvider>();
+    final studentScores = scoreProvider.studentTotalScores;
+    final groupScores = scoreProvider.groupTotalScores;
     final groups = context.watch<GroupProvider>().groups;
+    // 仅「全部小组」时提供班级图表分析入口（小组模式等效全部小组）
+    final showClassAnalysis = _showGroup || scoreProvider.filterGroupId == null;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 学生/小组切换
-          Center(
-            child: SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment(
-                  value: false,
-                  label: Text('学生'),
-                  icon: Icon(Icons.person),
+          // 学生/小组切换 + 高级查询 / 班级图表分析（同一行）
+          Row(
+            children: [
+              const Expanded(child: SizedBox()),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(
+                    value: false,
+                    label: Text('学生'),
+                    icon: Icon(Icons.person),
+                  ),
+                  ButtonSegment(
+                    value: true,
+                    label: Text('小组'),
+                    icon: Icon(Icons.groups),
+                  ),
+                ],
+                selected: {_showGroup},
+                onSelectionChanged: (v) {
+                  setState(() => _showGroup = v.first);
+                },
+                style: const ButtonStyle(iconSize: WidgetStatePropertyAll(18)),
+              ),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (ctx) => const RankingSummaryPage(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.filter_list, size: 18),
+                        label: const Text('高级查询'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                        ),
+                      ),
+                      if (showClassAnalysis) ...[
+                        const SizedBox(width: 8),
+                        FilledButton.tonalIcon(
+                          onPressed: () => widget.onOpenAnalysis?.call(
+                            _showGroup ? 'group' : 'student',
+                            null,
+                            '班级',
+                          ),
+                          icon: const Icon(Icons.bar_chart, size: 18),
+                          label: const Text('班级图表分析'),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-                ButtonSegment(
-                  value: true,
-                  label: Text('小组'),
-                  icon: Icon(Icons.groups),
-                ),
-              ],
-              selected: {_showGroup},
-              onSelectionChanged: (v) {
-                setState(() => _showGroup = v.first);
-              },
-              style: const ButtonStyle(iconSize: WidgetStatePropertyAll(18)),
-            ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           // 学生模式下显示按小组筛选
@@ -146,28 +206,6 @@ class _StatisticsViewState extends State<StatisticsView> {
               },
             ),
           ],
-          const SizedBox(height: 8),
-          // 高级查询按钮
-          Center(
-            child: OutlinedButton.icon(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (ctx) => const RankingSummaryPage(),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.filter_list, size: 18),
-              label: const Text('高级查询'),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
-              ),
-            ),
-          ),
           const SizedBox(height: 8),
           // 数据列表
           if (_showGroup)
@@ -203,13 +241,12 @@ class _StatisticsViewState extends State<StatisticsView> {
                             color: score >= 0 ? Colors.green : Colors.red,
                           ),
                         ),
-                        onTap: () {
-                          // 切换到记录管理Tab并筛选该小组
-                          widget.onSwitchToRecord?.call();
-                          context.read<ScoreProvider>().requestGroupFilter(
-                            groupId,
-                          );
-                        },
+                        // 点击小组 → 该小组的图表分析
+                        onTap: () => widget.onOpenAnalysis?.call(
+                          'group',
+                          groupId,
+                          g['name'] as String,
+                        ),
                       );
                     },
                   )
@@ -251,6 +288,12 @@ class _StatisticsViewState extends State<StatisticsView> {
                             fontWeight: FontWeight.bold,
                             color: score >= 0 ? Colors.green : Colors.red,
                           ),
+                        ),
+                        // 点击学生 → 该学生的图表分析
+                        onTap: () => widget.onOpenAnalysis?.call(
+                          'student',
+                          s['id'] as int,
+                          s['name'] as String,
                         ),
                       );
                     },
