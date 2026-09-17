@@ -568,6 +568,29 @@ class _AnalysisViewState extends State<AnalysisView> {
         .toList();
   }
 
+  // 加分项变动值总量（正数合计）
+  double _positiveTotal() {
+    return _getPositiveDistribution().fold<double>(
+      0,
+      (sum, item) => sum + ((item['total_score'] as num?)?.toDouble() ?? 0),
+    );
+  }
+
+  // 扣分项变动值总量（负数取绝对值后合计）
+  double _negativeTotal() {
+    return _getNegativeDistribution().fold<double>(
+      0,
+      (sum, item) => sum + ((item['total_score'] as num?)?.toDouble() ?? 0).abs(),
+    );
+  }
+
+  // 变动值文本：正数带 + 号，保留 1 位小数
+  String _fmtChangeValue(double v) {
+    if (v > 0) return '+${v.toStringAsFixed(1)}';
+    if (v < 0) return v.toStringAsFixed(1);
+    return '0.0';
+  }
+
   // 构建加分饼图数据
   List<PieChartSectionData> _buildPositivePieSections() {
     final colors = [
@@ -582,10 +605,7 @@ class _AnalysisViewState extends State<AnalysisView> {
     ];
 
     final positiveData = _getPositiveDistribution();
-    final total = positiveData.fold<double>(
-      0,
-      (sum, item) => sum + ((item['total_score'] as num?)?.toDouble() ?? 0),
-    );
+    final total = _positiveTotal();
 
     return positiveData.asMap().entries.map((entry) {
       final i = entry.key;
@@ -595,10 +615,12 @@ class _AnalysisViewState extends State<AnalysisView> {
       return PieChartSectionData(
         color: colors[i % colors.length],
         value: score,
-        title: '${pct.toStringAsFixed(0)}%',
+        // 扇区内两行显示：变动值总量（带 + 号） + 百分比
+        title: '${_fmtChangeValue(score)}\n${pct.toStringAsFixed(0)}%',
         titleStyle: const TextStyle(
           color: Colors.white,
-          fontSize: 11,
+          fontSize: 10,
+          height: 1.1,
           fontWeight: FontWeight.bold,
         ),
         radius: 60,
@@ -620,24 +642,24 @@ class _AnalysisViewState extends State<AnalysisView> {
     ];
 
     final negativeData = _getNegativeDistribution();
-    final total = negativeData.fold<double>(
-      0,
-      (sum, item) =>
-          sum + ((item['total_score'] as num?)?.toDouble() ?? 0).abs(),
-    );
+    final total = _negativeTotal();
 
     return negativeData.asMap().entries.map((entry) {
       final i = entry.key;
       final item = entry.value;
-      final score = (item['total_score'] as num).toDouble().abs();
+      // 原始带符号的变动值（用于文字展示），取绝对值用于扇区占比
+      final signedScore = (item['total_score'] as num).toDouble();
+      final score = signedScore.abs();
       final pct = total > 0 ? (score / total * 100) : 0.0;
       return PieChartSectionData(
         color: colors[i % colors.length],
         value: score,
-        title: '${pct.toStringAsFixed(0)}%',
+        // 扇区内两行显示：变动值总量（带负号） + 百分比
+        title: '${_fmtChangeValue(signedScore)}\n${pct.toStringAsFixed(0)}%',
         titleStyle: const TextStyle(
           color: Colors.white,
-          fontSize: 11,
+          fontSize: 10,
+          height: 1.1,
           fontWeight: FontWeight.bold,
         ),
         radius: 60,
@@ -659,9 +681,24 @@ class _AnalysisViewState extends State<AnalysisView> {
     ];
 
     final positiveData = _getPositiveDistribution();
-    return positiveData.asMap().entries.map((entry) {
+    return _buildDistributionLegend(
+      data: positiveData,
+      colors: colors,
+      total: _positiveTotal(),
+    );
+  }
+
+  // 构建分布图例：评分项名称 + 变动值总量（带正负号） + 百分比
+  List<Widget> _buildDistributionLegend({
+    required List<Map<String, dynamic>> data,
+    required List<Color> colors,
+    required double total,
+  }) {
+    return data.asMap().entries.map((entry) {
       final i = entry.key;
       final item = entry.value;
+      final score = (item['total_score'] as num).toDouble();
+      final pct = total > 0 ? (score.abs() / total * 100) : 0.0;
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -677,6 +714,15 @@ class _AnalysisViewState extends State<AnalysisView> {
           Text(
             item['item_name'] as String,
             style: const TextStyle(fontSize: 11),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '${_fmtChangeValue(score)}（${pct.toStringAsFixed(0)}%）',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: score >= 0 ? Colors.green.shade700 : Colors.red.shade700,
+            ),
           ),
         ],
       );
@@ -697,27 +743,10 @@ class _AnalysisViewState extends State<AnalysisView> {
     ];
 
     final negativeData = _getNegativeDistribution();
-    return negativeData.asMap().entries.map((entry) {
-      final i = entry.key;
-      final item = entry.value;
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: colors[i % colors.length],
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            item['item_name'] as String,
-            style: const TextStyle(fontSize: 11),
-          ),
-        ],
-      );
-    }).toList();
+    return _buildDistributionLegend(
+      data: negativeData,
+      colors: colors,
+      total: _negativeTotal(),
+    );
   }
 }
