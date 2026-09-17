@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../database/database_helper.dart';
 import '../../providers/score_provider.dart';
+import '../../widgets/motion.dart';
 import '../../widgets/student_name_text.dart';
 import '../analysis/statistics_page.dart';
 
@@ -21,6 +22,10 @@ class _DashboardPageState extends State<DashboardPage> {
   List<Map<String, dynamic>> _positiveDistribution = [];
   List<Map<String, dynamic>> _negativeDistribution = [];
   bool _loading = true;
+
+  /// 是否已完成过一次加载：首次加载显示进度指示并淡入内容，
+  /// 之后的数据刷新直接就地更新（避免每次评分后整屏闪一下）。
+  bool _hasLoadedOnce = false;
   ScoreProvider? _scoreProvider;
 
   @override
@@ -199,6 +204,7 @@ class _DashboardPageState extends State<DashboardPage> {
       if (mounted) {
         setState(() {
           _loading = false;
+          _hasLoadedOnce = true;
         });
       }
     }
@@ -206,10 +212,21 @@ class _DashboardPageState extends State<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    // 仅首次加载显示进度指示：之后的数据刷新保留已有内容，避免整屏闪烁
+    final showInitialLoading = _loading && !_hasLoadedOnce;
 
+    // 首次加载与仪表盘内容交叉淡入淡出，替代过去的硬切
+    return FadeThroughSwitcher(
+      expand: true,
+      switchKey: showInitialLoading ? 'loading' : 'content',
+      child: showInitialLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _buildLoadedView(context),
+    );
+  }
+
+  /// 加载完成后的仪表盘内容：卡片网格。
+  Widget _buildLoadedView(BuildContext context) {
     // 计算今日总分
     final totalPositive = _todayScores
         .where((r) => (r['score'] as num).toDouble() > 0)
@@ -678,6 +695,9 @@ class _PieChartCard extends StatelessWidget {
                         sectionsSpace: 0.5,
                         borderData: FlBorderData(show: false),
                       ),
+                      // 数据切换走图表自带的补间动画，与应用其它过渡同一节奏
+                      duration: AppMotion.medium,
+                      curve: AppMotion.curve,
                     ),
                   ),
                 ),

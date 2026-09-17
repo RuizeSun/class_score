@@ -7,6 +7,7 @@ import '../../providers/student_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../providers/score_item_provider.dart';
 import '../../providers/score_provider.dart';
+import '../../widgets/motion.dart';
 import '../../widgets/score_record_tile.dart';
 import '../../widgets/student_name_text.dart';
 
@@ -50,7 +51,15 @@ class _AnalysisViewState extends State<AnalysisView> {
   List<Map<String, dynamic>> _records = [];
   List<Map<String, dynamic>> _distribution = [];
   Map<String, dynamic> _dailyAverages = {};
-  bool _loading = false;
+  // 初始即为加载中：首帧直接显示进度指示，避免先闪一下空图表
+  bool _loading = true;
+
+  /// 是否已完成过一次加载。
+  ///
+  /// 用于区分「首次加载」与「切换筛选时的刷新」：首次加载显示进度指示并淡入
+  /// 内容；之后的刷新保留已有图表，由 fl_chart 的补间动画平滑过渡，
+  /// 不再每次切筛选都整屏闪烁。
+  bool _hasLoadedOnce = false;
 
   String? _startDate;
   String? _endDate;
@@ -145,17 +154,31 @@ class _AnalysisViewState extends State<AnalysisView> {
     );
 
     if (!mounted) return;
-    setState(() => _loading = false);
+    setState(() {
+      _loading = false;
+      _hasLoadedOnce = true;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    // 仅首次加载显示进度指示；后续刷新保留已有图表，避免整屏闪烁
+    final showInitialLoading = _loading && !_hasLoadedOnce;
+
+    // 首次加载与图表内容交叉淡入淡出，替代过去的硬切
+    return FadeThroughSwitcher(
+      expand: true,
+      switchKey: showInitialLoading ? 'loading' : 'content',
+      child: showInitialLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _buildLoadedView(context),
+    );
+  }
+
+  /// 加载完成后的页面主体：筛选区域 + 内容区。
+  Widget _buildLoadedView(BuildContext context) {
     final students = context.watch<StudentProvider>().students;
     final groups = context.watch<GroupProvider>().groups;
-
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
 
     return Column(
       children: [
@@ -357,6 +380,10 @@ class _AnalysisViewState extends State<AnalysisView> {
                                                 centerSpaceRadius: 40,
                                                 sectionsSpace: 2,
                                               ),
+                                              // 数据切换走图表自带的补间动画，
+                                              // 与应用其它过渡保持同一节奏
+                                              duration: AppMotion.medium,
+                                              curve: AppMotion.curve,
                                             ),
                                     ),
                                     const SizedBox(height: 8),
@@ -394,6 +421,9 @@ class _AnalysisViewState extends State<AnalysisView> {
                                                 centerSpaceRadius: 40,
                                                 sectionsSpace: 2,
                                               ),
+                                              // 同加分项：数据切换统一节奏
+                                              duration: AppMotion.medium,
+                                              curve: AppMotion.curve,
                                             ),
                                     ),
                                     const SizedBox(height: 8),

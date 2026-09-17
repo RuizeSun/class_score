@@ -9,6 +9,7 @@ import 'providers/auth_provider.dart';
 import 'providers/personalization_provider.dart';
 import 'pages/core/home_page.dart';
 import 'pages/core/pin_setup_page.dart';
+import 'widgets/motion.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -84,12 +85,26 @@ class _AppEntryState extends State<AppEntry> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final personalization = context.watch<PersonalizationProvider>();
+
+    // 启动加载 → 设置 PIN → 主页之间淡入淡出（整屏切换，用较慢的时长）
+    final Widget page;
+    final String stage;
     if (!auth.isInitialized || !personalization.isInitialized) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      page = const Scaffold(body: Center(child: CircularProgressIndicator()));
+      stage = 'loading';
+    } else if (!auth.isPinSet) {
+      page = const PinSetupPage();
+      stage = 'pin_setup';
+    } else {
+      page = const HomePage();
+      stage = 'home';
     }
-    if (!auth.isPinSet) {
-      return const PinSetupPage();
-    }
-    return const HomePage();
+
+    return FadeThroughSwitcher(
+      expand: true,
+      switchKey: stage,
+      duration: AppMotion.slow,
+      child: page,
+    );
   }
 }

@@ -14,6 +14,7 @@ import 'period_management.dart';
 import 'personalization_view.dart';
 import 'scoring_rules_view.dart';
 import 'settings_common.dart';
+import '../../widgets/motion.dart';
 import '../../models/group.dart';
 import '../../models/student.dart';
 import '../../models/score_item.dart';
@@ -122,11 +123,17 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
 
   Widget _buildContent(BuildContext context) {
     final section = _current;
-    return SettingsSectionScaffold(
-      title: _titleOf(section),
-      subtitle: _subtitleOf(section),
-      scrollable: _isScrollable(section),
-      child: _buildSectionActions(context),
+    // 分项切换（页头 + 内容）整体淡入上移：过去是硬切，且各分项高度不同，
+    // 切换时会突兀地跳一下
+    return FadeThroughSwitcher(
+      switchKey: section,
+      expand: true,
+      child: SettingsSectionScaffold(
+        title: _titleOf(section),
+        subtitle: _subtitleOf(section),
+        scrollable: _isScrollable(section),
+        child: _buildSectionActions(context),
+      ),
     );
   }
 

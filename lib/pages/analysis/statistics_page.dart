@@ -8,6 +8,7 @@ import '../../providers/student_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/personalization_provider.dart';
 import '../../utils/ranking.dart';
+import '../../widgets/motion.dart';
 import '../../widgets/pane_header.dart';
 import '../../widgets/ranking_tile.dart';
 import '../../widgets/resizable_split_view.dart';
@@ -260,30 +261,39 @@ class _StatisticsViewState extends State<StatisticsView> {
                 ],
               ),
               const SizedBox(height: 16),
-              // 榜单：同名次共处一个圆角块（RankingGroup），不同名次之间统一留白
-              if (rankedEntries.isEmpty)
-                const RankingEmptyState()
-              else
-                Column(
-                  children: [
-                    // 表头：与行内「名称 / 总分」两列对齐
-                    RankingListHeader(title: _showGroup ? '小组' : '学生'),
-                    for (var i = 0; i < rankedEntries.length; i++) ...[
-                      if (i > 0)
-                        SizedBox(
-                          height: scoreProvider.mergeSameRank
-                              ? RankingMetrics.rankGroupSpacing
-                              : RankingMetrics.rowSpacing,
+              // 榜单：同名次共处一个圆角块（RankingGroup），不同名次之间统一留白。
+              // 学生 / 小组切换时整块淡入上移；两块高度不同，由 AnimatedSize
+              // 平滑高度变化，避免切换瞬间下方内容整体跳位。
+              AppSizeTransition(
+                child: FadeThroughSwitcher(
+                  switchKey: _showGroup ? 'group' : 'student',
+                  child: rankedEntries.isEmpty
+                      ? const RankingEmptyState()
+                      : Column(
+                          children: [
+                            // 表头：与行内「名称 / 总分」两列对齐
+                            RankingListHeader(title: _showGroup ? '小组' : '学生'),
+                            for (var i = 0; i < rankedEntries.length; i++) ...[
+                              if (i > 0)
+                                SizedBox(
+                                  height: scoreProvider.mergeSameRank
+                                      ? RankingMetrics.rankGroupSpacing
+                                      : RankingMetrics.rowSpacing,
+                                ),
+                              RankingGroup(
+                                children: [
+                                  for (final row in rankedEntries[i].rows)
+                                    _buildRankingTile(
+                                      rankedEntries[i].rank,
+                                      row,
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ],
                         ),
-                      RankingGroup(
-                        children: [
-                          for (final row in rankedEntries[i].rows)
-                            _buildRankingTile(rankedEntries[i].rank, row),
-                        ],
-                      ),
-                    ],
-                  ],
                 ),
+              ),
             ],
           ),
         ),
@@ -823,26 +833,38 @@ class _RecordManagementViewState extends State<RecordManagementView> {
       children: [
         // 栏头：替代原 Tab，标明本栏内容
         const PaneHeader(icon: Icons.receipt_long_outlined, title: '记录管理'),
-        // 左栏联动筛选提示（可一键清除）
-        if (widget.externalFilter != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: InputChip(
-                avatar: Icon(
-                  widget.externalFilter!.type == 'group'
-                      ? Icons.groups
-                      : Icons.person,
-                  size: 16,
-                ),
-                label: Text('已按「${widget.externalFilter!.name}」筛选'),
-                deleteIcon: const Icon(Icons.close, size: 16),
-                onDeleted: widget.onClearExternalFilter,
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
+        // 左栏联动筛选提示（可一键清除）：出现 / 消失时高度平滑展开收起，
+        // 切换筛选对象时提示文字淡入，避免工具栏整体跳动
+        AppSizeTransition(
+          alignment: Alignment.topLeft,
+          child: FadeThroughSwitcher(
+            switchKey: widget.externalFilter == null
+                ? null
+                : '${widget.externalFilter!.type}/${widget.externalFilter!.id}',
+            alignment: Alignment.topLeft,
+            duration: AppMotion.fast,
+            child: widget.externalFilter == null
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: InputChip(
+                        avatar: Icon(
+                          widget.externalFilter!.type == 'group'
+                              ? Icons.groups
+                              : Icons.person,
+                          size: 16,
+                        ),
+                        label: Text('已按「${widget.externalFilter!.name}」筛选'),
+                        deleteIcon: const Icon(Icons.close, size: 16),
+                        onDeleted: widget.onClearExternalFilter,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ),
           ),
+        ),
         // 筛选区域（定宽 + Wrap：窄栏自动换行，不挤压文字）
         Padding(
           padding: const EdgeInsets.all(8.0),
@@ -930,32 +952,45 @@ class _RecordManagementViewState extends State<RecordManagementView> {
             ],
           ),
         ),
-        // 批量操作/回收站控制栏
-        if (isUnlocked) _buildBatchBar(records),
+        // 批量操作/回收站控制栏：普通 ↔ 批量模式切换时淡入上移
+        if (isUnlocked)
+          AppSizeTransition(
+            child: FadeThroughSwitcher(
+              switchKey: _batchMode,
+              duration: AppMotion.fast,
+              child: _buildBatchBar(records),
+            ),
+          ),
 
-        // 记录列表
+        // 记录列表：筛选（含左栏联动）变化时整块淡出 → 淡入。列表批量替换用
+        // 更快节奏，避免长列表出现明显的空窗
         Expanded(
-          child: records.isEmpty
-              ? const Center(child: Text('暂无评分记录'))
-              : ListView.builder(
-                  itemCount: records.length,
-                  itemBuilder: (_, i) {
-                    final r = records[i];
-                    final recordId = r['id'] as int;
-                    final isSelected = _selectedRecordIds.contains(recordId);
+          child: FadeThroughSwitcher(
+            expand: true,
+            duration: AppMotion.fast,
+            switchKey: '${_filterGroupId}_$_filterStudentId',
+            child: records.isEmpty
+                ? const Center(child: Text('暂无评分记录'))
+                : ListView.builder(
+                    itemCount: records.length,
+                    itemBuilder: (_, i) {
+                      final r = records[i];
+                      final recordId = r['id'] as int;
+                      final isSelected = _selectedRecordIds.contains(recordId);
 
-                    // 条目样式与操作逻辑复用「记录管理」的 ScoreRecordTile
-                    return ScoreRecordTile(
-                      record: r,
-                      batchMode: _batchMode,
-                      selected: isSelected,
-                      onToggleSelect: () => _toggleRecordSelection(recordId),
-                      isUnlocked: isUnlocked,
-                      onMutated: () =>
-                          setState(() => _selectedRecordIds.remove(recordId)),
-                    );
-                  },
-                ),
+                      // 条目样式与操作逻辑复用「记录管理」的 ScoreRecordTile
+                      return ScoreRecordTile(
+                        record: r,
+                        batchMode: _batchMode,
+                        selected: isSelected,
+                        onToggleSelect: () => _toggleRecordSelection(recordId),
+                        isUnlocked: isUnlocked,
+                        onMutated: () =>
+                            setState(() => _selectedRecordIds.remove(recordId)),
+                      );
+                    },
+                  ),
+          ),
         ),
       ],
     );

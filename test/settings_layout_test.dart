@@ -8,6 +8,7 @@ import 'package:class_score/providers/personalization_provider.dart';
 import 'package:class_score/providers/score_item_provider.dart';
 import 'package:class_score/providers/score_provider.dart';
 import 'package:class_score/providers/student_provider.dart';
+import 'package:class_score/widgets/motion.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -113,6 +114,14 @@ void _useDesktopViewport(WidgetTester tester) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
+/// 取组件最近一层 [FadeTransition] 的不透明度，用于断言过渡进程。
+double _fadeOpacity(WidgetTester tester, Finder finder) => tester
+    .widget<FadeTransition>(
+      find.ancestor(of: finder, matching: find.byType(FadeTransition)).first,
+    )
+    .opacity
+    .value;
+
 void main() {
   testWidgets('各分项：统一页头且不再使用卡片（1280x800 无溢出）', (tester) async {
     _useDesktopViewport(tester);
@@ -207,5 +216,30 @@ void main() {
       );
       expect(tester.takeException(), isNull);
     }
+  });
+
+  testWidgets('分项切换：旧分项淡出、新分项淡入，过渡中两层不叠影', (tester) async {
+    _useDesktopViewport(tester);
+    await tester.pumpWidget(_buildHub(groups: [Group(id: 1, name: '第一组')]));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SettingsSectionScaffold), findsOneWidget);
+    expect(find.byType(FadeThroughSwitcher), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ListTile, '分组管理'));
+    await tester.pump();
+    // 过渡前半段：新分项已在树中，但尚未开始淡入
+    await tester.pump(const Duration(milliseconds: 90));
+    expect(_fadeOpacity(tester, find.text('第一组')), 0);
+
+    // 过渡后半段：新分项开始淡入
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(_fadeOpacity(tester, find.text('第一组')), greaterThan(0));
+
+    // 过渡结束：只剩目标分项，且不再有残影
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsSectionScaffold), findsOneWidget);
+    expect(_fadeOpacity(tester, find.text('第一组')), 1);
+    expect(tester.takeException(), isNull);
   });
 }

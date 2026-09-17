@@ -9,6 +9,7 @@ import 'package:class_score/providers/score_item_provider.dart';
 import 'package:class_score/providers/score_provider.dart';
 import 'package:class_score/providers/student_provider.dart';
 import 'package:class_score/widgets/pane_header.dart';
+import 'package:class_score/widgets/motion.dart';
 import 'package:class_score/widgets/ranking_tile.dart';
 import 'package:class_score/widgets/resizable_split_view.dart';
 import 'package:flutter/material.dart';
@@ -204,6 +205,14 @@ void _useDesktopViewport(WidgetTester tester) {
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
 }
+
+/// 取组件最近一层 [FadeTransition] 的不透明度，用于断言过渡进程。
+double _fadeOpacity(WidgetTester tester, Finder finder) => tester
+    .widget<FadeTransition>(
+      find.ancestor(of: finder, matching: find.byType(FadeTransition)).first,
+    )
+    .opacity
+    .value;
 
 void main() {
   testWidgets('统计报表：高级查询与班级图表分析位于切换按钮同行', (tester) async {
@@ -404,6 +413,63 @@ void main() {
       isFalse,
     );
 
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('统计报表：学生 / 小组切换时旧榜单淡出、新榜单淡入（不叠影）', (tester) async {
+    _useDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _buildView(
+        scoreProvider: _FakeScoreProvider(
+          students: _students,
+          groups: _groupScores,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // 学生榜副标题为所属小组，小组榜副标题为成员数
+    expect(find.text('甲组'), findsOneWidget);
+    expect(find.text('4 名成员'), findsNothing);
+    expect(find.byType(FadeThroughSwitcher), findsWidgets);
+
+    await tester.tap(find.text('小组'));
+    await tester.pump();
+    // 过渡中点：旧榜单已淡出到不可见，新榜单尚未进场（两层不重叠）
+    await tester.pump(const Duration(milliseconds: 110));
+    expect(_fadeOpacity(tester, find.text('甲组')), 0);
+    expect(_fadeOpacity(tester, find.text('4 名成员')), 0);
+
+    // 过渡结束：只剩小组榜
+    await tester.pumpAndSettle();
+    expect(find.text('甲组'), findsNothing);
+    expect(find.text('4 名成员'), findsOneWidget);
+    expect(_fadeOpacity(tester, find.text('4 名成员')), 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('分屏页：联动筛选提示与记录列表使用统一过渡组件', (tester) async {
+    _useDesktopViewport(tester);
+    final scoreProvider = _FakeScoreProvider(
+      students: _students,
+      groups: _groupScores,
+    );
+
+    await tester.pumpWidget(_buildPage(scoreProvider: scoreProvider));
+    await tester.pumpAndSettle();
+
+    // 左右两栏的榜单与记录列表都走统一过渡容器
+    expect(find.byType(FadeThroughSwitcher), findsWidgets);
+
+    await tester.tap(find.byType(RankingTile).first);
+    // 过渡中：提示条展开 + 列表淡入，不应抛异常
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(find.text('已按「张三」筛选'), findsOneWidget);
+
+    await tester.pumpAndSettle();
+    expect(find.text('已按「张三」筛选'), findsOneWidget);
+    expect(find.byType(AppSizeTransition), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 }
