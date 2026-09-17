@@ -78,8 +78,21 @@ class ScoreRecordTile extends StatelessWidget {
     if (deleted) onMutated?.call();
   }
 
+  /// 窄栏阈值：低于该宽度时把「编辑 / 查看修改记录 / 删除」收进溢出菜单，
+  /// 保证「姓名#学号」与分数不被操作按钮挤掉（左右分栏的右栏常见情形）。
+  static const double compactBreakpoint = 560;
+
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => _buildTile(
+        context,
+        compact: constraints.maxWidth < compactBreakpoint,
+      ),
+    );
+  }
+
+  Widget _buildTile(BuildContext context, {required bool compact}) {
     final r = record;
     final score = (r['score'] as num).toDouble();
     final isPositive = score >= 0;
@@ -188,8 +201,25 @@ class ScoreRecordTile extends StatelessWidget {
               color: isPositive ? Colors.green : Colors.red,
             ),
           ),
+          // 窄栏：操作收进溢出菜单，优先保证姓名与分数可读
+          if (showActions && compact)
+            PopupMenuButton<String>(
+              tooltip: '更多操作',
+              icon: const Icon(Icons.more_vert, size: 20),
+              onSelected: (value) => switch (value) {
+                'history' => _handleShowHistory(context),
+                'delete' => _handleDelete(context),
+                _ => _handleEdit(context),
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'edit', child: Text('编辑记录')),
+                PopupMenuItem(value: 'history', child: Text('查看修改记录')),
+                PopupMenuItem(value: 'delete', child: Text('删除')),
+              ],
+            ),
+          // 宽栏：维持行内按钮
           // 编辑记录（修改分值/变动原因/评分项关联；所有记录可用）
-          if (showActions)
+          if (showActions && !compact)
             IconButton(
               tooltip: '编辑记录',
               icon: const Icon(Icons.edit, size: 20),
@@ -197,7 +227,7 @@ class ScoreRecordTile extends StatelessWidget {
               onPressed: () => _handleEdit(context),
             ),
           // 查看该记录的修改记录
-          if (showActions)
+          if (showActions && !compact)
             IconButton(
               tooltip: '查看修改记录',
               icon: const Icon(Icons.history, size: 20),
@@ -205,7 +235,7 @@ class ScoreRecordTile extends StatelessWidget {
               onPressed: () => _handleShowHistory(context),
             ),
           // 单条删除（移入回收站；批量模式下交由批量删除处理）
-          if (showActions)
+          if (showActions && !compact)
             IconButton(
               icon: const Icon(Icons.delete, size: 20),
               onPressed: () => _handleDelete(context),

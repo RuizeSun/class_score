@@ -6,11 +6,21 @@ import '../../providers/score_item_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../providers/student_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/personalization_provider.dart';
+import '../../utils/ranking.dart';
+import '../../widgets/pane_header.dart';
+import '../../widgets/ranking_tile.dart';
+import '../../widgets/resizable_split_view.dart';
 import '../../widgets/score_record_tile.dart';
 import '../../widgets/student_name_text.dart';
 import 'analysis_detail_page.dart';
 import 'ranking_summary_page.dart';
 
+/// 「查询」页：左侧「统计报表」+ 右侧「记录管理」的平板式分屏。
+///
+/// 两栏同时可见，中间一条竖线可拖拽调整比例（比例持久化到个性化设置）；
+/// 点击左栏榜单行即联动筛选右栏该学生/小组的记录，避免数据与
+/// 小组/学生名字被分在两个互斥 Tab 里、互相看不到。
 class StatisticsAnalysisPage extends StatefulWidget {
   const StatisticsAnalysisPage({super.key});
 
@@ -18,21 +28,9 @@ class StatisticsAnalysisPage extends StatefulWidget {
   State<StatisticsAnalysisPage> createState() => _StatisticsAnalysisPageState();
 }
 
-class _StatisticsAnalysisPageState extends State<StatisticsAnalysisPage>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
+class _StatisticsAnalysisPageState extends State<StatisticsAnalysisPage> {
+  /// 左栏选中的目标：联动右栏记录列表，并高亮左栏该行。
+  ({String type, int id, String name})? _selectedTarget;
 
   /// 打开图表分析页：targetId 为空时打开班级（全部）视图。
   void _openAnalysis(String targetType, int? targetId, String name) {
@@ -48,22 +46,39 @@ class _StatisticsAnalysisPageState extends State<StatisticsAnalysisPage>
     );
   }
 
+  /// 左栏点击学生/小组：右栏筛选该目标的记录（两栏联动）。
+  void _selectTarget(String targetType, int targetId, String name) {
+    setState(
+      () => _selectedTarget = (type: targetType, id: targetId, name: name),
+    );
+  }
+
+  void _clearSelection() {
+    setState(() => _selectedTarget = null);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final ratio = context.watch<PersonalizationProvider>().analysisSplitRatio;
+    final selected = _selectedTarget;
+
     return Scaffold(
-      appBar: AppBar(
-        toolbarHeight: 0,
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [Tab(text: '统计报表'), Tab(text: '记录管理')],
+      body: ResizableSplitView(
+        ratio: ratio,
+        onRatioChanged: (value) => context
+            .read<PersonalizationProvider>()
+            .setAnalysisSplitRatio(value),
+        left: StatisticsView(
+          onSelectTarget: _selectTarget,
+          onOpenAnalysis: _openAnalysis,
+          selectedTarget: selected == null
+              ? null
+              : (type: selected.type, id: selected.id),
         ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          StatisticsView(onOpenAnalysis: _openAnalysis),
-          RecordManagementView(),
-        ],
+        right: RecordManagementView(
+          externalFilter: selected,
+          onClearExternalFilter: _clearSelection,
+        ),
       ),
     );
   }
@@ -71,13 +86,26 @@ class _StatisticsAnalysisPageState extends State<StatisticsAnalysisPage>
 
 // ==================== 统计报表 ====================
 
+/// 统计报表栏：学生榜 / 小组榜（分屏左栏）。
 class StatisticsView extends StatefulWidget {
-  /// 点击学生/小组行时回调：跳转到对应目标的图表分析页。
+  /// 点击学生/小组行：联动筛选右侧记录列表（[targetId] 必不为空）。
+  final void Function(String targetType, int targetId, String name)?
+      onSelectTarget;
+
+  /// 点击行尾「图表分析」图标：打开对应目标的图表分析页。
   /// [targetType] = 'student' | 'group'，[targetId] 为空表示班级（全部）视图。
   final void Function(String targetType, int? targetId, String name)?
       onOpenAnalysis;
 
-  const StatisticsView({super.key, this.onOpenAnalysis});
+  /// 当前选中的目标：用于高亮该行（与右栏筛选保持一致）。
+  final ({String type, int id})? selectedTarget;
+
+  const StatisticsView({
+    super.key,
+    this.onSelectTarget,
+    this.onOpenAnalysis,
+    this.selectedTarget,
+  });
 
   @override
   State<StatisticsView> createState() => _StatisticsViewState();
@@ -104,210 +132,213 @@ class _StatisticsViewState extends State<StatisticsView> {
     final groups = context.watch<GroupProvider>().groups;
     // 仅「全部小组」时提供班级图表分析入口（小组模式等效全部小组）
     final showClassAnalysis = _showGroup || scoreProvider.filterGroupId == null;
+    // 名次分组：默认合并同名次（同分并列同名次），可在「计分规则 → 统计报表」关闭；
+    // 学生榜与小组榜共用同一套名次计算与行样式。
+    final rankedEntries = buildRankedEntries(
+      _showGroup ? groupScores : studentScores,
+      mergeSameRank: scoreProvider.mergeSameRank,
+    );
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 学生/小组切换 + 高级查询 / 班级图表分析（同一行）
-          Row(
+      child: Align(
+        alignment: Alignment.topCenter,
+        // 榜单与学生/小组切换同宽居中：宽屏下不把姓名与分数拉开
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxWidth: RankingMetrics.contentMaxWidth,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Expanded(child: SizedBox()),
-              SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(
-                    value: false,
-                    label: Text('学生'),
-                    icon: Icon(Icons.person),
-                  ),
-                  ButtonSegment(
-                    value: true,
-                    label: Text('小组'),
-                    icon: Icon(Icons.groups),
-                  ),
-                ],
-                selected: {_showGroup},
-                onSelectionChanged: (v) {
-                  setState(() => _showGroup = v.first);
-                },
-                style: const ButtonStyle(iconSize: WidgetStatePropertyAll(18)),
+              // 栏头：替代原 Tab，标明本栏内容
+              const PaneHeader(
+                icon: Icons.leaderboard_outlined,
+                title: '统计报表',
+                padding: EdgeInsets.fromLTRB(0, 0, 0, 8),
               ),
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (ctx) => const RankingSummaryPage(),
+              // 工具栏：学生/小组切换 + 小组筛选 + 查询入口收拢在同一行
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(
+                        value: false,
+                        label: Text('学生'),
+                        icon: Icon(Icons.person),
+                      ),
+                      ButtonSegment(
+                        value: true,
+                        label: Text('小组'),
+                        icon: Icon(Icons.groups),
+                      ),
+                    ],
+                    selected: {_showGroup},
+                    onSelectionChanged: (v) {
+                      setState(() => _showGroup = v.first);
+                    },
+                    style: const ButtonStyle(
+                      iconSize: WidgetStatePropertyAll(18),
+                    ),
+                  ),
+                  // 学生模式下可按小组筛选榜单
+                  if (!_showGroup)
+                    SizedBox(
+                      width: 220,
+                      child: DropdownButtonFormField<int?>(
+                        initialValue: scoreProvider.filterGroupId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          prefixIcon: Icon(
+                            Icons.filter_alt_outlined,
+                            size: 18,
+                          ),
+                          prefixIconConstraints: BoxConstraints(minWidth: 36),
+                          isDense: true,
+                        ),
+                        items: [
+                          const DropdownMenuItem(
+                            value: null,
+                            child: Text('全部小组'),
+                          ),
+                          ...groups.map(
+                            (g) => DropdownMenuItem(
+                              value: g.id,
+                              child: Text(g.name),
                             ),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          context.read<ScoreProvider>().loadStatistics(
+                            groupId: v,
                           );
                         },
-                        icon: const Icon(Icons.filter_list, size: 18),
-                        label: const Text('高级查询'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 12,
-                          ),
+                      ),
+                    ),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (ctx) => const RankingSummaryPage(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.filter_list, size: 18),
+                    label: const Text('高级查询'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                  if (showClassAnalysis)
+                    FilledButton.tonalIcon(
+                      onPressed: () => widget.onOpenAnalysis?.call(
+                        _showGroup ? 'group' : 'student',
+                        null,
+                        '班级',
+                      ),
+                      icon: const Icon(Icons.bar_chart, size: 18),
+                      label: const Text('班级图表分析'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
                         ),
                       ),
-                      if (showClassAnalysis) ...[
-                        const SizedBox(width: 8),
-                        FilledButton.tonalIcon(
-                          onPressed: () => widget.onOpenAnalysis?.call(
-                            _showGroup ? 'group' : 'student',
-                            null,
-                            '班级',
-                          ),
-                          icon: const Icon(Icons.bar_chart, size: 18),
-                          label: const Text('班级图表分析'),
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 12,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
+                    ),
+                ],
               ),
+              const SizedBox(height: 16),
+              // 榜单：同名次共处一个圆角块（RankingGroup），不同名次之间统一留白
+              if (rankedEntries.isEmpty)
+                const RankingEmptyState()
+              else
+                Column(
+                  children: [
+                    // 表头：与行内「名称 / 总分」两列对齐
+                    RankingListHeader(title: _showGroup ? '小组' : '学生'),
+                    for (var i = 0; i < rankedEntries.length; i++) ...[
+                      if (i > 0)
+                        SizedBox(
+                          height: scoreProvider.mergeSameRank
+                              ? RankingMetrics.rankGroupSpacing
+                              : RankingMetrics.rowSpacing,
+                        ),
+                      RankingGroup(
+                        children: [
+                          for (final row in rankedEntries[i].rows)
+                            _buildRankingTile(rankedEntries[i].rank, row),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
             ],
           ),
-          const SizedBox(height: 8),
-          // 学生模式下显示按小组筛选
-          if (!_showGroup) ...[
-            DropdownButtonFormField<int?>(
-              initialValue: context.watch<ScoreProvider>().filterGroupId,
-              decoration: const InputDecoration(
-                labelText: '筛选小组',
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                isDense: true,
-              ),
-              items: [
-                const DropdownMenuItem(value: null, child: Text('全部小组')),
-                ...groups.map(
-                  (g) => DropdownMenuItem(value: g.id, child: Text(g.name)),
-                ),
-              ],
-              onChanged: (v) {
-                context.read<ScoreProvider>().loadStatistics(groupId: v);
-              },
-            ),
-          ],
-          const SizedBox(height: 8),
-          // 数据列表
-          if (_showGroup)
-            // 小组总分列表
-            groupScores.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('暂无数据'),
-                  )
-                : ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: groupScores.length,
-                    itemBuilder: (_, i) {
-                      final g = groupScores[i];
-                      final score = (g['total_score'] as num).toDouble();
-                      final groupId = g['id'] as int;
-                      return ListTile(
-                        dense: true,
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.purple.shade100,
-                          child: Text(
-                            '${i + 1}',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                        title: Text(g['name'] as String),
-                        trailing: Text(
-                          score.toStringAsFixed(1),
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: score >= 0 ? Colors.green : Colors.red,
-                          ),
-                        ),
-                        // 点击小组 → 该小组的图表分析
-                        onTap: () => widget.onOpenAnalysis?.call(
-                          'group',
-                          groupId,
-                          g['name'] as String,
-                        ),
-                      );
-                    },
-                  )
-          else
-            // 学生总分列表
-            studentScores.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('暂无数据'),
-                  )
-                : ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: studentScores.length,
-                    itemBuilder: (_, i) {
-                      final s = studentScores[i];
-                      final score = (s['total_score'] as num).toDouble();
-                      final studentNumber =
-                          s['student_number'] as String? ?? '';
-                      return ListTile(
-                        dense: true,
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.blue.shade100,
-                          child: Text(
-                            '${i + 1}',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                        // 姓名#学号（学号灰色）
-                        title: StudentNameText(
-                          name: s['name'] as String,
-                          studentNumber: studentNumber,
-                        ),
-                        subtitle: Text(s['group_name'] as String? ?? ''),
-                        trailing: Text(
-                          score.toStringAsFixed(1),
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: score >= 0 ? Colors.green : Colors.red,
-                          ),
-                        ),
-                        // 点击学生 → 该学生的图表分析
-                        onTap: () => widget.onOpenAnalysis?.call(
-                          'student',
-                          s['id'] as int,
-                          s['name'] as String,
-                        ),
-                      );
-                    },
-                  ),
-        ],
+        ),
       ),
+    );
+  }
+
+  /// 构建一行排名行：学生榜为「姓名#学号 + 所属小组」，小组榜为「组名 + 成员数」，
+  /// 两者结构与行高一致（见 [RankingTile]）。
+  /// 点击整行 = 联动筛选右栏记录；行尾图标 = 打开该目标的图表分析。
+  Widget _buildRankingTile(int rank, Map<String, dynamic> data) {
+    final isGroup = _showGroup;
+    final targetType = isGroup ? 'group' : 'student';
+    final name = data['name'] as String;
+    final id = data['id'] as int;
+    final scheme = Theme.of(context).colorScheme;
+
+    return RankingTile(
+      rank: rank,
+      score: (data['total_score'] as num).toDouble(),
+      title: name,
+      studentNumber: isGroup ? '' : (data['student_number'] as String? ?? ''),
+      subtitle: isGroup
+          ? '${(data['member_count'] as num?)?.toInt() ?? 0} 名成员'
+          : (data['group_name'] as String? ?? ''),
+      subtitleIcon: isGroup ? Icons.person_outline : Icons.groups_outlined,
+      badgeColor: RankingMetrics.badgeColor(
+        rank: rank,
+        isGroup: isGroup,
+        scheme: scheme,
+      ),
+      selected: widget.selectedTarget == (type: targetType, id: id),
+      onTap: () => widget.onSelectTarget?.call(targetType, id, name),
+      onOpenAnalysis: () => widget.onOpenAnalysis?.call(targetType, id, name),
     );
   }
 }
 
 // ==================== 记录管理 ====================
 
+/// 记录管理栏：筛选 + 记录列表（分屏右栏）。
+///
+/// 支持左栏（统计报表）联动：外部传入 [externalFilter] 时同步筛选并高亮提示。
 class RecordManagementView extends StatefulWidget {
-  const RecordManagementView({super.key});
+  const RecordManagementView({
+    super.key,
+    this.externalFilter,
+    this.onClearExternalFilter,
+  });
+
+  /// 左栏联动过来的筛选目标；为空表示无联动筛选。
+  final ({String type, int id, String name})? externalFilter;
+
+  /// 清除联动筛选：同时清空本栏筛选与左栏高亮。
+  final VoidCallback? onClearExternalFilter;
 
   @override
   State<RecordManagementView> createState() => _RecordManagementViewState();
@@ -324,41 +355,40 @@ class _RecordManagementViewState extends State<RecordManagementView> {
   @override
   void initState() {
     super.initState();
+    // 左栏可能已选中某个学生/小组（分屏初建时）
+    _syncExternalFilter(widget.externalFilter);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<GroupProvider>().loadGroups();
       context.read<StudentProvider>().loadStudents();
       context.read<ScoreItemProvider>().loadItems();
       context.read<ScoreProvider>().loadScoreConfig();
-      _checkPendingGroupFilter();
       _loadRecords();
     });
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // 检查待处理的小组筛选（从统计报表跳转）
-    final pending = context.read<ScoreProvider>().pendingGroupFilter;
-    if (pending != null && pending != _filterGroupId) {
-      _filterGroupId = pending;
-      _filterStudentId = null;
-      context.read<ScoreProvider>().consumeGroupFilter();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          setState(() {});
-          _loadRecords();
-        }
-      });
-    }
+  void didUpdateWidget(covariant RecordManagementView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.externalFilter == widget.externalFilter) return;
+    // 左栏选中变化（或清除联动）：同步筛选并重新拉取记录
+    _syncExternalFilter(widget.externalFilter);
+    _loadRecords();
   }
 
-  void _checkPendingGroupFilter() {
-    final scoreProvider = context.read<ScoreProvider>();
-    final pending = scoreProvider.pendingGroupFilter;
-    if (pending != null && pending != _filterGroupId) {
-      _filterGroupId = pending;
+  /// 把左栏联动的目标同步到本栏筛选状态。
+  ///
+  /// 学生 → 只筛该学生（小组筛选清空，保证学生下拉仍可选）；
+  /// 小组 → 只筛该小组；为空 → 两栏筛选都清空（回到全部记录）。
+  void _syncExternalFilter(({String type, int id, String name})? filter) {
+    if (filter == null) {
+      _filterGroupId = null;
       _filterStudentId = null;
-      scoreProvider.consumeGroupFilter();
+    } else if (filter.type == 'group') {
+      _filterGroupId = filter.id;
+      _filterStudentId = null;
+    } else {
+      _filterGroupId = null;
+      _filterStudentId = filter.id;
     }
   }
 
@@ -791,12 +821,37 @@ class _RecordManagementViewState extends State<RecordManagementView> {
 
     return Column(
       children: [
-        // 筛选区域
+        // 栏头：替代原 Tab，标明本栏内容
+        const PaneHeader(icon: Icons.receipt_long_outlined, title: '记录管理'),
+        // 左栏联动筛选提示（可一键清除）
+        if (widget.externalFilter != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: InputChip(
+                avatar: Icon(
+                  widget.externalFilter!.type == 'group'
+                      ? Icons.groups
+                      : Icons.person,
+                  size: 16,
+                ),
+                label: Text('已按「${widget.externalFilter!.name}」筛选'),
+                deleteIcon: const Icon(Icons.close, size: 16),
+                onDeleted: widget.onClearExternalFilter,
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
+        // 筛选区域（定宽 + Wrap：窄栏自动换行，不挤压文字）
         Padding(
           padding: const EdgeInsets.all(8.0),
-          child: Row(
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              Expanded(
+              SizedBox(
+                width: 180,
                 child: DropdownButtonFormField<int?>(
                   key: ValueKey('group_$_filterGroupId'),
                   initialValue: _filterGroupId,
@@ -814,6 +869,13 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                     ...groups.map(
                       (g) => DropdownMenuItem(value: g.id, child: Text(g.name)),
                     ),
+                    // 联动筛选的小组可能还没出现在列表中（小组数据仍在加载）
+                    if (_filterGroupId != null &&
+                        !groups.any((g) => g.id == _filterGroupId))
+                      DropdownMenuItem(
+                        value: _filterGroupId,
+                        child: Text(widget.externalFilter?.name ?? '当前筛选小组'),
+                      ),
                   ],
                   onChanged: (v) {
                     setState(() {
@@ -824,8 +886,8 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                   },
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
+              SizedBox(
+                width: 180,
                 child: DropdownButtonFormField<int?>(
                   key: ValueKey('student_$_filterStudentId'),
                   initialValue: _filterStudentId,
@@ -850,6 +912,14 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                         ),
                       ),
                     ),
+                    // 联动筛选的学生可能还没出现在列表中（学生数据仍在加载），
+                    // 补一个匹配项，避免下拉的选中值与 items 不一致
+                    if (_filterStudentId != null &&
+                        !students.any((s) => s.id == _filterStudentId))
+                      DropdownMenuItem(
+                        value: _filterStudentId,
+                        child: Text(widget.externalFilter?.name ?? '当前筛选学生'),
+                      ),
                   ],
                   onChanged: (v) {
                     setState(() => _filterStudentId = v);

@@ -328,6 +328,33 @@ class _ScoringRulesViewState extends State<ScoringRulesView> {
               context.read<ScoreProvider>().setDefaultQuickScoring(value),
           contentPadding: EdgeInsets.zero,
         ),
+        // ---- 统计报表 ----
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+        const Divider(height: 1),
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+        const SettingsSectionTitle(
+          title: '统计报表',
+          subtitle: '控制统计报表中学生榜与小组榜的名次显示方式。',
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          secondary: Icon(
+            Icons.merge_type,
+            color: p.mergeSameRank
+                ? Colors.green.shade700
+                : Colors.grey.shade600,
+          ),
+          title: const Text('同名次合并显示'),
+          subtitle: const Text(
+            '开启后，总分相同的对象显示为同一名次（如 100、100、99 → 第1、第1、第2名），'
+            '并列名次合并为一个名次块、不同名次之间留出间隔；'
+            '关闭后名次仍然并列，但每行独立成块、等距排列（默认开启）。',
+          ),
+          value: p.mergeSameRank,
+          onChanged: (value) =>
+              context.read<ScoreProvider>().setMergeSameRank(value),
+          contentPadding: EdgeInsets.zero,
+        ),
       ],
     );
   }

@@ -45,23 +45,14 @@ class ScoreProvider extends ChangeNotifier {
   bool _defaultQuickScoring = false;
   bool get defaultQuickScoring => _defaultQuickScoring;
 
+  // 统计报表是否合并同名次（默认为开）
+  bool _mergeSameRank = true;
+  bool get mergeSameRank => _mergeSameRank;
+
   // 当前加载记录时使用的筛选状态，用于 add/delete 后保持筛选
   String? _lastRecordTargetType;
   int? _lastRecordTargetId;
   int? _lastRecordGroupId;
-
-  // 待处理的小组筛选（用于统计分析→点击小组→跳转记录页自动筛选）
-  int? _pendingGroupFilter;
-  int? get pendingGroupFilter => _pendingGroupFilter;
-  void requestGroupFilter(int? groupId) {
-    _pendingGroupFilter = groupId;
-    notifyListeners();
-  }
-
-  void consumeGroupFilter() {
-    _pendingGroupFilter = null;
-    // 不调用 notifyListeners()，由调用方控制
-  }
 
   // 高级查询 - 周期范围筛选
   int? _advancedStartPeriod;
@@ -620,6 +611,9 @@ class ScoreProvider extends ChangeNotifier {
     _groupScoreMode = await db.getSetting('group_score_mode') ?? 'sum';
     _defaultQuickScoring = (await db.getSetting('default_quick_scoring')) ==
         'true';
+    // 同名次合并默认开启：只有显式存过 'false' 才视为关闭
+    // （与 default_quick_scoring 默认关闭的 == 'true' 判定不同）。
+    _mergeSameRank = (await db.getSetting('merge_same_rank')) != 'false';
     _scoreRangeMode = await db.getSetting('score_range_mode') ?? 'unlimited';
     _scoreRangeMin =
         double.tryParse((await db.getSetting('score_range_min')) ?? '') ?? 0;
@@ -635,6 +629,16 @@ class ScoreProvider extends ChangeNotifier {
       value.toString(),
     );
     _defaultQuickScoring = value;
+    notifyListeners();
+  }
+
+  /// 设置统计报表是否合并同名次（持久化到设置）
+  Future<void> setMergeSameRank(bool value) async {
+    await DatabaseHelper.instance.setSetting(
+      'merge_same_rank',
+      value.toString(),
+    );
+    _mergeSameRank = value;
     notifyListeners();
   }
 

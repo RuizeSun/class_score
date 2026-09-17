@@ -17,6 +17,15 @@ class PersonalizationProvider extends ChangeNotifier {
   bool _allowCloseWhenLocked = false;
   bool get allowCloseWhenLocked => _allowCloseWhenLocked;
 
+  // ---- 「查询」页左右分栏比例（左栏占比）----
+  double _analysisSplitRatio = defaultAnalysisSplitRatio;
+  double get analysisSplitRatio => _analysisSplitRatio;
+
+  /// 分栏比例默认值与允许范围：避免任一栏被拖到不可用。
+  static const double defaultAnalysisSplitRatio = 0.5;
+  static const double minAnalysisSplitRatio = 0.2;
+  static const double maxAnalysisSplitRatio = 0.8;
+
   /// Available Material 3 seed colors for user selection.
   static const List<Map<String, dynamic>> availableColors = [
     {'name': '靛蓝 (默认)', 'color': Colors.indigo},
@@ -56,6 +65,17 @@ class PersonalizationProvider extends ChangeNotifier {
     );
     _allowCloseWhenLocked = allowClose == 'true';
 
+    // Load analysis split ratio
+    final ratio = double.tryParse(
+      (await DatabaseHelper.instance.getSetting('analysis_split_ratio')) ?? '',
+    );
+    if (ratio != null) {
+      _analysisSplitRatio = ratio.clamp(
+        minAnalysisSplitRatio,
+        maxAnalysisSplitRatio,
+      );
+    }
+
     _isInitialized = true;
     notifyListeners();
   }
@@ -66,6 +86,18 @@ class PersonalizationProvider extends ChangeNotifier {
     await DatabaseHelper.instance.setSetting(
       'theme_seed_color',
       color.toARGB32().toRadixString(16),
+    );
+    notifyListeners();
+  }
+
+  /// 设置「查询」页左右分栏比例并持久化。
+  Future<void> setAnalysisSplitRatio(double value) async {
+    final clamped = value.clamp(minAnalysisSplitRatio, maxAnalysisSplitRatio);
+    if (clamped == _analysisSplitRatio) return;
+    _analysisSplitRatio = clamped;
+    await DatabaseHelper.instance.setSetting(
+      'analysis_split_ratio',
+      clamped.toString(),
     );
     notifyListeners();
   }

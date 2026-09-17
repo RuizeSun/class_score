@@ -53,6 +53,7 @@ lib/
 │   └── student/       # 学生管理
 ├── providers/         # 状态管理
 ├── services/          # 服务层 (备份、导入)
+├── utils/             # 通用算法 (名次计算等)
 └── widgets/           # 通用组件
 ```
 
