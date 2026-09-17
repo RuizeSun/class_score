@@ -20,6 +20,11 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage>
     with WidgetsBindingObserver, WindowListener {
+  /// 「查询」Tab 在 [_pages] / NavigationBar destinations 中的下标。
+  ///
+  /// 主页仪表盘的「最近评分」卡片需要跳到查询页，显式命名避免魔法数字。
+  static const int _queryTabIndex = 2;
+
   int _currentIndex = 0;
 
   late final PageController _pageController;
@@ -30,7 +35,9 @@ class _HomePageState extends State<HomePage>
   void initState() {
     super.initState();
     _pages = [
-      const DashboardPage(),
+      // 点击「最近评分」时切到「查询」Tab：查询页本身是底部导航的 Tab
+      // （Scaffold 无 AppBar / 返回按钮），不能再被 push 成整屏路由。
+      DashboardPage(onOpenQueryTab: () => _switchTab(_queryTabIndex)),
       const ScoreInputPage(),
       const StatisticsAnalysisPage(),
       const SettingsHubPage(),

@@ -5,10 +5,16 @@ import '../../database/database_helper.dart';
 import '../../providers/score_provider.dart';
 import '../../widgets/motion.dart';
 import '../../widgets/student_name_text.dart';
-import '../analysis/statistics_page.dart';
 
 class DashboardPage extends StatefulWidget {
-  const DashboardPage({super.key});
+  const DashboardPage({super.key, this.onOpenQueryTab});
+
+  /// 点击「最近评分」卡片时请求切换到「查询」Tab。
+  ///
+  /// 查询页本身是底部导航的 Tab（Scaffold 无 AppBar / 返回按钮），
+  /// 因此这里不能再 Navigator.push 压成整屏路由，否则用户无法返回；
+  /// 改由 HomePage 注入「切 Tab」回调，仪表盘只负责发出通知。
+  final VoidCallback? onOpenQueryTab;
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -269,14 +275,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     case 1:
                       return _RecentScoresCard(
                         records: _recentRecords,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const StatisticsAnalysisPage(),
-                            ),
-                          );
-                        },
+                        onTap: widget.onOpenQueryTab,
                       );
                     case 2:
                       return _TotalScoresCard(
@@ -404,19 +403,36 @@ class _DateScheduleCard extends StatelessWidget {
 }
 
 // ========== 卡片2: 最近评分 ==========
-class _RecentScoresCard extends StatelessWidget {
+class _RecentScoresCard extends StatefulWidget {
   final List<Map<String, dynamic>> records;
+
+  /// 点击卡片：切换到「查询」Tab 查看全部记录；为空时卡片不可点击。
   final VoidCallback? onTap;
 
   const _RecentScoresCard({required this.records, this.onTap});
 
   @override
+  State<_RecentScoresCard> createState() => _RecentScoresCardState();
+}
+
+class _RecentScoresCardState extends State<_RecentScoresCard> {
+  /// 桌面端悬停反馈：可点击磁贴稍微浮起，配合手型光标提示「可以点」。
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
+    final records = widget.records;
+    final onTap = widget.onTap;
+
     final card = _CardWidget(
       icon: Icons.history,
       iconColor: Colors.purple,
       title: '最近评分',
       surfaceColor: Colors.purple.shade50,
+      // 可点击时在标题行右侧给出「查看全部」的入口提示
+      trailing: onTap == null
+          ? null
+          : Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade600),
       child: records.isEmpty
           ? _EmptyStateWidget()
           : Column(
@@ -494,10 +510,23 @@ class _RecentScoresCard extends StatelessWidget {
             ),
     );
 
-    if (onTap != null) {
-      return GestureDetector(onTap: onTap, child: card);
+    if (onTap == null) {
+      return card;
     }
-    return card;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedScale(
+          scale: _hovered ? 1.02 : 1.0,
+          duration: AppMotion.resolve(context, AppMotion.fast),
+          curve: AppMotion.curve,
+          child: card,
+        ),
+      ),
+    );
   }
 }
 
@@ -823,12 +852,16 @@ class _CardWidget extends StatelessWidget {
   final Widget child;
   final Color surfaceColor;
 
+  /// 标题行右侧的附加控件（如「查看全部」箭头）；为空时不占位。
+  final Widget? trailing;
+
   const _CardWidget({
     required this.icon,
     required this.iconColor,
     required this.title,
     required this.child,
     this.surfaceColor = Colors.white,
+    this.trailing,
   });
 
   @override
@@ -861,6 +894,7 @@ class _CardWidget extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                if (trailing != null) ...[const Spacer(), trailing!],
               ],
             ),
             const SizedBox(height: 12),
