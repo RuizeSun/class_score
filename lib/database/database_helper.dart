@@ -308,14 +308,18 @@ class DatabaseHelper {
   }
 
   /// 根据小组总分计算方式生成 SQL 表达式（针对已按小组聚合的子查询 m）
-  /// m.member_count：小组人数；m.score_sum：小组成员当期积分变动总和
+  /// m.member_count：小组人数（含不参与小组总分的学生，仅用于展示）；
+  /// m.scoring_member_count：参与小组总分统计的人数（总分与人均只按这部分人算）；
+  /// m.score_sum：参与统计的成员当期积分变动总和。
   String _groupTotalExpr({
     required ({double studentInitial, double groupInitial, String mode})
         config,
   }) {
     final si = config.studentInitial;
     final gi = config.groupInitial;
-    final mc = 'COALESCE(m.member_count, 0)';
+    // 公式中的「人数」只统计参与小组总分的学生：不参与的学生既不贡献分值，
+    // 也不影响「人均得分」的分母与「学生得分总和」的初始分累加。
+    final mc = 'COALESCE(m.scoring_member_count, 0)';
     final ss = 'COALESCE(m.score_sum, 0)';
     switch (config.mode) {
       case 'group_init':
@@ -890,18 +894,22 @@ class DatabaseHelper {
 
   // ---- Advanced Queries ----
   /// 排除"不参与小组总分"（students.include_in_group_total = 0）的学生评分记录。
-  /// 用于小组维度的统计（图表分析等）；记录目标为小组类型、或目标学生已不存在时不受影响。
+  /// 仅用于小组维度的「汇总统计」（扇形图分布、总加分/扣分、日均等）；
+  /// 「评分变动记录」列表始终完整展示这些学生的记录，不做排除。
+  /// 记录目标为小组类型、或目标学生已不存在时不受影响。
   static const String _excludeNotInGroupTotalFilter =
       "(score_records.target_type <> 'student' OR score_records.target_id IN "
       "(SELECT id FROM students WHERE include_in_group_total = 1))";
 
+  /// 查询评分记录明细（用于「评分变动记录」列表）。
+  /// 不做"不参与小组总分"过滤：这些学生的记录也要展示，只是不计入
+  /// 小组总分、扇形图等统计数据（见 [getScoreDistributionByItem] 等）。
   Future<List<Map<String, dynamic>>> getScoreRecordsAdvanced({
     String? targetType,
     int? targetId,
     String? startDate,
     String? endDate,
     int? period,
-    bool excludeNotInGroupTotal = false,
   }) async {
     final db = await database;
     String query;
@@ -931,10 +939,6 @@ class DatabaseHelper {
           SELECT id FROM students WHERE group_id = ?
         )
       ''';
-      // 小组维度统计时排除"不参与小组总分"的学生记录
-      if (excludeNotInGroupTotal) {
-        query += ' AND $_excludeNotInGroupTotalFilter';
-      }
       whereArgs = [targetId];
       // 周期条件追加到 WHERE 子句后面
       if (period != null) {
@@ -974,10 +978,6 @@ class DatabaseHelper {
           conditions.add('score_records.target_id = ?');
           whereArgs.add(targetId);
         }
-      }
-      // 小组维度统计时排除"不参与小组总分"的学生记录
-      if (excludeNotInGroupTotal) {
-        conditions.add(_excludeNotInGroupTotalFilter);
       }
     }
     if (startDate != null) {
@@ -1201,7 +1201,9 @@ class DatabaseHelper {
   }
 
   // ---- Statistics ----
-  /// 获取指定周期范围内的小组总分
+  /// 获取指定周期范围内的小组总分。
+  /// member_count 为该组全部成员数（含不参与小组总分统计的学生，供统计报表展示）；
+  /// total_score 只累计参与统计的成员。
   Future<List<Map<String, dynamic>>> getGroupTotalScoresByPeriodRange({
     int? startPeriod,
     int? endPeriod,
@@ -1221,12 +1223,14 @@ class DatabaseHelper {
       LEFT JOIN (
         SELECT s.group_id,
                COUNT(DISTINCT s.id) as member_count,
-               COALESCE(SUM(sr.score), 0) as score_sum
+               COUNT(DISTINCT CASE WHEN s.include_in_group_total = 1 THEN s.id END)
+                 as scoring_member_count,
+               COALESCE(SUM(CASE WHEN s.include_in_group_total = 1 THEN sr.score ELSE 0 END), 0)
+                 as score_sum
         FROM students s
         LEFT JOIN score_records sr
           ON sr.target_type = 'student' AND sr.target_id = s.id
              AND sr.period >= $startPeriod AND sr.period <= $endPeriod
-        WHERE s.include_in_group_total = 1
         GROUP BY s.group_id
       ) m ON m.group_id = groups.id
       GROUP BY groups.id ORDER BY total_score DESC
@@ -1294,6 +1298,9 @@ class DatabaseHelper {
     return null;
   }
 
+  /// 获取当前周期的小组总分。
+  /// member_count 为该组全部成员数（含不参与小组总分统计的学生，供统计报表展示）；
+  /// total_score 只累计参与统计的成员。
   Future<List<Map<String, dynamic>>> getGroupTotalScores({int? period}) async {
     final db = await database;
     final config = await _getScoreConfig();
@@ -1308,11 +1315,13 @@ class DatabaseHelper {
       LEFT JOIN (
         SELECT s.group_id,
                COUNT(DISTINCT s.id) as member_count,
-               COALESCE(SUM(sr.score), 0) as score_sum
+               COUNT(DISTINCT CASE WHEN s.include_in_group_total = 1 THEN s.id END)
+                 as scoring_member_count,
+               COALESCE(SUM(CASE WHEN s.include_in_group_total = 1 THEN sr.score ELSE 0 END), 0)
+                 as score_sum
         FROM students s
         LEFT JOIN score_records sr
           ON sr.target_type = 'student' AND sr.target_id = s.id $periodOn
-        WHERE s.include_in_group_total = 1
         GROUP BY s.group_id
       ) m ON m.group_id = groups.id
       GROUP BY groups.id ORDER BY total_score DESC

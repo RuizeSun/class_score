@@ -42,7 +42,8 @@ class _AnalysisViewState extends State<AnalysisView> {
   String _timeRange = 'all'; // '7d', '30d', 'all'
 
   /// 仅「小组 + 全部小组」视图可用：
-  /// 统计时是否排除"不参与小组总分"（未参加小组评分）的学生记录。
+  /// 图表汇总统计（扇形图、总加分/扣分、日均）是否排除"不参与小组总分"的学生。
+  /// 「评分变动记录」列表不受此开关影响，始终展示这些学生的记录。
   bool _excludeNotInGroupTotal = true;
 
   // Data
@@ -109,19 +110,22 @@ class _AnalysisViewState extends State<AnalysisView> {
 
     final currentPeriod = context.read<ScoreProvider>().currentPeriod;
 
-    // 小组维度统计：选中具体小组时强制排除"不参与小组总分"的学生记录，
+    // 图表汇总统计（扇形图分布、总加分/扣分、日均）：小组维度下排除
+    // "不参与小组总分"的学生；选中具体小组时强制排除，
     // 选择「全部小组」时由开关 _excludeNotInGroupTotal 决定。
+    // 注意：这不影响下方「评分变动记录」，该列表始终完整展示。
     final excludeNotInGroupTotal =
         _targetType == 'group' &&
         (_filterGroupId != null || _excludeNotInGroupTotal);
 
+    // 「评分变动记录」始终展示完整记录（含不参与小组总分的学生），
+    // 因此这里不做排除：他们的分值只是不计入扇形图与总分统计。
     _records = await db.getScoreRecordsAdvanced(
       targetType: _targetType,
       targetId: targetId,
       startDate: _startDate,
       endDate: _endDate,
       period: currentPeriod,
-      excludeNotInGroupTotal: excludeNotInGroupTotal,
     );
 
     _distribution = await db.getScoreDistributionByItem(
@@ -256,7 +260,7 @@ class _AnalysisViewState extends State<AnalysisView> {
                       _loadData();
                     },
                   ),
-                // 「全部小组」视图下可选择是否统计未参加小组评分的学生
+                // 「全部小组」视图下可选择图表汇总统计是否排除未参加小组评分的学生
                 if (_targetType == 'group' && _filterGroupId == null) ...[
                   const SizedBox(height: 8),
                   SwitchListTile(
@@ -264,11 +268,11 @@ class _AnalysisViewState extends State<AnalysisView> {
                     contentPadding: EdgeInsets.zero,
                     value: _excludeNotInGroupTotal,
                     title: const Text(
-                      '统计时排除未参加小组评分的学生',
+                      '图表统计排除未参加小组评分的学生',
                       style: TextStyle(fontSize: 13),
                     ),
                     subtitle: const Text(
-                      '关闭后将包含这些学生的评分记录与分值',
+                      '仅影响扇形图与总分统计；评分变动记录始终完整显示',
                       style: TextStyle(fontSize: 11),
                     ),
                     onChanged: (v) {
