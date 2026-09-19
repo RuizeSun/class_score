@@ -22,6 +22,7 @@
 | 🔑 **USB 密钥**   | 支持 USB 密钥快速解锁            |
 | ⚙️ **设置中心**   | 课程管理、数据导入导出等配置     |
 | 👥 **学生管理**   | 学生信息维护与分组功能           |
+| 🗓️ **调休设置**   | 临时把某一天切换到其他星期的课表 |
 
 ## 🛠️ 技术栈
 
@@ -40,6 +41,7 @@ lib/
 ├── models/            # 数据模型
 │   ├── course_schedule.dart
 │   ├── group.dart
+│   ├── schedule_adjustment.dart
 │   ├── score_item.dart
 │   ├── score_record.dart
 │   ├── student.dart

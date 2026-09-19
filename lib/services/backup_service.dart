@@ -129,6 +129,7 @@ class BackupService {
       'students': await db.query('students'),
       'score_records': await db.query('score_records'),
       'course_schedule': await db.query('course_schedule'),
+      'schedule_adjustment': await db.query('schedule_adjustment'),
       'export_time': DateTime.now().toIso8601String(),
     };
     final encoder = const JsonEncoder.withIndent('  ');
@@ -148,6 +149,7 @@ class BackupService {
       await db.delete('students');
       await db.delete('groups');
       await db.delete('course_schedule');
+      await db.delete('schedule_adjustment');
 
       // Import groups
       if (data['groups'] != null) {
@@ -185,6 +187,15 @@ class BackupService {
         }
       }
 
+      // Import schedule_adjustment（调休）
+      if (data['schedule_adjustment'] != null) {
+        for (final row in data['schedule_adjustment'] as List) {
+          final map = Map<String, dynamic>.from(row as Map);
+          map.remove('id');
+          await db.insert('schedule_adjustment', map);
+        }
+      }
+
       await DatabaseHelper.instance.reloadAll();
       return true;
     } catch (e) {
@@ -216,6 +227,7 @@ class BackupService {
     await db.delete('students');
     await db.delete('groups');
     await db.delete('course_schedule');
+    await db.delete('schedule_adjustment');
     await DatabaseHelper.instance.reloadAll();
   }
 }

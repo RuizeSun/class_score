@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../settings/course_schedule_management.dart'
-    show showCourseScheduleDialog, CourseScheduleManagementView;
+    show
+        showCourseScheduleDialog,
+        showScheduleAdjustmentDialog,
+        CourseScheduleManagementView;
 
 class CourseSchedulePage extends StatefulWidget {
   const CourseSchedulePage({super.key});
@@ -27,6 +30,8 @@ class _CourseSchedulePageState extends State<CourseSchedulePage> {
       body: CourseScheduleManagementView(
         onShowCourseDialog: ({Map<String, dynamic>? schedule}) =>
             showCourseScheduleDialog(context, schedule: schedule),
+        onShowAdjustmentDialog: ({DateTime? date}) =>
+            showScheduleAdjustmentDialog(context, date: date),
       ),
       // 添加 / 导入按钮已包含在 CourseScheduleManagementView 的工具栏中
     );

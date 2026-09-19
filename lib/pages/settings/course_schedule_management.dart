@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../models/schedule_adjustment.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/schedule_import_service.dart';
 import 'settings_common.dart';
@@ -161,18 +162,323 @@ void showCourseScheduleDialog(
 /// 课程表展示模式
 enum CourseScheduleViewMode { grid, table }
 
+/// 调休设置中「按自身课表」选项的哨兵值（下拉框不接受 null 作为选中项）。
+const int _followOwnWeekday = -1;
+
+/// 「设置调休」对话框 - 周切换行。
+Widget _buildAdjustmentWeekNav({
+  required DateTime weekStart,
+  required DateTime minWeekStart,
+  required DateTime maxWeekStart,
+  required DateTime currentWeekStart,
+  required ValueChanged<int> onShiftWeek,
+  required VoidCallback onBackToThisWeek,
+}) {
+  return Row(
+    children: [
+      IconButton(
+        tooltip: '上一周',
+        onPressed: weekStart.isAfter(minWeekStart)
+            ? () => onShiftWeek(-7)
+            : null,
+        icon: const Icon(Icons.chevron_left),
+      ),
+      Expanded(
+        child: Text(
+          ScheduleAdjustment.formatWeekRange(weekStart),
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+      ),
+      IconButton(
+        tooltip: '下一周',
+        onPressed: weekStart.isBefore(maxWeekStart)
+            ? () => onShiftWeek(7)
+            : null,
+        icon: const Icon(Icons.chevron_right),
+      ),
+      if (weekStart != currentWeekStart)
+        TextButton(onPressed: onBackToThisWeek, child: const Text('回到本周')),
+    ],
+  );
+}
+
+/// 「设置调休」对话框 - 一周 7 天的日期选择（单选）。
+Widget _buildAdjustmentDateChips({
+  required AuthProvider auth,
+  required DateTime weekStart,
+  required DateTime selectedDate,
+  required ValueChanged<DateTime> onSelect,
+}) {
+  final selectedKey = ScheduleAdjustment.dateKey(selectedDate);
+  return Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: [
+      for (int i = 0; i < 7; i++)
+        () {
+          final day = weekStart.add(Duration(days: i));
+          final adjusted =
+              ScheduleAdjustment.findFor(auth.scheduleAdjustments, day) != null;
+          return ChoiceChip(
+            key: ValueKey('adjustment-date-${ScheduleAdjustment.dateKey(day)}'),
+            selected: ScheduleAdjustment.dateKey(day) == selectedKey,
+            label: Text(
+              '${ScheduleAdjustment.weekdayName(day.weekday)} '
+              '${day.month}/${day.day}${adjusted ? ' · 调休' : ''}',
+            ),
+            onSelected: (_) => onSelect(day),
+          );
+        }(),
+    ],
+  );
+}
+
+/// 「设置调休」对话框 - 生效课表下拉框。
+Widget _buildAdjustmentWeekdayField({
+  required AuthProvider auth,
+  required DateTime selectedDate,
+  required int selectedValue,
+  required ValueChanged<int> onChanged,
+}) {
+  return DropdownButtonFormField<int>(
+    key: ValueKey(
+      'adjustment-weekday-${ScheduleAdjustment.dateKey(selectedDate)}',
+    ),
+    initialValue: selectedValue,
+    decoration: const InputDecoration(
+      labelText: '该日按哪天的课表上课',
+      border: OutlineInputBorder(),
+    ),
+    items: [
+      const DropdownMenuItem(
+        value: _followOwnWeekday,
+        child: Text('不调休（按日期自身课表）'),
+      ),
+      for (int d = 1; d <= 7; d++)
+        DropdownMenuItem(
+          value: d,
+          child: Text(
+            '按${ScheduleAdjustment.weekdayName(d)}课表'
+            '（${auth.courseSchedules.where((s) => s['weekday'] == d).length}节）',
+          ),
+        ),
+      const DropdownMenuItem(
+        value: ScheduleAdjustment.restWeekday,
+        child: Text('无课（放假）'),
+      ),
+    ],
+    onChanged: (v) => onChanged(v ?? _followOwnWeekday),
+  );
+}
+
+/// 「设置调休」对话框 - 提示 / 警告文案。
+Widget _buildAdjustmentHint(int selectedValue, bool hasCourses) {
+  final missingCourses =
+      selectedValue >= 1 && selectedValue <= 7 && !hasCourses;
+  return Text(
+    missingCourses
+        ? '注意：${ScheduleAdjustment.weekdayName(selectedValue)}暂无课程安排'
+        : '调休只对所选日期生效，不会修改课表本身。',
+    style: TextStyle(
+      fontSize: SettingsLayout.hintFontSize,
+      color: missingCourses ? Colors.orange.shade800 : Colors.grey.shade600,
+    ),
+  );
+}
+
+/// 「设置调休」对话框 - 校验提示。
+Widget _buildAdjustmentError(String? errorText) {
+  if (errorText == null) return const SizedBox.shrink();
+  return Padding(
+    padding: const EdgeInsets.only(top: 8),
+    child: Row(
+      children: [
+        const Icon(Icons.error_outline, size: 18, color: Colors.red),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            errorText,
+            style: const TextStyle(color: Colors.red, fontSize: 13),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// 显示「设置调休」对话框：选择日期 + 该日按星期几的课表上课。
+///
+/// [date] 用于预选日期（点击课表表头 / 本周调休标记时传入该日期），默认今天。
+void showScheduleAdjustmentDialog(BuildContext context, {DateTime? date}) {
+  final auth = context.read<AuthProvider>();
+  final today = ScheduleAdjustment.dateOnly(DateTime.now());
+  final currentWeekStart = ScheduleAdjustment.startOfWeek(today);
+  var weekStart = ScheduleAdjustment.startOfWeek(date ?? today);
+  var selectedDate = ScheduleAdjustment.dateOnly(date ?? today);
+  int selectedValue =
+      auth.adjustmentFor(selectedDate)?['weekday'] as int? ?? _followOwnWeekday;
+  String? errorText;
+
+  // 调休属于临时安排：允许从 4 周前到 1 年后
+  final minWeekStart = currentWeekStart.subtract(const Duration(days: 7 * 4));
+  final maxWeekStart = currentWeekStart.add(const Duration(days: 7 * 52));
+
+  void showMessage(String message) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void selectDate(DateTime day, StateSetter setDialogState) {
+    setDialogState(() {
+      selectedDate = day;
+      selectedValue =
+          auth.adjustmentFor(day)?['weekday'] as int? ?? _followOwnWeekday;
+      errorText = null;
+    });
+  }
+
+  /// 确定：与日期自身星期相同视为取消调休，否则写入调休记录。
+  Future<void> submit(StateSetter setDialogState) async {
+    if (selectedValue == _followOwnWeekday) {
+      setDialogState(() => errorText = '请选择该日按哪天的课表上课');
+      return;
+    }
+    final target = selectedDate;
+    final weekday = selectedValue;
+    if (weekday == target.weekday) {
+      // 与日期自身课表相同：无需调休，已有记录则清除
+      if (auth.adjustmentFor(target) != null) {
+        await auth.removeScheduleAdjustment(target);
+      }
+      if (!context.mounted) return;
+      Navigator.pop(context);
+      showMessage(
+        '${ScheduleAdjustment.formatMonthDay(target)} 与该星期课表相同，已恢复默认',
+      );
+      return;
+    }
+    await auth.setScheduleAdjustment(target, weekday);
+    if (!context.mounted) return;
+    Navigator.pop(context);
+    showMessage(
+      '已设置 ${ScheduleAdjustment.formatMonthDay(target)} '
+      '${ScheduleAdjustment.describeWeekday(weekday)}',
+    );
+  }
+
+  showDialog<void>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setDialogState) {
+        final selectedAdjustment = auth.adjustmentFor(selectedDate);
+        final hasCourses =
+            selectedValue >= 1 &&
+            selectedValue <= 7 &&
+            auth.courseSchedules.any((s) => s['weekday'] == selectedValue);
+
+        return AlertDialog(
+          title: const Text('设置调休'),
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildAdjustmentWeekNav(
+                  weekStart: weekStart,
+                  minWeekStart: minWeekStart,
+                  maxWeekStart: maxWeekStart,
+                  currentWeekStart: currentWeekStart,
+                  onShiftWeek: (days) => setDialogState(
+                    () => weekStart = weekStart.add(Duration(days: days)),
+                  ),
+                  onBackToThisWeek: () => selectDate(today, setDialogState),
+                ),
+                const SizedBox(height: 8),
+                const Text('调休日期'),
+                const SizedBox(height: 6),
+                _buildAdjustmentDateChips(
+                  auth: auth,
+                  weekStart: weekStart,
+                  selectedDate: selectedDate,
+                  onSelect: (day) => selectDate(day, setDialogState),
+                ),
+                const SizedBox(height: 16),
+                _buildAdjustmentWeekdayField(
+                  auth: auth,
+                  selectedDate: selectedDate,
+                  selectedValue: selectedValue,
+                  onChanged: (v) => setDialogState(() {
+                    selectedValue = v;
+                    errorText = null;
+                  }),
+                ),
+                const SizedBox(height: 8),
+                _buildAdjustmentHint(selectedValue, hasCourses),
+                if (selectedAdjustment != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '该日期已设置：'
+                    '${ScheduleAdjustment.describeWeekday(selectedAdjustment['weekday'] as int)}',
+                    style: TextStyle(
+                      fontSize: SettingsLayout.hintFontSize,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
+                ],
+                _buildAdjustmentError(errorText),
+              ],
+            ),
+          ),
+          actions: [
+            if (selectedAdjustment != null)
+              TextButton(
+                onPressed: () async {
+                  final target = selectedDate;
+                  await auth.removeScheduleAdjustment(target);
+                  if (!context.mounted) return;
+                  Navigator.pop(ctx);
+                  showMessage(
+                    '已清除 ${ScheduleAdjustment.formatMonthDay(target)} 的调休',
+                  );
+                },
+                child: const Text('清除该日调休'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => submit(setDialogState),
+              child: const Text('确定'),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+}
+
 /// 可嵌入 SettingsHubPage 的课程表管理视图（不包含 Scaffold/AppBar）。
 ///
 /// - 网格视图：按星期 × 时间节次展示，点击单元格快速添加/编辑
 /// - 表格视图：行内直接编辑，显式"保存"后统一写库
 /// - 导入：从 CSV / Excel 批量导入课程表
+/// - 调休：临时把某一天切换成其他星期的课表（或不排课）
 class CourseScheduleManagementView extends StatefulWidget {
   const CourseScheduleManagementView({
     super.key,
     required this.onShowCourseDialog,
+    required this.onShowAdjustmentDialog,
   });
 
   final void Function({Map<String, dynamic>? schedule}) onShowCourseDialog;
+
+  /// 打开「设置调休」对话框；[date] 用于预选日期。
+  final void Function({DateTime? date}) onShowAdjustmentDialog;
 
   @override
   State<CourseScheduleManagementView> createState() =>
@@ -467,6 +773,7 @@ class _CourseScheduleManagementViewState
     return Column(
       children: [
         _buildToolbar(context),
+        _buildWeekAdjustmentBanner(context),
         if (_mode == CourseScheduleViewMode.table && _dirty)
           _buildDirtyBanner(context),
         Expanded(
@@ -479,6 +786,12 @@ class _CourseScheduleManagementViewState
   }
 
   Widget _buildToolbar(BuildContext context) {
+    // 仅在存在今天之前的调休记录时，才提供清理入口
+    final todayKey = ScheduleAdjustment.dateKey(DateTime.now());
+    final hasExpired = context.watch<AuthProvider>().scheduleAdjustments.any(
+      (a) => ((a['date'] as String?) ?? '').compareTo(todayKey) < 0,
+    );
+
     return SettingsToolbar(
       children: [
         SegmentedButton<CourseScheduleViewMode>(
@@ -508,6 +821,17 @@ class _CourseScheduleManagementViewState
           icon: const Icon(Icons.add),
           label: const Text('添加课程'),
         ),
+        OutlinedButton.icon(
+          onPressed: () => widget.onShowAdjustmentDialog(),
+          icon: const Icon(Icons.event_repeat),
+          label: const Text('设置调休'),
+        ),
+        if (hasExpired)
+          TextButton.icon(
+            onPressed: _clearExpiredAdjustments,
+            icon: const Icon(Icons.cleaning_services_outlined),
+            label: const Text('清理过期调休'),
+          ),
         if (_mode == CourseScheduleViewMode.table && _dirty) ...[
           FilledButton.icon(
             onPressed: _saveRows,
@@ -518,6 +842,104 @@ class _CourseScheduleManagementViewState
         ],
       ],
     );
+  }
+
+  // ---- 本周调休 ----
+
+  /// 本周内已设置的调休（按日期升序）。
+  List<({DateTime date, int weekday})> _currentWeekAdjustments(
+    List<Map<String, dynamic>> adjustments,
+  ) {
+    final weekStart = ScheduleAdjustment.startOfWeek(DateTime.now());
+    final result = <({DateTime date, int weekday})>[];
+    for (int i = 0; i < 7; i++) {
+      final day = weekStart.add(Duration(days: i));
+      final adjustment = ScheduleAdjustment.findFor(adjustments, day);
+      if (adjustment == null) continue;
+      result.add((
+        date: day,
+        weekday: (adjustment['weekday'] as int?) ?? day.weekday,
+      ));
+    }
+    return result;
+  }
+
+  /// 本周调休提示条：点击标记可修改，右侧 ✕ 可清除。
+  Widget _buildWeekAdjustmentBanner(BuildContext context) {
+    final adjustments = context.watch<AuthProvider>().scheduleAdjustments;
+    final entries = _currentWeekAdjustments(adjustments);
+    if (entries.isEmpty) return const SizedBox.shrink();
+
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: SettingsLayout.toolbarSpacing),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: scheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.event_repeat,
+                  size: 18,
+                  color: scheme.onSecondaryContainer,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '本周调休：',
+                  style: TextStyle(
+                    fontSize: SettingsLayout.hintFontSize,
+                    fontWeight: FontWeight.bold,
+                    color: scheme.onSecondaryContainer,
+                  ),
+                ),
+              ],
+            ),
+            for (final entry in entries)
+              InputChip(
+                key: ValueKey(
+                  'week-adjustment-${ScheduleAdjustment.dateKey(entry.date)}',
+                ),
+                tooltip: '点击修改，✕ 清除',
+                label: Text(
+                  '${ScheduleAdjustment.formatMonthDay(entry.date)}'
+                  '（${ScheduleAdjustment.weekdayName(entry.date.weekday)}）'
+                  '${ScheduleAdjustment.describeWeekday(entry.weekday)}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                deleteIcon: const Icon(Icons.close, size: 16),
+                onPressed: () =>
+                    widget.onShowAdjustmentDialog(date: entry.date),
+                onDeleted: () => _removeAdjustment(entry.date),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _removeAdjustment(DateTime date) async {
+    await context.read<AuthProvider>().removeScheduleAdjustment(date);
+    if (!mounted) return;
+    _showMessage('已清除 ${ScheduleAdjustment.formatMonthDay(date)} 的调休');
+  }
+
+  /// 清理今天之前的调休记录（这些记录已不再影响课表）。
+  Future<void> _clearExpiredAdjustments() async {
+    final deleted = await context
+        .read<AuthProvider>()
+        .clearExpiredAdjustments();
+    if (!mounted) return;
+    _showMessage(deleted > 0 ? '已清理 $deleted 条过期调休记录' : '没有需要清理的调休记录');
   }
 
   Widget _buildDirtyBanner(BuildContext context) {
@@ -575,6 +997,14 @@ class _CourseScheduleManagementViewState
 
     final theme = Theme.of(context);
 
+    // 本周调休：按“日期自身的星期”标注到对应列，
+    // 例如周六被设置成“按周三课表”时，周六列显示“本周调休 9/19 按周三课表”
+    final adjustments = context.watch<AuthProvider>().scheduleAdjustments;
+    final weekNotes = <int, List<({DateTime date, int weekday})>>{};
+    for (final entry in _currentWeekAdjustments(adjustments)) {
+      weekNotes.putIfAbsent(entry.date.weekday, () => []).add(entry);
+    }
+
     // 表格宽度自适应可用空间：时间列固定，星期列等分，避免横向滚动
     return Scrollbar(
       child: SingleChildScrollView(
@@ -594,6 +1024,7 @@ class _CourseScheduleManagementViewState
                   _gridHeaderCell(
                     context,
                     AuthProvider.weekdayNames[d] ?? '周$d',
+                    notes: weekNotes[d],
                   ),
               ],
             ),
@@ -617,14 +1048,64 @@ class _CourseScheduleManagementViewState
     );
   }
 
-  Widget _gridHeaderCell(BuildContext context, String text) {
+  /// 网格视图表头单元格。
+  ///
+  /// [notes] 为该列“本周调休”标记：显示成
+  /// 「本周调休 9/19 按周三课表」，点击可直接修改该日调休。
+  Widget _gridHeaderCell(
+    BuildContext context,
+    String text, {
+    List<({DateTime date, int weekday})>? notes,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasNotes = notes != null && notes.isNotEmpty;
     return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: const TextStyle(fontWeight: FontWeight.bold),
+      color: hasNotes
+          ? scheme.secondaryContainer
+          : scheme.surfaceContainerHighest,
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            text,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          if (hasNotes)
+            for (final note in notes)
+              InkWell(
+                key: ValueKey(
+                  'grid-adjustment-${ScheduleAdjustment.dateKey(note.date)}',
+                ),
+                onTap: () => widget.onShowAdjustmentDialog(date: note.date),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '本周调休 ${note.date.month}/${note.date.day}',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: scheme.onSecondaryContainer,
+                        ),
+                      ),
+                      Text(
+                        ScheduleAdjustment.describeWeekday(note.weekday),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: scheme.onSecondaryContainer,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+        ],
       ),
     );
   }

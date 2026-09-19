@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
+import '../models/schedule_adjustment.dart';
 
 class AuthProvider extends ChangeNotifier {
   bool _isInitialized = false;
@@ -41,6 +42,10 @@ class AuthProvider extends ChangeNotifier {
 
   List<Map<String, dynamic>> _courseSchedules = [];
   List<Map<String, dynamic>> get courseSchedules => _courseSchedules;
+
+  /// 调休记录：date -> 生效星期（weekday = ScheduleAdjustment.restWeekday 表示无课）
+  List<Map<String, dynamic>> _scheduleAdjustments = [];
+  List<Map<String, dynamic>> get scheduleAdjustments => _scheduleAdjustments;
 
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
@@ -113,10 +118,67 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> loadCourseSchedules() async {
     _courseSchedules = await DatabaseHelper.instance.getCourseSchedules();
+    _scheduleAdjustments = await DatabaseHelper.instance
+        .getScheduleAdjustments();
     // Migrate legacy data: normalize time format if needed
     await _migrateTimeFormats();
     _updateCurrentCourseName();
     notifyListeners();
+  }
+
+  // ---- Schedule Adjustment (调休) ----
+
+  Future<void> loadScheduleAdjustments() async {
+    _scheduleAdjustments = await DatabaseHelper.instance
+        .getScheduleAdjustments();
+    _applyScheduleRule();
+    notifyListeners();
+  }
+
+  /// [date] 当天的调休记录（没有则返回 null）。
+  Map<String, dynamic>? adjustmentFor(DateTime date) =>
+      ScheduleAdjustment.findFor(scheduleAdjustments, date);
+
+  /// 今天实际生效的星期：无调休为自身星期；调休为无课时返回 null。
+  int? get todayEffectiveWeekday => ScheduleAdjustment.effectiveWeekdayFor(
+    scheduleAdjustments,
+    DateTime.now(),
+  );
+
+  /// 设置某一天的调休：该日按 [weekday] 的课表上课
+  /// （[ScheduleAdjustment.restWeekday] 表示当天无课）。
+  ///
+  /// 若 [weekday] 与日期自身星期相同，则等同于取消调休（删除记录）。
+  Future<void> setScheduleAdjustment(DateTime date, int weekday) async {
+    final day = ScheduleAdjustment.dateOnly(date);
+    if (weekday == day.weekday) {
+      await removeScheduleAdjustment(day);
+      return;
+    }
+    await DatabaseHelper.instance.upsertScheduleAdjustment({
+      'date': ScheduleAdjustment.dateKey(day),
+      'weekday': weekday,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+    await loadScheduleAdjustments();
+  }
+
+  /// 取消某一天的调休。
+  Future<void> removeScheduleAdjustment(DateTime date) async {
+    await DatabaseHelper.instance.deleteScheduleAdjustment(
+      ScheduleAdjustment.dateKey(date),
+    );
+    await loadScheduleAdjustments();
+  }
+
+  /// 清理今天之前的调休记录，返回删除条数。
+  Future<int> clearExpiredAdjustments() async {
+    final deleted = await DatabaseHelper.instance
+        .deleteScheduleAdjustmentsBefore(
+          ScheduleAdjustment.dateKey(DateTime.now()),
+        );
+    await loadScheduleAdjustments();
+    return deleted;
   }
 
   /// Migrate time formats in database to standard HH:mm format.
@@ -346,20 +408,26 @@ class AuthProvider extends ChangeNotifier {
   /// course name even when the app is locked or manually unlocked.
   void _updateCurrentCourseName() {
     final now = DateTime.now();
-    final weekday = now.weekday; // 1=Mon ... 7=Sun
+    // 今天的课表可能被调休切换：生效星期为 null 表示当天无课
+    final weekday = ScheduleAdjustment.effectiveWeekdayFor(
+      _scheduleAdjustments,
+      now,
+    );
     final currentTimeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
     String? matchedCourse;
 
-    for (final schedule in _courseSchedules) {
-      if (schedule['weekday'] as int == weekday) {
-        final start = normalizeTime(schedule['start_time'] as String);
-        final end = normalizeTime(schedule['end_time'] as String);
-        if (currentTimeStr.compareTo(start) >= 0 &&
-            currentTimeStr.compareTo(end) < 0) {
-          matchedCourse = schedule['course_name'] as String;
-          break;
+    if (weekday != null) {
+      for (final schedule in _courseSchedules) {
+        if (schedule['weekday'] as int == weekday) {
+          final start = normalizeTime(schedule['start_time'] as String);
+          final end = normalizeTime(schedule['end_time'] as String);
+          if (currentTimeStr.compareTo(start) >= 0 &&
+              currentTimeStr.compareTo(end) < 0) {
+            matchedCourse = schedule['course_name'] as String;
+            break;
+          }
         }
       }
     }
@@ -383,20 +451,26 @@ class AuthProvider extends ChangeNotifier {
     if (_unlockedByManual || _unlockedByUsb) return;
 
     final now = DateTime.now();
-    final weekday = now.weekday; // 1=Mon ... 7=Sun
+    // 调休后当天可能按另一天的课表上课，或整日无课
+    final weekday = ScheduleAdjustment.effectiveWeekdayFor(
+      _scheduleAdjustments,
+      now,
+    );
     final currentTimeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
     bool inClass = false;
 
-    for (final schedule in _courseSchedules) {
-      if (schedule['weekday'] as int == weekday) {
-        final start = normalizeTime(schedule['start_time'] as String);
-        final end = normalizeTime(schedule['end_time'] as String);
-        if (currentTimeStr.compareTo(start) >= 0 &&
-            currentTimeStr.compareTo(end) < 0) {
-          inClass = true;
-          break;
+    if (weekday != null) {
+      for (final schedule in _courseSchedules) {
+        if (schedule['weekday'] as int == weekday) {
+          final start = normalizeTime(schedule['start_time'] as String);
+          final end = normalizeTime(schedule['end_time'] as String);
+          if (currentTimeStr.compareTo(start) >= 0 &&
+              currentTimeStr.compareTo(end) < 0) {
+            inClass = true;
+            break;
+          }
         }
       }
     }

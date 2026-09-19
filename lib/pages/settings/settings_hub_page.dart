@@ -202,6 +202,8 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
         return CourseScheduleManagementView(
           onShowCourseDialog: ({Map<String, dynamic>? schedule}) =>
               showCourseScheduleDialog(context, schedule: schedule),
+          onShowAdjustmentDialog: ({DateTime? date}) =>
+              showScheduleAdjustmentDialog(context, date: date),
         );
       case SettingsSection.period:
         return const PeriodManagementView();

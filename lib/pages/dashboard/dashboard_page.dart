@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../database/database_helper.dart';
+import '../../models/schedule_adjustment.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/score_provider.dart';
 import '../../widgets/motion.dart';
 import '../../widgets/student_name_text.dart';
@@ -27,12 +29,20 @@ class _DashboardPageState extends State<DashboardPage> {
   List<Map<String, dynamic>> _groupRanking = [];
   List<Map<String, dynamic>> _positiveDistribution = [];
   List<Map<String, dynamic>> _negativeDistribution = [];
+
+  /// 今日调休说明（如「调休：按周三课表」），无调休时为 null。
+  String? _todayAdjustmentLabel;
+
+  /// 最近一次加载所用的今日生效星期，用于只在调休变化时重新加载课表。
+  int? _loadedEffectiveWeekday;
+
   bool _loading = true;
 
   /// 是否已完成过一次加载：首次加载显示进度指示并淡入内容，
   /// 之后的数据刷新直接就地更新（避免每次评分后整屏闪一下）。
   bool _hasLoadedOnce = false;
   ScoreProvider? _scoreProvider;
+  AuthProvider? _authProvider;
 
   @override
   void initState() {
@@ -40,6 +50,10 @@ class _DashboardPageState extends State<DashboardPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scoreProvider = context.read<ScoreProvider>();
       _scoreProvider?.addListener(_onScoreDataChanged);
+      // 调休会改变今天实际生效的星期：仅在生效星期变化时重载，
+      // 避免 AuthProvider 的定时轮询（每 10 秒）触发重复查库。
+      _authProvider = context.read<AuthProvider>();
+      _authProvider?.addListener(_onAuthScheduleChanged);
       _loadDashboardData();
     });
   }
@@ -47,10 +61,16 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void dispose() {
     _scoreProvider?.removeListener(_onScoreDataChanged);
+    _authProvider?.removeListener(_onAuthScheduleChanged);
     super.dispose();
   }
 
   void _onScoreDataChanged() {
+    _loadDashboardData();
+  }
+
+  void _onAuthScheduleChanged() {
+    if (_authProvider?.todayEffectiveWeekday == _loadedEffectiveWeekday) return;
     _loadDashboardData();
   }
 
@@ -65,8 +85,19 @@ class _DashboardPageState extends State<DashboardPage> {
 
     try {
       // 1. 获取今天课表（只显示还未结束的课程）
-      final weekday = now.weekday; // 1-7 (Monday=1, Sunday=7)
-      final schedules = await db.getCourseSchedulesByWeekday(weekday);
+      //    调休后按「实际生效的星期」取课表；生效星期为 null 表示当天无课
+      final auth = _authProvider;
+      final effectiveWeekday = auth == null
+          ? now.weekday
+          : ScheduleAdjustment.effectiveWeekdayFor(
+              auth.scheduleAdjustments,
+              now,
+            );
+      _loadedEffectiveWeekday = effectiveWeekday;
+      final adjustment = auth?.adjustmentFor(now);
+      final schedules = effectiveWeekday == null
+          ? <Map<String, dynamic>>[]
+          : await db.getCourseSchedulesByWeekday(effectiveWeekday);
 
       // 根据当前时间过滤，只显示还未结束的课程
       final currentTime =
@@ -79,6 +110,9 @@ class _DashboardPageState extends State<DashboardPage> {
       if (mounted) {
         setState(() {
           _todaySchedules = todaySchedules;
+          _todayAdjustmentLabel = adjustment == null
+              ? null
+              : '调休：${ScheduleAdjustment.describeWeekday(adjustment['weekday'] as int)}';
         });
       }
 
@@ -271,6 +305,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         date: now,
                         weekDayName: weekDayName,
                         schedules: _todaySchedules,
+                        adjustmentLabel: _todayAdjustmentLabel,
                       );
                     case 1:
                       return _RecentScoresCard(
@@ -317,15 +352,20 @@ class _DateScheduleCard extends StatelessWidget {
   final String weekDayName;
   final List<Map<String, dynamic>> schedules;
 
+  /// 今日调休说明（如「调休：按周三课表」），无调休时为 null。
+  final String? adjustmentLabel;
+
   const _DateScheduleCard({
     required this.date,
     required this.weekDayName,
     required this.schedules,
+    this.adjustmentLabel,
   });
 
   @override
   Widget build(BuildContext context) {
     final dateStr = '${date.year}年${date.month}月${date.day}日';
+    final adjustmentLabel = this.adjustmentLabel;
 
     return _CardWidget(
       icon: Icons.calendar_today,
@@ -344,9 +384,40 @@ class _DateScheduleCard extends StatelessWidget {
             weekDayName,
             style: TextStyle(fontSize: 12, color: Colors.grey[600]),
           ),
+          if (adjustmentLabel != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.event_repeat,
+                    size: 14,
+                    color: Colors.deepOrange,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      adjustmentLabel,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.deepOrange,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 8),
           if (schedules.isEmpty)
-            _EmptyStateWidget()
+            adjustmentLabel != null
+                ? Text(
+                    '今日调休，无课程安排',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  )
+                : _EmptyStateWidget()
           else
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,

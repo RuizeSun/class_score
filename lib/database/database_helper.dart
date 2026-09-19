@@ -32,7 +32,7 @@ class DatabaseHelper {
     final db = await databaseFactoryFfi.openDatabase(
       dbPath,
       options: OpenDatabaseOptions(
-        version: 9,
+        version: 10,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       ),
@@ -80,6 +80,7 @@ class DatabaseHelper {
     await _createV7Tables(db);
     await _createV8Tables(db);
     await _createV9Tables(db);
+    await _createV10Tables(db);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -117,6 +118,9 @@ class DatabaseHelper {
     }
     if (oldVersion < 9) {
       await _createV9Tables(db);
+    }
+    if (oldVersion < 10) {
+      await _createV10Tables(db);
     }
   }
 
@@ -197,6 +201,23 @@ class DatabaseHelper {
     try {
       await db.execute(
         'ALTER TABLE students ADD COLUMN include_in_group_total INTEGER NOT NULL DEFAULT 1',
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _createV10Tables(Database db) async {
+    // 调休：把某个日期临时切换成课表中另一天的课程安排（weekday = 0 表示当天无课）
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS schedule_adjustment (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL UNIQUE,
+        weekday INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    try {
+      await db.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_schedule_adjustment_date ON schedule_adjustment(date)',
       );
     } catch (_) {}
   }
@@ -415,6 +436,45 @@ class DatabaseHelper {
         await txn.insert('course_schedule', row);
       }
     });
+  }
+
+  // ---- Schedule Adjustment (调休) ----
+
+  Future<List<Map<String, dynamic>>> getScheduleAdjustments() async {
+    final db = await database;
+    return db.query('schedule_adjustment', orderBy: 'date');
+  }
+
+  /// 新增或覆盖某一天的调休设置（date 唯一）。
+  Future<void> upsertScheduleAdjustment(Map<String, dynamic> map) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete(
+        'schedule_adjustment',
+        where: 'date = ?',
+        whereArgs: [map['date']],
+      );
+      await txn.insert('schedule_adjustment', map);
+    });
+  }
+
+  Future<int> deleteScheduleAdjustment(String date) async {
+    final db = await database;
+    return db.delete(
+      'schedule_adjustment',
+      where: 'date = ?',
+      whereArgs: [date],
+    );
+  }
+
+  /// 删除 [dateKey]（yyyy-MM-dd）之前（含当天之前）的调休记录，返回删除条数。
+  Future<int> deleteScheduleAdjustmentsBefore(String dateKey) async {
+    final db = await database;
+    return db.delete(
+      'schedule_adjustment',
+      where: 'date < ?',
+      whereArgs: [dateKey],
+    );
   }
 
   // ---- Groups ----

@@ -14,13 +14,18 @@ class _FakeAuthProvider extends AuthProvider {
   List<Map<String, dynamic>> get courseSchedules => _schedules;
 }
 
-Widget _buildView(AuthProvider provider) {
+Widget _buildView(
+  AuthProvider provider, {
+  void Function({DateTime? date})? onShowAdjustmentDialog,
+}) {
   return MaterialApp(
     home: Scaffold(
       body: ChangeNotifierProvider<AuthProvider>.value(
         value: provider,
         child: CourseScheduleManagementView(
           onShowCourseDialog: ({Map<String, dynamic>? schedule}) {},
+          onShowAdjustmentDialog:
+              onShowAdjustmentDialog ?? ({DateTime? date}) {},
         ),
       ),
     ),
@@ -128,6 +133,7 @@ void main() {
                   value: provider,
                   child: CourseScheduleManagementView(
                     onShowCourseDialog: ({Map<String, dynamic>? schedule}) {},
+                    onShowAdjustmentDialog: ({DateTime? date}) {},
                   ),
                 ),
               ),
