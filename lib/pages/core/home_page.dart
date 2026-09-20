@@ -124,11 +124,8 @@ class _HomePageState extends State<HomePage>
     });
   }
 
-  void _showUnlockPage() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const UnlockPage()),
-    );
+  Future<void> _showUnlockPage() async {
+    await showUnlockOverlay(context);
   }
 
   void _showUsbKeyPage() {
