@@ -214,7 +214,7 @@ class ScoreProvider extends ChangeNotifier {
     }
     final id = await DatabaseHelper.instance.insertScoreRecord(map);
     await _logRecordCreate(id, map);
-    await loadRecords();
+    await _reloadAfterScoreMutation();
   }
 
   /// 批量评分：为多个学生（target type = 'student'）一次性添加评分记录
@@ -252,7 +252,7 @@ class ScoreProvider extends ChangeNotifier {
     for (var i = 0; i < ids.length; i++) {
       await _logRecordCreate(ids[i], records[i]);
     }
-    await loadRecords();
+    await _reloadAfterScoreMutation();
     return ids.length;
   }
 
@@ -264,7 +264,7 @@ class ScoreProvider extends ChangeNotifier {
       values: {'reason': reason},
       action: 'supplement',
     );
-    await loadRecords();
+    await _reloadAfterScoreMutation();
   }
 
   /// 批量删除评分记录：移入回收站（保留 7 天，可恢复），并清理过期回收站。
@@ -279,7 +279,7 @@ class ScoreProvider extends ChangeNotifier {
       ids,
       DateTime.now().toIso8601String(),
     );
-    await loadRecords();
+    await _reloadAfterScoreMutation();
   }
 
   /// 批量补充/修改变动原因。
@@ -313,9 +313,13 @@ class ScoreProvider extends ChangeNotifier {
           values['is_quick'] = 0;
         }
       }
-      await _updateRecordFieldsWithLog(id: id, values: values, action: 'supplement');
+      await _updateRecordFieldsWithLog(
+        id: id,
+        values: values,
+        action: 'supplement',
+      );
     }
-    await loadRecords();
+    await _reloadAfterScoreMutation();
   }
 
   /// 单条记录补充/修改变动原因（复用批量逻辑）
@@ -364,7 +368,7 @@ class ScoreProvider extends ChangeNotifier {
     notifyListeners();
 
     // 重新加载评分记录
-    await loadRecords();
+    await _reloadAfterScoreMutation();
   }
 
   /// 切换到上一个评分周期
@@ -387,7 +391,7 @@ class ScoreProvider extends ChangeNotifier {
     notifyListeners();
 
     // 重新加载评分记录
-    await loadRecords();
+    await _reloadAfterScoreMutation();
   }
 
   Future<void> deleteScoreRecord(int id) async {
@@ -406,10 +410,7 @@ class ScoreProvider extends ChangeNotifier {
   }
 
   /// 记录一条“新增”历史。
-  Future<void> _logRecordCreate(
-    int id,
-    Map<String, dynamic> map,
-  ) async {
+  Future<void> _logRecordCreate(int id, Map<String, dynamic> map) async {
     final score = (map['score'] as num).toDouble();
     await DatabaseHelper.instance.insertScoreRecordLog({
       'record_id': id,
@@ -418,8 +419,8 @@ class ScoreProvider extends ChangeNotifier {
       'old_value': null,
       'new_value': null,
       'content': '新增评分记录（分值 ${_scoreLabel(score)}）',
-      'log_time': (map['create_time'] as String?) ??
-          DateTime.now().toIso8601String(),
+      'log_time':
+          (map['create_time'] as String?) ?? DateTime.now().toIso8601String(),
     });
   }
 
@@ -516,10 +517,7 @@ class ScoreProvider extends ChangeNotifier {
     final before = await DatabaseHelper.instance.getScoreRecordRaw(id);
     if (before == null) return;
 
-    final values = <String, dynamic>{
-      'score': score,
-      'reason': reason,
-    };
+    final values = <String, dynamic>{'score': score, 'reason': reason};
     if (scoreItemId != null) {
       values['score_item_id'] = scoreItemId;
       values['custom_name'] = '';
@@ -531,7 +529,7 @@ class ScoreProvider extends ChangeNotifier {
     }
 
     await _updateRecordFieldsWithLog(id: id, values: values, action: 'update');
-    await loadRecords();
+    await _reloadAfterScoreMutation();
   }
 
   /// 读取某条评分记录的修改历史（最新在前）。
@@ -547,10 +545,11 @@ class ScoreProvider extends ChangeNotifier {
   /// 恢复回收站记录到列表（其目标被删则无法恢复，返回 0）。
   Future<int> restoreRecordFromArchive(int archiveId) async {
     await BackupService.instance.createBackup();
-    final restored =
-        await DatabaseHelper.instance.restoreArchivedRecord(archiveId);
+    final restored = await DatabaseHelper.instance.restoreArchivedRecord(
+      archiveId,
+    );
     if (restored > 0) {
-      await loadRecords();
+      await _reloadAfterScoreMutation();
     }
     return restored;
   }
@@ -598,6 +597,16 @@ class ScoreProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 评分记录发生变化后，同时刷新记录列表与统计报表。
+  ///
+  /// 查询页左栏榜单读取的是 *_TotalScores，右栏读取的是 recordsWithName；
+  /// 因此新增、删除、编辑、恢复记录等操作不能只调用 loadRecords，
+  /// 否则已经打开过的查询页左栏会显示旧名次。
+  Future<void> _reloadAfterScoreMutation() async {
+    await loadRecords();
+    await loadStatistics(groupId: _filterGroupId);
+  }
+
   // ---- 计分规则配置 ----
   /// 从数据库加载计分规则全局设置
   Future<void> loadScoreConfig() async {
@@ -609,8 +618,8 @@ class ScoreProvider extends ChangeNotifier {
         double.tryParse((await db.getSetting('group_initial_score')) ?? '') ??
         0.0;
     _groupScoreMode = await db.getSetting('group_score_mode') ?? 'sum';
-    _defaultQuickScoring = (await db.getSetting('default_quick_scoring')) ==
-        'true';
+    _defaultQuickScoring =
+        (await db.getSetting('default_quick_scoring')) == 'true';
     // 同名次合并默认开启：只有显式存过 'false' 才视为关闭
     // （与 default_quick_scoring 默认关闭的 == 'true' 判定不同）。
     _mergeSameRank = (await db.getSetting('merge_same_rank')) != 'false';
