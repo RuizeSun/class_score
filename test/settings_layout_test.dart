@@ -52,8 +52,22 @@ class _FakeScoreItemProvider extends ScoreItemProvider {
 }
 
 class _FakeScoreProvider extends ScoreProvider {
+  /// 记录被切换的统计显示开关，避免测试中写数据库。
+  bool? mergeSameRankSet;
+  bool? competitionRankingSet;
+
   @override
   Future<void> loadScoreConfig() async {}
+
+  @override
+  Future<void> setMergeSameRank(bool value) async {
+    mergeSameRankSet = value;
+  }
+
+  @override
+  Future<void> setCompetitionRanking(bool value) async {
+    competitionRankingSet = value;
+  }
 }
 
 class _FakeAuthProvider extends AuthProvider {
@@ -65,6 +79,7 @@ Widget _buildHub({
   List<Group> groups = const [],
   List<Map<String, dynamic>> students = const [],
   List<ScoreItem> items = const [],
+  ScoreProvider? scoreProvider,
 }) {
   return MultiProvider(
     providers: [
@@ -79,7 +94,7 @@ Widget _buildHub({
         create: (_) => _FakeStudentProvider(students),
       ),
       ChangeNotifierProvider<ScoreProvider>(
-        create: (_) => _FakeScoreProvider(),
+        create: (_) => scoreProvider ?? _FakeScoreProvider(),
       ),
       ChangeNotifierProvider<ScoreItemProvider>(
         create: (_) => _FakeScoreItemProvider(items),
@@ -240,6 +255,39 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(SettingsSectionScaffold), findsOneWidget);
     expect(_fadeOpacity(tester, find.text('第一组')), 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('计分规则：统计报表的「同名次合并 / 并列名次跳号」可切换，默认都开启', (tester) async {
+    _useDesktopViewport(tester);
+    final scoreProvider = _FakeScoreProvider();
+    await tester.pumpWidget(_buildHub(scoreProvider: scoreProvider));
+    await tester.pumpAndSettle();
+
+    await _openSection(tester, '计分规则');
+
+    final mergeTile = find.widgetWithText(SwitchListTile, '同名次合并显示');
+    final skipTile = find.widgetWithText(SwitchListTile, '并列名次按实际位置跳号');
+    expect(mergeTile, findsOneWidget);
+    expect(skipTile, findsOneWidget);
+    // 默认两项都开启：并列名次按实际位置跳号（100、99、99、98 → 第1、第2、第2、第4名）
+    expect(tester.widget<SwitchListTile>(mergeTile).value, isTrue);
+    expect(tester.widget<SwitchListTile>(skipTile).value, isTrue);
+    // 两种编号写法都写在说明里，便于按需求切换
+    expect(find.textContaining('第1、第2、第2、第4名'), findsOneWidget);
+    expect(find.textContaining('第1、第2、第2、第3名'), findsOneWidget);
+
+    // 关闭「并列名次跳号」→ 落库为紧凑名次
+    await tester.ensureVisible(skipTile);
+    await tester.pumpAndSettle();
+    await tester.tap(skipTile);
+    await tester.pumpAndSettle();
+    expect(scoreProvider.competitionRankingSet, isFalse);
+
+    // 关闭「同名次合并」→ 每行独立成块
+    await tester.tap(mergeTile);
+    await tester.pumpAndSettle();
+    expect(scoreProvider.mergeSameRankSet, isFalse);
     expect(tester.takeException(), isNull);
   });
 }

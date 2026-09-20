@@ -15,13 +15,16 @@ class _FakeScoreProvider extends ScoreProvider {
     List<Map<String, dynamic>> students = const [],
     List<Map<String, dynamic>> groups = const [],
     bool mergeSameRank = true,
+    bool competitionRanking = true,
   }) : _students = students,
        _groups = groups,
-       _mergeSameRank = mergeSameRank;
+       _mergeSameRank = mergeSameRank,
+       _competitionRanking = competitionRanking;
 
   final List<Map<String, dynamic>> _students;
   final List<Map<String, dynamic>> _groups;
   final bool _mergeSameRank;
+  final bool _competitionRanking;
 
   @override
   List<Map<String, dynamic>> get studentTotalScores => _students;
@@ -31,6 +34,9 @@ class _FakeScoreProvider extends ScoreProvider {
 
   @override
   bool get mergeSameRank => _mergeSameRank;
+
+  @override
+  bool get competitionRanking => _competitionRanking;
 
   @override
   Future<void> loadStatistics({int? groupId}) async {}
@@ -129,10 +135,11 @@ void _useDesktopViewport(WidgetTester tester) {
 
 void main() {
   group('名次计算', () {
-    test('同分并列同名次，名次序号紧凑递增', () {
+    test('默认使用标准比赛名次：并列后按实际位置跳号', () {
       final entries = buildRankedEntries(_tiedStudents);
 
-      expect(entries.map((e) => e.rank).toList(), [1, 2]);
+      // 100、100、99、99、99 → 第1、第1、第3、第3、第3名
+      expect(entries.map((e) => e.rank).toList(), [1, 3]);
       expect(entries.map((e) => e.count).toList(), [2, 3]);
       expect(entries.first.rows.map((r) => r['name']).toList(), ['张三', '李四']);
       expect(entries.last.rows.map((r) => r['name']).toList(), [
@@ -140,7 +147,24 @@ void main() {
         '赵六',
         '钱七',
       ]);
-      // 每人一行展开后，名次序列为 1,1,2,2,2
+      // 每人一行展开后，名次序列为 1,1,3,3,3
+      expect(entries.expand((e) => e.rows.map((_) => e.rank)).toList(), [
+        1,
+        1,
+        3,
+        3,
+        3,
+      ]);
+    });
+
+    test('可切换为紧凑名次：只按不同分数递增', () {
+      final entries = buildRankedEntries(
+        _tiedStudents,
+        competitionRanking: false,
+      );
+
+      expect(entries.map((e) => e.rank).toList(), [1, 2]);
+      expect(entries.map((e) => e.count).toList(), [2, 3]);
       expect(entries.expand((e) => e.rows.map((_) => e.rank)).toList(), [
         1,
         1,
@@ -155,7 +179,14 @@ void main() {
 
       expect(entries.length, 5);
       expect(entries.every((e) => e.count == 1), isTrue);
-      expect(entries.map((e) => e.rank).toList(), [1, 1, 2, 2, 2]);
+      expect(entries.map((e) => e.rank).toList(), [1, 1, 3, 3, 3]);
+
+      final dense = buildRankedEntries(
+        _tiedStudents,
+        mergeSameRank: false,
+        competitionRanking: false,
+      );
+      expect(dense.map((e) => e.rank).toList(), [1, 1, 2, 2, 2]);
     });
 
     test('名次以展示分数（1 位小数）判定，并兼容乱序入参', () {
@@ -195,8 +226,10 @@ void main() {
       );
     });
 
-    test('同名次合并默认开启', () {
-      expect(ScoreProvider().mergeSameRank, isTrue);
+    test('同名次合并与标准比赛名次默认开启', () {
+      final provider = ScoreProvider();
+      expect(provider.mergeSameRank, isTrue);
+      expect(provider.competitionRanking, isTrue);
     });
   });
 
@@ -208,11 +241,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 100/100 → 第1名组（2 人）；99/99/99 → 第2名组（3 人）
+      // 100/100 → 第1名组（2 人）；99/99/99 → 第3名组（3 人）
       expect(find.byType(RankingGroup), findsNWidgets(2));
       expect(_rowsInGroup(tester, 0), 2);
       expect(_rowsInGroup(tester, 1), 3);
-      expect(_ranksOf(tester), [1, 1, 2, 2, 2]);
+      expect(_ranksOf(tester), [1, 1, 3, 3, 3]);
 
       // 固定行高：学生行与小组行一致
       for (var i = 0; i < 5; i++) {
@@ -239,7 +272,7 @@ void main() {
       expect(find.byType(RankingGroup), findsNWidgets(2));
       expect(_rowsInGroup(tester, 0), 2);
       expect(_rowsInGroup(tester, 1), 1);
-      expect(_ranksOf(tester), [1, 1, 2]);
+      expect(_ranksOf(tester), [1, 1, 3]);
       for (var i = 0; i < 3; i++) {
         expect(
           tester.getSize(find.byType(RankingTile).at(i)).height,
@@ -269,10 +302,26 @@ void main() {
       for (var i = 0; i < 5; i++) {
         expect(_rowsInGroup(tester, i), 1);
       }
-      expect(_ranksOf(tester), [1, 1, 2, 2, 2]);
+      expect(_ranksOf(tester), [1, 1, 3, 3, 3]);
       for (var i = 1; i < 5; i++) {
         expect(_groupGap(tester, i), RankingMetrics.rowSpacing);
       }
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('可切换为紧凑名次：并列后不跳号', (tester) async {
+      _useDesktopViewport(tester);
+      await tester.pumpWidget(
+        _buildView(
+          scoreProvider: _FakeScoreProvider(
+            students: _tiedStudents,
+            competitionRanking: false,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(_ranksOf(tester), [1, 1, 2, 2, 2]);
       expect(tester.takeException(), isNull);
     });
   });

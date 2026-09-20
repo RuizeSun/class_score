@@ -91,12 +91,12 @@ class _StatisticsAnalysisPageState extends State<StatisticsAnalysisPage> {
 class StatisticsView extends StatefulWidget {
   /// 点击学生/小组行：联动筛选右侧记录列表（[targetId] 必不为空）。
   final void Function(String targetType, int targetId, String name)?
-      onSelectTarget;
+  onSelectTarget;
 
   /// 点击行尾「图表分析」图标：打开对应目标的图表分析页。
   /// [targetType] = 'student' | 'group'，[targetId] 为空表示班级（全部）视图。
   final void Function(String targetType, int? targetId, String name)?
-      onOpenAnalysis;
+  onOpenAnalysis;
 
   /// 当前选中的目标：用于高亮该行（与右栏筛选保持一致）。
   final ({String type, int id})? selectedTarget;
@@ -133,11 +133,12 @@ class _StatisticsViewState extends State<StatisticsView> {
     final groups = context.watch<GroupProvider>().groups;
     // 仅「全部小组」时提供班级图表分析入口（小组模式等效全部小组）
     final showClassAnalysis = _showGroup || scoreProvider.filterGroupId == null;
-    // 名次分组：默认合并同名次（同分并列同名次），可在「计分规则 → 统计报表」关闭；
-    // 学生榜与小组榜共用同一套名次计算与行样式。
+    // 名次分组：默认合并同名次并使用标准比赛名次（并列后跳号），
+    // 可在「计分规则 → 统计报表」调整；学生榜与小组榜共用同一套名次计算与行样式。
     final rankedEntries = buildRankedEntries(
       _showGroup ? groupScores : studentScores,
       mergeSameRank: scoreProvider.mergeSameRank,
+      competitionRanking: scoreProvider.competitionRanking,
     );
 
     return SingleChildScrollView(
@@ -198,10 +199,7 @@ class _StatisticsViewState extends State<StatisticsView> {
                             horizontal: 12,
                             vertical: 8,
                           ),
-                          prefixIcon: Icon(
-                            Icons.filter_alt_outlined,
-                            size: 18,
-                          ),
+                          prefixIcon: Icon(Icons.filter_alt_outlined, size: 18),
                           prefixIconConstraints: BoxConstraints(minWidth: 36),
                           isDense: true,
                         ),
@@ -482,11 +480,12 @@ class _RecordManagementViewState extends State<RecordManagementView> {
       );
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('保存失败，请重试')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('保存失败，请重试')));
     }
   }
+
   /// 弹出补充/修改变动原因表单。返回 null 表示取消。
   Future<_SupplementResult?> _showSupplementFormDialog(
     List<Map<String, dynamic>> targets,
@@ -494,8 +493,9 @@ class _RecordManagementViewState extends State<RecordManagementView> {
     final items = context.read<ScoreItemProvider>().items;
     final isBatch = targets.length > 1;
     // 单选时预填已有原因
-    final initialReason =
-        !isBatch ? (targets.first['reason'] as String? ?? '') : '';
+    final initialReason = !isBatch
+        ? (targets.first['reason'] as String? ?? '')
+        : '';
 
     final reasonController = TextEditingController(text: initialReason);
     final customNameController = TextEditingController();
@@ -614,6 +614,7 @@ class _RecordManagementViewState extends State<RecordManagementView> {
     customNameController.dispose();
     return result;
   }
+
   /// 分值冲突确认弹窗。返回 true=应用预设分值；false=保留原分值；null=取消。
   Future<bool?> _showScoreConflictDialog({
     required ScoreItem item,
@@ -625,12 +626,14 @@ class _RecordManagementViewState extends State<RecordManagementView> {
 
     String content;
     if (isMultiple) {
-      content = '所选评分项「${item.name}」的预设分值为 $presetLabel，'
+      content =
+          '所选评分项「${item.name}」的预设分值为 $presetLabel，'
           '与选中的 ${conflicting.length} 条记录当前分值不一致。\n\n'
           '请选择保留各记录当前分值，还是统一改为该评分项的预设分值 $presetLabel。';
     } else {
       final orig = (conflicting.first['score'] as num).toDouble();
-      content = '所选评分项「${item.name}」的预设分值为 $presetLabel，'
+      content =
+          '所选评分项「${item.name}」的预设分值为 $presetLabel，'
           '与该条记录当前分值 ${_scoreLabel(orig)} 不一致。\n\n'
           '请选择保留记录当前分值，还是改为该评分项的预设分值。';
     }
@@ -743,8 +746,7 @@ class _RecordManagementViewState extends State<RecordManagementView> {
 
   List<Map<String, dynamic>> _selectedRecords(
     List<Map<String, dynamic>> records,
-  ) =>
-      records.where((r) => _selectedRecordIds.contains(r['id'])).toList();
+  ) => records.where((r) => _selectedRecordIds.contains(r['id'])).toList();
 
   /// 批量操作控制栏：非批量时显示「批量操作」入口，批量时显示选择信息与操作按钮
   Widget _buildBatchBar(List<Map<String, dynamic>> records) {
@@ -1012,7 +1014,6 @@ class _SupplementResult {
   });
 }
 
-
 /// 回收站对话框：展示被删记录，支持恢复/永久删除。
 class RecycleBinDialog extends StatefulWidget {
   const RecycleBinDialog({super.key});
@@ -1061,15 +1062,14 @@ class _RecycleBinDialogState extends State<RecycleBinDialog> {
   }
 
   Future<void> _restore(Map<String, dynamic> item) async {
-    final restored =
-        await context.read<ScoreProvider>().restoreRecordFromArchive(
-              item['id'] as int,
-            );
+    final restored = await context
+        .read<ScoreProvider>()
+        .restoreRecordFromArchive(item['id'] as int);
     if (!mounted) return;
     if (restored == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('目标学生/小组已不存在，无法恢复')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('目标学生/小组已不存在，无法恢复')));
       return;
     }
     setState(() => _items.removeWhere((e) => e['id'] == item['id']));
@@ -1098,9 +1098,9 @@ class _RecycleBinDialogState extends State<RecycleBinDialog> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    await context
-        .read<ScoreProvider>()
-        .permanentlyDeleteArchivedRecords([item['id'] as int]);
+    await context.read<ScoreProvider>().permanentlyDeleteArchivedRecords([
+      item['id'] as int,
+    ]);
     if (!mounted) return;
     setState(() => _items.removeWhere((e) => e['id'] == item['id']));
   }
@@ -1115,102 +1115,102 @@ class _RecycleBinDialogState extends State<RecycleBinDialog> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _items.isEmpty
-                ? const Center(child: Text('回收站为空'))
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '被删除的记录保留 7 天，可恢复或手动永久删除。',
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                      ),
-                      const SizedBox(height: 8),
-
-                      Expanded(
-                        child: ListView.builder(
-                          itemCount: _items.length,
-                          itemBuilder: (_, i) {
-                            final it = _items[i];
-                            final score = (it['score'] as num).toDouble();
-                            final name = it['target_name'] as String? ?? '(未知)';
-                            final number =
-                                it['target_student_number'] as String? ?? '';
-                            // 姓名#学号（学号灰色）
-                            final titleSpan = StudentDisplay.span(
-                              name: name,
-                              studentNumber: number,
-                            );
-                            final period = it['period'] as int? ?? 1;
-                            final reason = it['reason'] as String? ?? '';
-                            final deletedAt = it['deleted_at'] as String? ?? '';
-                            // 该学生是否不参与小组总分统计
-                            final notInGroupTotal =
-                                it['target_type'] == 'student' &&
-                                ((it['target_include_in_group_total'] as int?) ??
-                                        1) ==
-                                    0;
-                            final baseSubtitle = reason.isNotEmpty
-                                ? '周期$period · $reason'
-                                : '周期$period';
-                            final subtitle =
-                                '${notInGroupTotal ? '不参与小组总分 · ' : ''}$baseSubtitle\n删除于 ${_fmtTime(deletedAt)}';
-                            return ListTile(
-                              dense: true,
-                              title: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text.rich(
-                                      titleSpan,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  Text(
-                                    _scoreText(score),
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: score >= 0
-                                          ? Colors.green.shade700
-                                          : Colors.red.shade700,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              subtitle: Text(
-                                subtitle,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    _remainingLabel(deletedAt),
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                                  IconButton(
-                                    tooltip: '恢复',
-                                    icon: const Icon(Icons.restore, size: 20),
-                                    onPressed: () => _restore(it),
-                                  ),
-                                  IconButton(
-                                    tooltip: '永久删除',
-                                    icon: const Icon(
-                                      Icons.delete_forever,
-                                      size: 20,
-                                    ),
-                                    color: Colors.red,
-                                    onPressed: () => _permanentlyDelete(it),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
+            ? const Center(child: Text('回收站为空'))
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '被删除的记录保留 7 天，可恢复或手动永久删除。',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                   ),
+                  const SizedBox(height: 8),
+
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: _items.length,
+                      itemBuilder: (_, i) {
+                        final it = _items[i];
+                        final score = (it['score'] as num).toDouble();
+                        final name = it['target_name'] as String? ?? '(未知)';
+                        final number =
+                            it['target_student_number'] as String? ?? '';
+                        // 姓名#学号（学号灰色）
+                        final titleSpan = StudentDisplay.span(
+                          name: name,
+                          studentNumber: number,
+                        );
+                        final period = it['period'] as int? ?? 1;
+                        final reason = it['reason'] as String? ?? '';
+                        final deletedAt = it['deleted_at'] as String? ?? '';
+                        // 该学生是否不参与小组总分统计
+                        final notInGroupTotal =
+                            it['target_type'] == 'student' &&
+                            ((it['target_include_in_group_total'] as int?) ??
+                                    1) ==
+                                0;
+                        final baseSubtitle = reason.isNotEmpty
+                            ? '周期$period · $reason'
+                            : '周期$period';
+                        final subtitle =
+                            '${notInGroupTotal ? '不参与小组总分 · ' : ''}$baseSubtitle\n删除于 ${_fmtTime(deletedAt)}';
+                        return ListTile(
+                          dense: true,
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text.rich(
+                                  titleSpan,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Text(
+                                _scoreText(score),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: score >= 0
+                                      ? Colors.green.shade700
+                                      : Colors.red.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                          subtitle: Text(
+                            subtitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _remainingLabel(deletedAt),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: '恢复',
+                                icon: const Icon(Icons.restore, size: 20),
+                                onPressed: () => _restore(it),
+                              ),
+                              IconButton(
+                                tooltip: '永久删除',
+                                icon: const Icon(
+                                  Icons.delete_forever,
+                                  size: 20,
+                                ),
+                                color: Colors.red,
+                                onPressed: () => _permanentlyDelete(it),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
       ),
       actions: [
         TextButton(
@@ -1221,4 +1221,3 @@ class _RecycleBinDialogState extends State<RecycleBinDialog> {
     );
   }
 }
-

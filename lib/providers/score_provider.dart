@@ -49,6 +49,10 @@ class ScoreProvider extends ChangeNotifier {
   bool _mergeSameRank = true;
   bool get mergeSameRank => _mergeSameRank;
 
+  // 统计报表是否使用标准比赛名次（并列后跳号，默认为开）
+  bool _competitionRanking = true;
+  bool get competitionRanking => _competitionRanking;
+
   // 当前加载记录时使用的筛选状态，用于 add/delete 后保持筛选
   String? _lastRecordTargetType;
   int? _lastRecordTargetId;
@@ -623,6 +627,9 @@ class ScoreProvider extends ChangeNotifier {
     // 同名次合并默认开启：只有显式存过 'false' 才视为关闭
     // （与 default_quick_scoring 默认关闭的 == 'true' 判定不同）。
     _mergeSameRank = (await db.getSetting('merge_same_rank')) != 'false';
+    // 标准比赛名次默认开启：只有显式存过 'false' 才切换为紧凑名次。
+    _competitionRanking =
+        (await db.getSetting('competition_ranking')) != 'false';
     _scoreRangeMode = await db.getSetting('score_range_mode') ?? 'unlimited';
     _scoreRangeMin =
         double.tryParse((await db.getSetting('score_range_min')) ?? '') ?? 0;
@@ -648,6 +655,19 @@ class ScoreProvider extends ChangeNotifier {
       value.toString(),
     );
     _mergeSameRank = value;
+    notifyListeners();
+  }
+
+  /// 设置并列名次是否按标准比赛名次跳号（持久化到设置）。
+  ///
+  /// true：100、99、99、98 → 第1、第2、第2、第4名；
+  /// false：紧凑编号 → 第1、第2、第2、第3名。
+  Future<void> setCompetitionRanking(bool value) async {
+    await DatabaseHelper.instance.setSetting(
+      'competition_ranking',
+      value.toString(),
+    );
+    _competitionRanking = value;
     notifyListeners();
   }
 

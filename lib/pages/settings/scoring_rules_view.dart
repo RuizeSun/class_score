@@ -355,6 +355,24 @@ class _ScoringRulesViewState extends State<ScoringRulesView> {
               context.read<ScoreProvider>().setMergeSameRank(value),
           contentPadding: EdgeInsets.zero,
         ),
+        SwitchListTile(
+          secondary: Icon(
+            Icons.format_list_numbered,
+            color: p.competitionRanking
+                ? Colors.green.shade700
+                : Colors.grey.shade600,
+          ),
+          title: const Text('并列名次按实际位置跳号'),
+          subtitle: const Text(
+            '开启（默认）后，并列名次占用实际排名位置'
+            '（100、99、99、98 → 第1、第2、第2、第4名）；'
+            '关闭后采用紧凑编号（100、99、99、98 → 第1、第2、第2、第3名）。',
+          ),
+          value: p.competitionRanking,
+          onChanged: (value) =>
+              context.read<ScoreProvider>().setCompetitionRanking(value),
+          contentPadding: EdgeInsets.zero,
+        ),
       ],
     );
   }
