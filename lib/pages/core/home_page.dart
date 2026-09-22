@@ -6,6 +6,7 @@ import '../../providers/personalization_provider.dart';
 import '../../services/window_service.dart';
 import '../score/score_input_page.dart';
 import '../analysis/statistics_page.dart';
+import 'status_bar_layout.dart';
 import 'unlock_page.dart';
 import 'usb_key_page.dart';
 import '../settings/settings_hub_page.dart';
@@ -168,15 +169,15 @@ class _HomePageState extends State<HomePage>
         children: [
           // Combined status bar — 胶囊样式
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            padding: const EdgeInsets.all(StatusBarMetrics.inset),
             child: Container(
               width: double.infinity,
-              height: 40,
+              height: StatusBarMetrics.height,
               decoration: BoxDecoration(
                 color: auth.isUnlocked
                     ? Colors.green.shade50
                     : Colors.red.shade50,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(StatusBarMetrics.radius),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.05),
@@ -211,7 +212,7 @@ class _HomePageState extends State<HomePage>
                           child: Container(
                             width: 1,
                             height: 16,
-                            color: Colors.grey.withOpacity(0.3),
+                            color: Colors.grey.withValues(alpha: 0.3),
                           ),
                         ),
                         const SizedBox(width: 12),
