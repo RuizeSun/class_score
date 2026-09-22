@@ -6,7 +6,7 @@ import '../../providers/personalization_provider.dart';
 import '../../services/window_service.dart';
 import '../score/score_input_page.dart';
 import '../analysis/statistics_page.dart';
-import 'status_bar_layout.dart';
+import 'home_status_bar.dart';
 import 'unlock_page.dart';
 import 'usb_key_page.dart';
 import '../settings/settings_hub_page.dart';
@@ -168,119 +168,12 @@ class _HomePageState extends State<HomePage>
       body: Column(
         children: [
           // Combined status bar — 胶囊样式
-          Padding(
-            padding: const EdgeInsets.all(StatusBarMetrics.inset),
-            child: Container(
-              width: double.infinity,
-              height: StatusBarMetrics.height,
-              decoration: BoxDecoration(
-                color: auth.isUnlocked
-                    ? Colors.green.shade50
-                    : Colors.red.shade50,
-                borderRadius: BorderRadius.circular(StatusBarMetrics.radius),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(left: 16),
-                    child: Row(
-                      children: [
-                        Icon(
-                          auth.isUnlocked ? Icons.lock_open : Icons.lock,
-                          size: 16,
-                          color: auth.isUnlocked ? Colors.green : Colors.red,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          auth.isUnlocked ? '已解锁' : '已锁定',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: auth.isUnlocked ? Colors.green : Colors.red,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Center(
-                          child: Container(
-                            width: 1,
-                            height: 16,
-                            color: Colors.grey.withValues(alpha: 0.3),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Icon(
-                          Icons.school,
-                          size: 16,
-                          color: Colors.blue.shade700,
-                        ),
-                        const SizedBox(width: 4),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        '课程：${currentCourse ?? '无'}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.blue.shade700,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                  if (!auth.isUnlocked)
-                    TextButton.icon(
-                      onPressed: _showUnlockPage,
-                      icon: const Icon(Icons.lock_open, size: 14),
-                      label: const Text('解锁', style: TextStyle(fontSize: 12)),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.red,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    )
-                  else ...[
-                    TextButton.icon(
-                      onPressed: _showUsbKeyPage,
-                      icon: const Icon(Icons.usb, size: 14),
-                      label: const Text('密钥', style: TextStyle(fontSize: 12)),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.indigo,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: () => auth.lock(),
-                      icon: const Icon(Icons.lock, size: 14),
-                      label: const Text('上锁', style: TextStyle(fontSize: 12)),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.orange,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+          HomeStatusBar(
+            isUnlocked: auth.isUnlocked,
+            currentCourseName: currentCourse,
+            onUnlock: _showUnlockPage,
+            onShowUsbKey: _showUsbKeyPage,
+            onLock: () => auth.lock(),
           ),
           // Page content with PageView
           Expanded(child: _buildPageContent()),
