@@ -85,9 +85,7 @@ double _dimAlpha(WidgetTester tester, Finder blurClip) => tester
     .a;
 
 void main() {
-  testWidgets('解锁面板停在状态栏右下方，模糊层整窗渐变并挖空状态栏区域', (
-    tester,
-  ) async {
+  testWidgets('解锁面板停在状态栏右下方，模糊层整窗渐变并挖空状态栏区域', (tester) async {
     _useDesktopViewport(tester);
     await tester.pumpWidget(_buildHost(_FakeAuthProvider(), []));
     await _openPanel(tester);
@@ -189,8 +187,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-
-
   testWidgets('错误 PIN 保留浮动面板并提示，正确 PIN 关闭面板并返回 true', (tester) async {
     _useDesktopViewport(tester);
     final results = <Future<bool?>>[];
@@ -223,6 +219,49 @@ void main() {
 
     expect(find.byType(UnlockPage), findsNothing);
     expect(await results.single, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('点击模糊背景关闭面板并返回 false，卡片与状态栏区域不响应', (tester) async {
+    _useDesktopViewport(tester);
+    final results = <Future<bool?>>[];
+    await tester.pumpWidget(_buildHost(_FakeAuthProvider(), results));
+    await _openPanel(tester);
+
+    // 卡片空白处（左侧留白）不会误关面板：Material 本身吸收点击
+    final cardTopLeft = tester.getTopLeft(find.byType(UnlockPage));
+    await tester.tapAt(cardTopLeft + const Offset(4, 8));
+    await tester.pumpAndSettle();
+    expect(find.byType(UnlockPage), findsOneWidget);
+
+    // 状态栏胶囊所在区域被模糊层挖空：点它不关闭面板
+    const pillCenterY = StatusBarMetrics.inset + StatusBarMetrics.height / 2;
+    await tester.tapAt(const Offset(640, pillCenterY));
+    await tester.pumpAndSettle();
+    expect(find.byType(UnlockPage), findsOneWidget);
+
+    // 模糊背景：点一下就关闭，并按「主动关闭」返回 false
+    await tester.tapAt(const Offset(640, 400));
+    await tester.pumpAndSettle();
+    expect(find.byType(UnlockPage), findsNothing);
+    expect(find.byType(BackdropFilter), findsNothing);
+    expect(await results.single, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('数字键盘按键为圆形：宽高相等且形状为 CircleBorder', (tester) async {
+    _useDesktopViewport(tester);
+    await tester.pumpWidget(_buildHost(_FakeAuthProvider(), []));
+    await _openPanel(tester);
+
+    final key = find.widgetWithText(TextButton, '5');
+    expect(key, findsOneWidget);
+
+    final size = tester.getSize(key);
+    expect(size.width, size.height);
+
+    final style = tester.widget<TextButton>(key).style!;
+    expect(style.shape!.resolve(const <WidgetState>{}), isA<CircleBorder>());
     expect(tester.takeException(), isNull);
   });
 }

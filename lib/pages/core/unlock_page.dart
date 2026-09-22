@@ -81,6 +81,15 @@ class _UnlockOverlayState extends State<_UnlockOverlay> {
     super.dispose();
   }
 
+  /// 点击模糊背景关闭面板。
+  ///
+  /// 与卡片右上角「关闭」按钮走同一条路径：先清掉残留的错误提示，再以
+  /// false 关闭，调用方据此区分「解锁成功」与「主动关闭」。
+  void _dismiss() {
+    context.read<AuthProvider>().clearError();
+    Navigator.of(context).maybePop(false);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -101,13 +110,24 @@ class _UnlockOverlayState extends State<_UnlockOverlay> {
               return ClipPath(
                 key: const ValueKey<String>('unlock-blur-clip'),
                 clipper: const _StatusBarCutOutClipper(),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(
-                    sigmaX: _maxBlurSigma * progress,
-                    sigmaY: _maxBlurSigma * progress,
-                  ),
-                  child: ColoredBox(
-                    color: Colors.black.withValues(alpha: _dimOpacity * progress),
+                // 手势检测器必须放在 ClipPath 之内：RenderClipPath.hitTest
+                // 会先判断点是否落在裁剪路径里，放在里面才能让「被挖空的
+                // 状态栏区域」不参与命中测试——点状态栏胶囊既不会关闭面板，
+                // 也不会被本层吞掉（会落到下方的模态遮罩上）。
+                child: GestureDetector(
+                  key: const ValueKey<String>('unlock-blur-dismiss'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _dismiss,
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(
+                      sigmaX: _maxBlurSigma * progress,
+                      sigmaY: _maxBlurSigma * progress,
+                    ),
+                    child: ColoredBox(
+                      color: Colors.black.withValues(
+                        alpha: _dimOpacity * progress,
+                      ),
+                    ),
                   ),
                 ),
               );
@@ -128,10 +148,7 @@ class _UnlockOverlayState extends State<_UnlockOverlay> {
               animation: _progress,
               child: const UnlockPage(),
               builder: (context, child) => Transform.translate(
-                offset: Offset(
-                  _cardSlideDistance * (1 - _progress.value),
-                  0,
-                ),
+                offset: Offset(_cardSlideDistance * (1 - _progress.value), 0),
                 child: FadeTransition(opacity: _progress, child: child),
               ),
             ),
