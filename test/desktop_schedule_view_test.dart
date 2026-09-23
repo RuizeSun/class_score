@@ -83,14 +83,19 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('课间休息（图一）：高亮块显示「课间休息」，落在下一节课的位置上', (tester) async {
+  testWidgets('课间休息（图一）：进度块插在下一节课之前，不顶掉下节课的名字', (tester) async {
     await _pumpBar(tester, _stateAt(8, 42));
 
     expect(find.text('课间休息'), findsOneWidget);
     expect(find.text('-18min'), findsOneWidget);
-    // 已结束的课程仍然列出；下一节课的位置由「课间休息」块占据
+    // 上节课与下节课都照常列出，课间进度块只插在两者之间
     expect(find.text('数学'), findsOneWidget);
-    expect(find.text('英语'), findsNothing);
+    expect(find.text('英语'), findsOneWidget);
+    final mathX = tester.getTopLeft(find.text('数学')).dx;
+    final breakX = tester.getTopLeft(find.text('课间休息')).dx;
+    final englishX = tester.getTopLeft(find.text('英语')).dx;
+    expect(mathX, lessThan(breakX));
+    expect(breakX, lessThan(englishX));
     expect(tester.takeException(), isNull);
   });
 

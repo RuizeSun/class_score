@@ -31,7 +31,7 @@ class DesktopScheduleBar extends StatelessWidget {
   bool get _isBreak => state.phase == DesktopSchedulePhase.breakTime;
 
   /// 当前需要高亮的位置：上课中高亮本节课，课间高亮即将开始的那节课
-  /// ——图一里「课间休息」块正是坐在下一节课的位置上。
+  /// ——图一里「课间休息」块插在下一节课名字之前，两者同时显示。
   DateTime? get _activeStart {
     if (_isBreak) return state.nextSlot?.start;
     return state.currentSlot?.start;
@@ -121,20 +121,28 @@ class DesktopScheduleBar extends StatelessWidget {
       }
       final isActive =
           activeStart != null && slot.start.isAtSameMomentAs(activeStart);
+      if (!isActive) {
+        children.add(_CourseLabel(name: slot.courseName, scale: scale));
+        continue;
+      }
       children.add(
-        isActive
-            ? _ActiveChip(
-                key: const ValueKey('desktop-schedule-active-chip'),
-                title: _activeTitle,
-                remaining: ScheduleTimelineService.formatChipRemaining(
-                  state.remaining,
-                ),
-                progress: state.progress,
-                isBreak: _isBreak,
-                scale: scale,
-              )
-            : _CourseLabel(name: slot.courseName, scale: scale),
+        _ActiveChip(
+          key: const ValueKey('desktop-schedule-active-chip'),
+          title: _activeTitle,
+          remaining: ScheduleTimelineService.formatChipRemaining(
+            state.remaining,
+          ),
+          progress: state.progress,
+          isBreak: _isBreak,
+          scale: scale,
+        ),
       );
+      if (_isBreak) {
+        // 课间块借下一节课的位置显示课间进度，但下一节课的名字必须照常列出
+        // ——否则进度块会把下节课顶没，看不到接下来上什么课。
+        children.add(SizedBox(width: DesktopBarMetrics.chipSpacing * scale));
+        children.add(_CourseLabel(name: slot.courseName, scale: scale));
+      }
     }
 
     // 课程较多 / 名称较长时允许横向滚动：桌面条宽度有限，宁可滚动也不要
