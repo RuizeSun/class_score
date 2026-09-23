@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/personalization_provider.dart';
+import '../../services/desktop_window_service.dart';
 import '../../services/window_service.dart';
 import '../score/score_input_page.dart';
 import '../analysis/statistics_page.dart';
@@ -73,6 +74,10 @@ class _HomePageState extends State<HomePage>
     if (!auth.isUnlocked && !personalization.allowCloseWhenLocked) {
       // Show lock message only if close is not allowed when locked
       _showLockMessage();
+    } else {
+      // 允许关闭：主窗口退出前把桌面条浮窗一起关掉，否则会留下一个再也收不到
+      // 状态的「孤条」停在桌面上。
+      DesktopWindowService.closeBar();
     }
     // If unlocked or close allowed when locked, allow close
   }

@@ -8,6 +8,7 @@ import 'group_management.dart';
 import 'student_management.dart';
 import 'score_items_management.dart';
 import 'course_schedule_management.dart';
+import 'desktop_schedule_settings.dart';
 import 'usb_key_management.dart';
 import 'system_settings.dart';
 import 'period_management.dart';
@@ -33,6 +34,7 @@ enum SettingsSection {
   scoreItems,
   scoringRules,
   courseSchedule,
+  desktopSchedule,
   period,
   usbKey,
   system,
@@ -112,6 +114,11 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
           item(Icons.list_alt, '预设评分项', SettingsSection.scoreItems),
           item(Icons.rule, '计分规则', SettingsSection.scoringRules),
           item(Icons.calendar_month, '课程表管理', SettingsSection.courseSchedule),
+          item(
+            Icons.desktop_windows,
+            '桌面课表',
+            SettingsSection.desktopSchedule,
+          ),
           item(Icons.calendar_today, '评分周期', SettingsSection.period),
           item(Icons.usb, '物理密钥管理', SettingsSection.usbKey),
           const Divider(),
@@ -151,6 +158,8 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
       case SettingsSection.courseSchedule:
       case SettingsSection.usbKey:
         return false;
+      case SettingsSection.desktopSchedule:
+        return true;
     }
   }
 
@@ -169,6 +178,8 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
         return '统一设置初始分、小组总分计算方式与允许分值范围。';
       case SettingsSection.courseSchedule:
         return '维护课程表，支持网格 / 表格编辑与批量导入。';
+      case SettingsSection.desktopSchedule:
+        return '在桌面上常驻显示今日课程、课间与上课倒计时。';
       case SettingsSection.period:
         return '查看当前评分周期，并可切换到上一 / 下一周期。';
       case SettingsSection.usbKey:
@@ -205,6 +216,8 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
           onShowAdjustmentDialog: ({DateTime? date}) =>
               showScheduleAdjustmentDialog(context, date: date),
         );
+      case SettingsSection.desktopSchedule:
+        return const DesktopScheduleSettingsView();
       case SettingsSection.period:
         return const PeriodManagementView();
       case SettingsSection.usbKey:
@@ -234,6 +247,8 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
         return '计分规则';
       case SettingsSection.courseSchedule:
         return '课程表管理';
+      case SettingsSection.desktopSchedule:
+        return '桌面课表';
       case SettingsSection.period:
         return '评分周期';
       case SettingsSection.usbKey:

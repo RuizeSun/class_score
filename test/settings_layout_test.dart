@@ -3,6 +3,7 @@ import 'package:class_score/models/score_item.dart';
 import 'package:class_score/pages/settings/settings_common.dart';
 import 'package:class_score/pages/settings/settings_hub_page.dart';
 import 'package:class_score/providers/auth_provider.dart';
+import 'package:class_score/providers/desktop_schedule_provider.dart';
 import 'package:class_score/providers/group_provider.dart';
 import 'package:class_score/providers/personalization_provider.dart';
 import 'package:class_score/providers/score_item_provider.dart';
@@ -99,12 +100,17 @@ Widget _buildHub({
       ChangeNotifierProvider<ScoreItemProvider>(
         create: (_) => _FakeScoreItemProvider(items),
       ),
+      // 桌面课表：设置页的「桌面课表」分项会读它（含实时预览）；
+      // 这里用真实 Provider，构造函数不访问数据库，读取的也都是内存状态。
+      ChangeNotifierProvider<DesktopScheduleProvider>(
+        create: (_) => DesktopScheduleProvider(),
+      ),
     ],
     child: const MaterialApp(home: SettingsHubPage()),
   );
 }
 
-/// 设置 Tab 下的 9 个分项（与侧边栏文案一致）。
+/// 设置 Tab 下的 10 个分项（与侧边栏文案一致）。
 const List<String> _sectionTitles = [
   '个性化',
   '分组管理',
@@ -112,6 +118,7 @@ const List<String> _sectionTitles = [
   '预设评分项',
   '计分规则',
   '课程表管理',
+  '桌面课表',
   '评分周期',
   '物理密钥管理',
   '系统设置',

@@ -2,6 +2,8 @@
 
 #include <optional>
 
+#include "desktop_bar_channel.h"
+#include "desktop_multi_window/desktop_multi_window_plugin.h"
 #include "flutter/generated_plugin_registrant.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -25,6 +27,16 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  // Extra engines created by desktop_multi_window must NOT register the whole
+  // plugin set: window_manager keeps its method channel in a process-wide
+  // global and uses COM taskbar objects, so a second registration hijacks the
+  // main window's channel and crashes (access violation). The desktop schedule
+  // bar only needs its own native channel, registered here.
+  DesktopMultiWindowSetWindowCreatedCallback([](void *controller) {
+    auto *flutter_view_controller =
+        reinterpret_cast<flutter::FlutterViewController *>(controller);
+    RegisterDesktopBarWindowChannel(flutter_view_controller);
+  });
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
