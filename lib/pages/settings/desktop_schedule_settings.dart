@@ -27,8 +27,8 @@ class DesktopScheduleSettingsView extends StatelessWidget {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           secondary: const Icon(Icons.desktop_windows),
-          title: const Text('在桌面上显示课表条'),
-          subtitle: const Text('开启后会在屏幕上出现一条常驻的课程 / 倒计时提醒（不影响本窗口）'),
+          title: const Text('在桌面上显示课表胶囊'),
+          subtitle: const Text('开启后会在屏幕上方居中浮出一颗常驻的课表胶囊（不影响本窗口）'),
           value: provider.enabled,
           onChanged: provider.setEnabled,
         ),
@@ -40,12 +40,13 @@ class DesktopScheduleSettingsView extends StatelessWidget {
         // ---- 外观 ----
         const SettingsSectionTitle(
           title: '外观',
-          subtitle: '控制桌面条停靠位置、层级与不透明度',
+          subtitle: '胶囊水平居中悬浮，宽度固定，不会盖住桌面左侧的快捷方式',
         ),
         const SizedBox(height: 8),
         ChoiceTile<DesktopBarPosition>(
           icon: Icons.vertical_align_top,
           title: '显示位置',
+          subtitle: '水平居中；顶部 / 中央偏上 / 底部三选一',
           value: provider.position,
           options: DesktopBarPosition.values,
           labelOf: (value) => value.label,
@@ -64,7 +65,9 @@ class DesktopScheduleSettingsView extends StatelessWidget {
           contentPadding: EdgeInsets.zero,
           secondary: const Icon(Icons.mouse),
           title: const Text('鼠标穿透'),
-          subtitle: const Text('开启后桌面条不响应鼠标点击，不会挡住桌面图标与其它程序'),
+          subtitle: const Text(
+            '开启后胶囊本身不响应鼠标点击；胶囊之外始终不响应，桌面图标照常可用',
+          ),
           value: provider.clickThrough,
           onChanged: provider.setClickThrough,
         ),
@@ -141,7 +144,7 @@ class DesktopScheduleSettingsView extends StatelessWidget {
           contentPadding: EdgeInsets.zero,
           secondary: const Icon(Icons.cloud_outlined),
           title: const Text('显示天气'),
-          subtitle: const Text('关闭后桌面条左侧只显示课程'),
+          subtitle: const Text('关闭后胶囊左侧只显示课程'),
           value: provider.weatherEnabled,
           onChanged: provider.setWeatherEnabled,
         ),
@@ -175,7 +178,7 @@ class DesktopScheduleSettingsView extends StatelessWidget {
         // ---- 预览 ----
         const SettingsSectionTitle(
           title: '预览',
-          subtitle: '下面按当前时间实时渲染桌面条内容（与浮窗用的是同一套组件）',
+          subtitle: '下面按当前时间实时渲染胶囊内容（与浮窗用的是同一套组件）',
         ),
         const SizedBox(height: 12),
         const DesktopSchedulePreview(),
@@ -340,24 +343,32 @@ class SliderTile extends StatelessWidget {
   }
 }
 
-/// 桌面条预览：把浮窗要显示的内容直接画在设置页里。
+/// 桌面课表预览：把浮窗要显示的内容直接画在设置页里。
 ///
 /// 用的是与浮窗完全相同的 [DesktopScheduleLive]，因此「设置改了什么」可以立刻
-/// 在这里看到，不必真的开一次浮窗；裁剪 + 深色底模拟浮窗的观感。
+/// 在这里看到，不必真的开一次浮窗。外面套一层仿桌面底板并把胶囊水平居中，
+/// 用来呈现胶囊的形状与「居中悬浮」的观感（窄窗口下胶囊会自动收缩，不会溢出）。
 class DesktopSchedulePreview extends StatelessWidget {
   const DesktopSchedulePreview({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<DesktopScheduleProvider>();
+    final scheme = Theme.of(context).colorScheme;
+
     return Container(
       width: double.infinity,
-      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.symmetric(vertical: 28),
       decoration: BoxDecoration(
-        color: DesktopBarPalette.barBackground,
+        color: scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade400),
+        border: Border.all(color: scheme.outlineVariant),
       ),
-      child: const DesktopScheduleLive(),
+      child: Center(
+        child: DesktopScheduleLive(
+          width: DesktopBarMetrics.capsuleWidth * provider.scale,
+        ),
+      ),
     );
   }
 }

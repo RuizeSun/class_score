@@ -67,10 +67,20 @@ RECT GetWorkArea(HWND hwnd) {
   return fallback;
 }
 
-// Applies the desktop bar look: frameless, no taskbar button, layered
-// (opacity + optional click-through), docked to the top/bottom of the screen.
+// Ratio of the work-area height where the "upperCenter" anchor sits (kept in
+// sync with the label in lib/models/desktop_bar_style.dart).
+constexpr double kUpperCenterRatio = 0.25;
+
+// Applies the desktop schedule capsule look: frameless, no taskbar button,
+// layered (opacity + optional click-through), clipped into a capsule and
+// centered horizontally near the top/upper-middle/bottom of the work area.
+//
+// A full-width docked bar covered the desktop shortcuts on the left; a centered
+// capsule leaves them visible.
 void ConfigureWindow(HWND hwnd, const flutter::EncodableMap& args) {
+  const double bar_width = GetDouble(args, "bar_width", 720.0);
   const double bar_height = GetDouble(args, "bar_height", 52.0);
+  const double screen_margin = GetDouble(args, "screen_margin", 16.0);
   const double opacity = GetDouble(args, "opacity", 0.92);
   const bool click_through = GetBool(args, "click_through", true);
   const std::string position = GetString(args, "position", "top");
@@ -95,14 +105,42 @@ void ConfigureWindow(HWND hwnd, const flutter::EncodableMap& args) {
                              LWA_ALPHA);
 
   const RECT work = GetWorkArea(hwnd);
+  const LONG work_width = work.right - work.left;
+  const LONG work_height = work.bottom - work.top;
   const LONG height = ToPhysical(hwnd, bar_height);
-  const LONG top = (position == "bottom") ? work.bottom - height : work.top;
+  const LONG margin = ToPhysical(hwnd, screen_margin);
+
+  // Narrow screens: shrink the capsule instead of running off the work area.
+  const LONG max_width = work_width - 2 * margin;
+  LONG width = ToPhysical(hwnd, bar_width);
+  if (max_width > 0 && width > max_width) width = max_width;
+
+  // All three anchors are horizontally centered, so the desktop icons on the
+  // left stay clear.
+  const LONG left = work.left + (work_width - width) / 2;
+
+  LONG top = work.top + margin;
+  if (position == "bottom") {
+    top = work.bottom - height - margin;
+  } else if (position == "upperCenter") {
+    top = work.top + static_cast<LONG>(work_height * kUpperCenterRatio);
+  }
 
   // "desktop" layer stays below other windows; "topMost" floats above them.
   HWND insert_after = (layer == "topMost") ? HWND_TOPMOST : HWND_BOTTOM;
-  SetWindowPos(hwnd, insert_after, work.left, top, work.right - work.left,
-               height,
+  SetWindowPos(hwnd, insert_after, left, top, width, height,
                SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+
+  // Clip the window into a capsule (ellipse diameter = height, so both ends are
+  // half circles). A window region is a 1-bit mask: outside the capsule nothing
+  // is painted and no click is taken, which keeps the desktop usable even when
+  // click-through is off. The system owns the region once it is set, so it must
+  // only be deleted when SetWindowRgn fails.
+  HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1, height, height);
+  if (region != nullptr && SetWindowRgn(hwnd, region, TRUE) == 0) {
+    DeleteObject(region);
+  }
+
   ShowWindow(hwnd, SW_SHOWNOACTIVATE);
 }
 

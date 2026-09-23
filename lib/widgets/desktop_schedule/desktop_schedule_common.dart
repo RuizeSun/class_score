@@ -33,17 +33,35 @@ class DesktopBarPalette {
   static const Color bannerText = Colors.white;
 
   static const Color divider = Color(0xFF39414F);
+
+  /// 胶囊内描边：原生窗口是按胶囊形状硬裁剪的（`SetWindowRgn`，1 位掩码），
+  /// 描一圈很淡的亮边能让两端圆弧的裁剪边缘看起来更自然。
+  static const Color capsuleBorder = Color(0x26FFFFFF);
 }
 
-/// 桌面条的几何尺寸（逻辑像素，最终再乘用户设置的缩放）。
+/// 桌面课表胶囊的几何尺寸（逻辑像素，最终再乘用户设置的缩放）。
 class DesktopBarMetrics {
   DesktopBarMetrics._();
 
-  /// 条自身高度（= 浮窗高度）。
+  /// 胶囊高度（= 浮窗高度）。
   static const double height = 52;
 
-  /// 内容左右留白。
-  static const double horizontalPadding = 18;
+  /// 胶囊宽度：固定宽度 + 水平居中，不再铺满屏幕。
+  ///
+  /// 整宽贴边的条会盖住桌面左侧的快捷方式，所以改成一块居中悬浮的胶囊。
+  /// 浮窗的**实际**宽度由原生侧决定（窄屏时收缩为「工作区宽 − 2 ×
+  /// [screenMargin]」，见 `windows/runner/desktop_bar_channel.cpp`），
+  /// Flutter 侧只负责把内容铺满这个宽度，两边不会各算一套。
+  static const double capsuleWidth = 720;
+
+  /// 胶囊与屏幕工作区边缘的留白（`top` / `bottom` 锚点使用）。
+  static const double screenMargin = 16;
+
+  /// 内容左右留白：不小于半高，避免文字压在胶囊两端的圆弧上。
+  static const double capsulePadding = 22;
+
+  /// 胶囊圆角半径（= 高度一半，两端正好是半圆）。
+  static double capsuleRadius(double scale) => height * scale / 2;
 
   /// 课程块之间的间距。
   static const double chipSpacing = 14;

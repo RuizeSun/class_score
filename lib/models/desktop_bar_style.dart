@@ -1,7 +1,16 @@
-/// 桌面课表条在屏幕上的停靠位置。
+/// 桌面课表胶囊在屏幕上的停靠位置。
+///
+/// 三种锚点**都是水平居中**：胶囊宽度固定（见 `DesktopBarMetrics.capsuleWidth`），
+/// 不再铺满屏幕宽度，因此桌面左侧的快捷方式不会被盖住。
 enum DesktopBarPosition {
-  top('顶部'),
-  bottom('底部');
+  /// 顶部居中：水平居中、距工作区顶部 16 逻辑像素（默认）。
+  top('顶部居中'),
+
+  /// 中央偏上：水平居中、落在工作区约 1/4 高度处。
+  upperCenter('中央偏上'),
+
+  /// 底部居中：水平居中、距工作区底部 16 逻辑像素。
+  bottom('底部居中');
 
   const DesktopBarPosition(this.label);
 

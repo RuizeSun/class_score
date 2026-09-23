@@ -6,10 +6,14 @@ import '../../models/weather_snapshot.dart';
 import '../../providers/desktop_schedule_provider.dart';
 import '../motion.dart';
 import 'desktop_schedule_bar.dart';
+import 'desktop_schedule_capsule.dart';
 import 'desktop_schedule_countdown.dart';
 import 'desktop_schedule_notice.dart';
 
-/// 桌面条的内容分发：按当前阶段选择「常态条 / 提示横幅 / 倒计时」。
+/// 桌面课表的内容分发：按当前阶段选择「常态条 / 提示横幅 / 倒计时」。
+///
+/// 三者都画在同一个胶囊外壳里：胶囊是浮窗的形状（原生按同一形状裁剪窗口），
+/// 换阶段时只换内部内容，外形不跳。
 ///
 /// 换外观时统一走 [FadeThroughSwitcher]（旧内容先退场、新内容再进场），
 /// 与设置页 / 查询页的节奏保持一致；系统开启「减少动态效果」时自动变为直切。
@@ -21,6 +25,7 @@ class DesktopScheduleWidget extends StatelessWidget {
     this.weatherKind,
     this.showPreparationHint = false,
     this.scale = 1.0,
+    this.width,
   });
 
   final DesktopScheduleState state;
@@ -28,6 +33,9 @@ class DesktopScheduleWidget extends StatelessWidget {
   final WeatherKind? weatherKind;
   final bool showPreparationHint;
   final double scale;
+
+  /// 胶囊宽度；为空表示铺满可用宽度（浮窗里的默认用法）。
+  final double? width;
 
   /// 当前该渲染哪种外观；相同 key 时不做过渡（例如图三 ↔ 图四的交替在
   /// 倒计时组件内部处理，不能让整条重新淡入淡出）。
@@ -46,12 +54,16 @@ class DesktopScheduleWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // expand: false —— 桌面条自带确定高度（图一 / 图六 52 逻辑像素），
-    // 过渡容器必须按内容松约束排布，不能把条撑满整个窗口。
-    return FadeThroughSwitcher(
-      switchKey: _viewKey,
-      duration: AppMotion.medium,
-      child: _buildCurrentView(),
+    // 胶囊自带确定尺寸（高 = 52 × 缩放），过渡容器必须按内容松约束排布，
+    // 不能把内容撑成整个窗口（FadeThroughSwitcher 的 expand 默认为 false）。
+    return DesktopScheduleCapsule(
+      scale: scale,
+      width: width,
+      child: FadeThroughSwitcher(
+        switchKey: _viewKey,
+        duration: AppMotion.medium,
+        child: _buildCurrentView(),
+      ),
     );
   }
 
@@ -95,13 +107,16 @@ class DesktopScheduleWidget extends StatelessWidget {
   }
 }
 
-/// 直接订阅 [DesktopScheduleProvider] 的桌面条：
+/// 直接订阅 [DesktopScheduleProvider] 的桌面课表：
 /// 主窗口里的「预览」与桌面浮窗都用它渲染，避免两处各写一遍取数逻辑。
 class DesktopScheduleLive extends StatelessWidget {
-  const DesktopScheduleLive({super.key, this.scale});
+  const DesktopScheduleLive({super.key, this.scale, this.width});
 
   /// 覆盖缩放（预览时用小尺寸展示）；为空则用用户设置值。
   final double? scale;
+
+  /// 覆盖胶囊宽度（预览时按可用宽度夹紧）；为空则铺满可用宽度。
+  final double? width;
 
   @override
   Widget build(BuildContext context) {
@@ -113,6 +128,7 @@ class DesktopScheduleLive extends StatelessWidget {
       weatherKind: provider.weatherKind,
       showPreparationHint: provider.showPreparationHint,
       scale: scale ?? provider.scale,
+      width: width,
     );
   }
 }

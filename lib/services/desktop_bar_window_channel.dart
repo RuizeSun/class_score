@@ -16,14 +16,18 @@ class DesktopBarWindowChannel {
     'class_score/desktop_bar_window',
   );
 
-  /// 应用桌面条外观：无边框、不进任务栏、贴顶/贴底、透明度、鼠标穿透，
-  /// 并按 [barHeight]（逻辑像素）设置窗口高度，最后把窗口显示出来。
+  /// 应用胶囊外观：无边框、不进任务栏、水平居中悬浮、按胶囊形状裁剪窗口
+  /// （胶囊外的区域不显示也不接收点击），按 [barHeight] / [barWidth]（逻辑像素）
+  /// 设置窗口尺寸（窄屏时原生会把宽度收缩到工作区内），照设置应用透明度与
+  /// 鼠标穿透，最后把窗口显示出来。
   static Future<void> configure({
     required String position,
     required String layer,
     required bool clickThrough,
     required double opacity,
     required double barHeight,
+    required double barWidth,
+    required double screenMargin,
   }) {
     return _channel.invokeMethod<void>('configure', {
       'position': position,
@@ -31,6 +35,8 @@ class DesktopBarWindowChannel {
       'click_through': clickThrough,
       'opacity': opacity,
       'bar_height': barHeight,
+      'bar_width': barWidth,
+      'screen_margin': screenMargin,
     });
   }
 

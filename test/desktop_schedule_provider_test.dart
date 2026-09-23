@@ -1,3 +1,4 @@
+import 'package:class_score/models/desktop_bar_style.dart';
 import 'package:class_score/models/desktop_schedule_state.dart';
 import 'package:class_score/providers/desktop_schedule_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -85,6 +86,21 @@ void main() {
       expect(payload['layer'], 'desktop');
       expect(payload['click_through'], isTrue);
       expect(payload['scale'], 1.0);
+    });
+
+    test('显示位置：三个居中锚点，默认顶部居中（name 就是原生比对的锚点）', () {
+      // 原生侧（desktop_bar_channel.cpp）按这些字符串决定垂直落点，
+      // 三者都是水平居中，桌面左侧的快捷方式不会被挡住。
+      expect(
+        DesktopBarPosition.values.map((value) => value.name),
+        ['top', 'upperCenter', 'bottom'],
+      );
+      expect(
+        DesktopBarPosition.values.map((value) => value.label),
+        ['顶部居中', '中央偏上', '底部居中'],
+      );
+      expect(provider.position, DesktopBarPosition.top);
+      expect(provider.toBarPayload()['position'], 'top');
     });
   });
 }

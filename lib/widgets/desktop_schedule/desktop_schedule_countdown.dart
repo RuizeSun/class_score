@@ -48,7 +48,7 @@ class DesktopScheduleCountdown extends StatelessWidget {
           ),
           Padding(
             padding: EdgeInsets.symmetric(
-              horizontal: DesktopBarMetrics.horizontalPadding * scale,
+              horizontal: DesktopBarMetrics.capsulePadding * scale,
             ),
             child: FadeThroughSwitcher(
               switchKey: showPreparationHint,
@@ -95,33 +95,40 @@ class DesktopScheduleCountdown extends StatelessWidget {
             ),
           ),
         ),
+        // 胶囊宽度有限：课程名过长时让它省略，而不是把整行挤到溢出。
         if (next != null)
-          Row(
-            children: [
-              Text(
-                '下节课是：',
-                style: TextStyle(
-                  fontSize: 16 * scale,
-                  color: Colors.white70,
+          Flexible(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '下节课是：',
+                  style: TextStyle(
+                    fontSize: 16 * scale,
+                    color: Colors.white70,
+                  ),
                 ),
-              ),
-              Text(
-                next.courseName,
-                style: TextStyle(
-                  fontSize: 18 * scale,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                Flexible(
+                  child: Text(
+                    next.courseName,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 18 * scale,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
-              ),
-              SizedBox(width: 8 * scale),
-              Text(
-                next.timeRange,
-                style: TextStyle(
-                  fontSize: 15 * scale,
-                  color: Colors.white60,
+                SizedBox(width: 8 * scale),
+                Text(
+                  next.timeRange,
+                  style: TextStyle(
+                    fontSize: 15 * scale,
+                    color: Colors.white60,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
       ],
     );

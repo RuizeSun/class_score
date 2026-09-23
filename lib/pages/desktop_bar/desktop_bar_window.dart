@@ -143,7 +143,7 @@ class _DesktopBarWindowState extends State<DesktopBarWindow> {
     await _log('收到显示指令，已重新应用窗口外观');
   }
 
-  /// 把外观参数交给原生通道（无边框、贴顶/贴底、透明度、穿透 + 显示窗口）。
+  /// 把外观参数交给原生通道（无边框、居中悬浮、胶囊裁剪、透明度、穿透 + 显示窗口）。
   ///
   /// 外观随内容每秒推送一次，这里用签名去重，避免每秒都做一次窗口样式设置。
   Future<void> _applyAppearance(Map<String, dynamic> payload) async {
@@ -152,8 +152,12 @@ class _DesktopBarWindowState extends State<DesktopBarWindow> {
     final clickThrough = payload['click_through'] as bool? ?? true;
     final opacity = (payload['opacity'] as num?)?.toDouble() ?? 0.92;
     final barHeight = DesktopBarMetrics.height * _scale;
+    // 胶囊宽度同样只是「请求值」：原生会把它收缩到工作区内，Flutter 侧的内容
+    // 直接铺满窗口宽度即可，两边不会各算一套尺寸。
+    final barWidth = DesktopBarMetrics.capsuleWidth * _scale;
 
-    final signature = '$position|$layer|$clickThrough|$opacity|$barHeight';
+    final signature =
+        '$position|$layer|$clickThrough|$opacity|$barHeight|$barWidth';
     if (signature == _appliedAppearance) return;
 
     try {
@@ -163,13 +167,15 @@ class _DesktopBarWindowState extends State<DesktopBarWindow> {
         clickThrough: clickThrough,
         opacity: opacity,
         barHeight: barHeight,
+        barWidth: barWidth,
+        screenMargin: DesktopBarMetrics.screenMargin,
       );
       _appliedAppearance = signature;
       if (!_appearanceApplied) {
         _appearanceApplied = true;
         await _log(
           '已应用窗口外观：位置=$position 层级=$layer 穿透=$clickThrough '
-          '透明度=$opacity 条高=$barHeight',
+          '透明度=$opacity 胶囊=${barWidth}x$barHeight',
         );
       }
     } catch (error) {

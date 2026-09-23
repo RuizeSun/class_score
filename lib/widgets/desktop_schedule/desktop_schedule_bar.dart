@@ -54,10 +54,10 @@ class DesktopScheduleBar extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(width: DesktopBarMetrics.horizontalPadding * scale),
+          SizedBox(width: DesktopBarMetrics.capsulePadding * scale),
           if (weatherLabel != null) _buildWeather(scale),
           Expanded(child: _buildCourses(scale)),
-          SizedBox(width: DesktopBarMetrics.horizontalPadding * scale),
+          SizedBox(width: DesktopBarMetrics.capsulePadding * scale),
         ],
       ),
     );

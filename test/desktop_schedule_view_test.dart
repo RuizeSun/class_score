@@ -1,6 +1,7 @@
 import 'package:class_score/models/desktop_schedule_state.dart';
 import 'package:class_score/models/weather_snapshot.dart';
 import 'package:class_score/services/schedule_timeline_service.dart';
+import 'package:class_score/widgets/desktop_schedule/desktop_schedule_common.dart';
 import 'package:class_score/widgets/desktop_schedule/desktop_schedule_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -32,14 +33,21 @@ DesktopScheduleState _stateAt(int hour, int minute, [int second = 0]) =>
       now: _at(hour, minute, second),
     );
 
-/// 以桌面尺寸渲染桌面条（宽度铺满窗口，与浮窗实际形态一致）。
+/// 以浮窗的真实形态渲染：1280 宽的屏幕 + 按缩放计算的胶囊宽
+/// （原生窗口宽 = [DesktopBarMetrics.capsuleWidth] × 缩放）。
+///
+/// 浮窗宽度由原生设定（见 `windows/runner/desktop_bar_channel.cpp`），这里用同一个
+/// 公式模拟，避免「测试里 1280 宽不溢出、实际胶囊里却挤爆」这种假绿灯。
 Future<void> _pumpBar(
   WidgetTester tester,
   DesktopScheduleState state, {
   String? weatherLabel = '28℃',
   bool showPreparationHint = false,
+  double scale = 1.0,
+  double? width,
+  double viewportWidth = 1280,
 }) async {
-  tester.view.physicalSize = const Size(1280, 800);
+  tester.view.physicalSize = Size(viewportWidth, 800);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -54,6 +62,8 @@ Future<void> _pumpBar(
             weatherLabel: weatherLabel,
             weatherKind: WeatherKind.partlyCloudy,
             showPreparationHint: showPreparationHint,
+            scale: scale,
+            width: width ?? DesktopBarMetrics.capsuleWidth * scale,
           ),
         ),
       ),
@@ -147,32 +157,57 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('1280 宽度下缩放后条高与字号同步变化，且不溢出', (tester) async {
-    tester.view.physicalSize = const Size(1280, 800);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets('胶囊：固定宽度 + 两端半圆，缩放下宽高与圆角同步变化', (tester) async {
+    await _pumpBar(tester, _stateAt(8, 20), scale: 1.4);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Align(
-            alignment: Alignment.topCenter,
-            child: DesktopScheduleWidget(
-              state: _stateAt(8, 20),
-              weatherLabel: '28℃',
-              weatherKind: WeatherKind.partlyCloudy,
-              scale: 1.4,
-            ),
+    final size = tester.getSize(find.byType(DesktopScheduleWidget));
+    // 宽度是固定胶囊宽（720）× 缩放，而不是铺满 1280 的屏幕
+    expect(size.width, closeTo(DesktopBarMetrics.capsuleWidth * 1.4, 0.01));
+    expect(size.height, closeTo(DesktopBarMetrics.height * 1.4, 0.01));
+
+    // 圆角半径 = 高度一半，两端才是半圆（与原生 CreateRoundRectRgn 一致）
+    final radii = tester
+        .widgetList<ClipRRect>(
+          find.descendant(
+            of: find.byType(DesktopScheduleWidget),
+            matching: find.byType(ClipRRect),
           ),
-        ),
+        )
+        .map((clip) => clip.borderRadius)
+        .toList();
+    expect(
+      radii,
+      contains(
+        BorderRadius.circular(DesktopBarMetrics.capsuleRadius(1.4)),
       ),
     );
-    await tester.pumpAndSettle();
-
-    final barSize = tester.getSize(find.byType(DesktopScheduleWidget));
-    expect(barSize.height, closeTo(52 * 1.4, 0.01));
-    expect(barSize.width, 1280);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('窄屏：胶囊收缩到视口宽，不溢出（原生同样会收缩窗口）', (tester) async {
+    // 请求 1008 宽，但视口只有 600
+    await _pumpBar(
+      tester,
+      _stateAt(8, 20),
+      scale: 1.4,
+      viewportWidth: 600,
+    );
+
+    final size = tester.getSize(find.byType(DesktopScheduleWidget));
+    expect(size.width, closeTo(600, 0.01));
+    expect(size.height, closeTo(DesktopBarMetrics.height * 1.4, 0.01));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('三种外观都落在同一胶囊尺寸里（换阶段外形不跳）', (tester) async {
+    // 常态条 → 蓝底横幅 → 倒计时
+    for (final state in [_stateAt(8, 20), _stateAt(8, 57), _stateAt(8, 59, 7)]) {
+      await _pumpBar(tester, state, scale: 1.2);
+
+      final size = tester.getSize(find.byType(DesktopScheduleWidget));
+      expect(size.width, closeTo(DesktopBarMetrics.capsuleWidth * 1.2, 0.01));
+      expect(size.height, closeTo(DesktopBarMetrics.height * 1.2, 0.01));
+      expect(tester.takeException(), isNull);
+    }
   });
 }
