@@ -1,5 +1,6 @@
 #include "desktop_bar_channel.h"
 
+#include <dwmapi.h>
 #include <flutter/encodable_value.h>
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
@@ -74,37 +75,111 @@ constexpr double kUpperCenterRatio = 0.25;
 // Whether a normal program window currently owns the foreground (used by the
 // dual-appearance feature: desktop look vs. foreground look).
 //
-// "Foreground program" = GetForegroundWindow() returns a visible, non-minimized
-// top-level window that is neither the desktop shell (icons / taskbar popups)
-// nor the bar window itself. The bar's own main window counts as a program, so
-// opening the app switches the capsule to the foreground look too.
+// "Foreground program" = after normalizing the foreground handle (see below),
+// the candidate is a visible, non-minimized, non-cloaked top-level window that
+// is neither the desktop shell (icons / taskbar popups) nor the bar window
+// itself. The bar's own main window counts as a program, so opening the app
+// switches the capsule to the foreground look too.
 //
 // Detection is pull-based: Dart asks "get_foreground" once per payload tick
 // instead of native pushing events, so no timer or native-to-Dart call
 // outlives the engine (the channel's messenger pointer would dangle after
 // teardown).
-bool IsProgramInForeground(HWND bar) {
-  HWND foreground = GetForegroundWindow();
-  if (foreground == nullptr || foreground == bar) return false;
-  if (!IsWindowVisible(foreground) || IsIconic(foreground)) return false;
 
+// DWMWA_CLOAKED (dwmapi.h, Win8+): windows hidden by virtual desktops or
+// UWP suspension stay "visible" to older checks; literal avoids SDK guards.
+constexpr DWORD kDwmwaCloaked = 14;
+
+// Desktop shell windows and their popups: clicking the desktop, the taskbar or
+// the Start menu makes one of these the foreground window, but none of them is
+// "a program in front of the desktop".
+constexpr const wchar_t* kShellClasses[] = {
+    L"Progman",
+    L"WorkerW",
+    L"Shell_TrayWnd",
+    L"Shell_SecondaryTrayWnd",
+    L"NotifyIconOverflowWindow",
+    L"Windows.UI.Core.CoreWindow",
+    // Taskbar thumbnails / hover flyouts / jump lists and the like: transient
+    // shell UI that belongs to the taskbar, not to a user program.
+    L"TaskListThumbnailWnd",
+    L"TaskListOverlayWnd",
+    L"ContentUI.Host",
+    L"Shell_Flyout",
+    L"DV2ControlHost",
+    L"MultitaskingViewFrame",
+};
+
+bool IsShellWindow(HWND hwnd) {
   wchar_t class_name[64] = L"";
-  GetClassNameW(foreground, class_name, 64);
-  // Desktop shell windows: clicking the desktop, the taskbar or the Start menu
-  // makes one of these the foreground window, but none of them is "a program
-  // in front of the desktop".
-  constexpr const wchar_t* kShellClasses[] = {
-      L"Progman",
-      L"WorkerW",
-      L"Shell_TrayWnd",
-      L"Shell_SecondaryTrayWnd",
-      L"NotifyIconOverflowWindow",
-      L"Windows.UI.Core.CoreWindow",
-  };
+  GetClassNameW(hwnd, class_name, 64);
   for (const wchar_t* shell_class : kShellClasses) {
-    if (lstrcmpW(class_name, shell_class) == 0) return false;
+    if (lstrcmpW(class_name, shell_class) == 0) return true;
   }
-  return true;
+  return false;
+}
+
+// Cloaked = hidden by a virtual desktop / suspended UWP but still "visible"
+// to IsWindowVisible; such a window is not something the user is looking at.
+bool IsWindowCloaked(HWND hwnd) {
+  DWORD cloaked = 0;
+  return SUCCEEDED(DwmGetWindowAttribute(hwnd, kDwmwaCloaked, &cloaked,
+                                         sizeof(cloaked))) &&
+         cloaked != 0;
+}
+
+// Usable = a window the user can actually see right now: style-visible, not
+// minimized, not cloaked by a virtual desktop, not a fully transparent
+// layered ghost, and not parked off every monitor.
+bool IsUsableWindow(HWND hwnd) {
+  if (!IsWindowVisible(hwnd) || IsIconic(hwnd) || IsWindowCloaked(hwnd)) {
+    return false;
+  }
+
+  // Fully transparent layered windows (alpha 0) are invisible in practice;
+  // many apps keep such popups around as leftovers. The call fails for
+  // windows without WS_EX_LAYERED -> treat them as opaque.
+  DWORD flags = 0;
+  BYTE alpha = 255;
+  COLORREF key = 0;
+  if (GetLayeredWindowAttributes(hwnd, &key, &alpha, &flags) &&
+      (flags & LWA_ALPHA) != 0 && alpha == 0) {
+    return false;
+  }
+
+  // Zero-size or fully off-screen rectangles mean nothing is being shown.
+  RECT rect{};
+  if (!GetWindowRect(hwnd, &rect)) return false;
+  if (rect.right - rect.left <= 0 || rect.bottom - rect.top <= 0) {
+    return false;
+  }
+  return MonitorFromRect(&rect, MONITOR_DEFAULTTONULL) != nullptr;
+}
+
+bool IsProgramInForeground(HWND bar) {
+  // Classic Win32 quirk: minimizing a window does NOT move the foreground
+  // away from it - GetForegroundWindow() keeps returning the minimized
+  // window until the user clicks somewhere else. Instead of trusting that
+  // single handle, walk down the Z-order past stale/hidden candidates and
+  // judge the next real window: another visible program keeps the foreground
+  // look, the shell (or nothing left to inspect) means the desktop look.
+  HWND candidate = GetForegroundWindow();
+  // Bounded walk: normal cases resolve within a couple of hops (the stale
+  // handle, maybe the bar itself, then the next real window); if the chain
+  // only hides dead ends, falling through to "desktop" is the safe default.
+  for (int hops = 0; candidate != nullptr && hops < 8; ++hops) {
+    if (candidate == bar) {
+      candidate = GetWindow(candidate, GW_HWNDNEXT);
+      continue;
+    }
+    if (!IsUsableWindow(candidate)) {
+      candidate = GetWindow(candidate, GW_HWNDNEXT);
+      continue;
+    }
+    if (IsShellWindow(candidate)) return false;
+    return true;
+  }
+  return false;
 }
 
 // ---- Fade transition for the desktop <-> foreground appearance switch ----
