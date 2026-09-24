@@ -28,6 +28,18 @@ class DesktopScheduleProvider extends ChangeNotifier {
   static const String _keyClickThrough = 'desktop_schedule_click_through';
   static const String _keyOpacity = 'desktop_schedule_opacity';
   static const String _keyScale = 'desktop_schedule_scale';
+  static const String _keyForegroundEnabled =
+      'desktop_schedule_foreground_enabled';
+  static const String _keyForegroundPosition =
+      'desktop_schedule_foreground_position';
+  static const String _keyForegroundLayer =
+      'desktop_schedule_foreground_layer';
+  static const String _keyForegroundClickThrough =
+      'desktop_schedule_foreground_click_through';
+  static const String _keyForegroundOpacity =
+      'desktop_schedule_foreground_opacity';
+  static const String _keyForegroundScale =
+      'desktop_schedule_foreground_scale';
   static const String _keyPreClassAlert = 'desktop_schedule_pre_alert_minutes';
   static const String _keyNoticeDuration = 'desktop_schedule_notice_seconds';
   static const String _keyAlternate = 'desktop_schedule_alternate_seconds';
@@ -75,6 +87,28 @@ class DesktopScheduleProvider extends ChangeNotifier {
 
   double _scale = 1.0;
   double get scale => _scale;
+
+  // ---- 前台态（有程序在前台时的第二套外观）----
+  //
+  // 默认关闭：老用户行为完全不变。开启后浮窗按原生探测到的前台状态在
+  // [desktopAppearance] 与 [foregroundAppearance] 之间自动切换。
+  bool _foregroundEnabled = false;
+  bool get foregroundEnabled => _foregroundEnabled;
+
+  DesktopBarPosition _foregroundPosition = DesktopBarPosition.top;
+  DesktopBarPosition get foregroundPosition => _foregroundPosition;
+
+  DesktopBarLayer _foregroundLayer = DesktopBarLayer.topMost;
+  DesktopBarLayer get foregroundLayer => _foregroundLayer;
+
+  bool _foregroundClickThrough = true;
+  bool get foregroundClickThrough => _foregroundClickThrough;
+
+  double _foregroundOpacity = 0.92;
+  double get foregroundOpacity => _foregroundOpacity;
+
+  double _foregroundScale = 1.0;
+  double get foregroundScale => _foregroundScale;
 
   int _preClassAlertMinutes = 3;
   int get preClassAlertMinutes => _preClassAlertMinutes;
@@ -166,6 +200,34 @@ class DesktopScheduleProvider extends ChangeNotifier {
       0.8,
       1.6,
     );
+    _foregroundEnabled = await _readBool(
+      settings,
+      _keyForegroundEnabled,
+      fallback: false,
+    );
+    _foregroundPosition = _parsePosition(
+      await settings.getSetting(_keyForegroundPosition),
+      fallback: DesktopBarPosition.top,
+    );
+    // 前台态默认置顶：程序盖在桌面上时，桌面级的胶囊会被完全挡住，
+    // 功能看起来就像坏了。
+    _foregroundLayer = _parseLayer(
+      await settings.getSetting(_keyForegroundLayer),
+      fallback: DesktopBarLayer.topMost,
+    );
+    _foregroundClickThrough = await _readBool(
+      settings,
+      _keyForegroundClickThrough,
+      fallback: true,
+    );
+    _foregroundOpacity = _parseDouble(
+      await settings.getSetting(_keyForegroundOpacity),
+      0.92,
+    ).clamp(0.3, 1.0);
+    _foregroundScale = _parseDouble(
+      await settings.getSetting(_keyForegroundScale),
+      1.0,
+    ).clamp(0.8, 1.6);
     _preClassAlertMinutes =
         _parseInt(
           await settings.getSetting(_keyPreClassAlert),
@@ -285,6 +347,52 @@ class DesktopScheduleProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---- 前台态配置写入 ----
+
+  Future<void> setForegroundEnabled(bool value) async {
+    if (_foregroundEnabled == value) return;
+    _foregroundEnabled = value;
+    await _save(_keyForegroundEnabled, value.toString());
+    notifyListeners();
+  }
+
+  Future<void> setForegroundPosition(DesktopBarPosition value) async {
+    if (_foregroundPosition == value) return;
+    _foregroundPosition = value;
+    await _save(_keyForegroundPosition, value.name);
+    notifyListeners();
+  }
+
+  Future<void> setForegroundLayer(DesktopBarLayer value) async {
+    if (_foregroundLayer == value) return;
+    _foregroundLayer = value;
+    await _save(_keyForegroundLayer, value.name);
+    notifyListeners();
+  }
+
+  Future<void> setForegroundClickThrough(bool value) async {
+    if (_foregroundClickThrough == value) return;
+    _foregroundClickThrough = value;
+    await _save(_keyForegroundClickThrough, value.toString());
+    notifyListeners();
+  }
+
+  Future<void> setForegroundOpacity(double value) async {
+    final clamped = value.clamp(0.3, 1.0);
+    if (_foregroundOpacity == clamped) return;
+    _foregroundOpacity = clamped;
+    await _save(_keyForegroundOpacity, clamped.toString());
+    notifyListeners();
+  }
+
+  Future<void> setForegroundScale(double value) async {
+    final clamped = value.clamp(0.8, 1.6);
+    if (_foregroundScale == clamped) return;
+    _foregroundScale = clamped;
+    await _save(_keyForegroundScale, clamped.toString());
+    notifyListeners();
+  }
+
   /// 提前提醒时间（分钟）：越早进入「即将上课 → 倒计时」流程。
   Future<void> setPreClassAlertMinutes(int value) async {
     final clamped = value.clamp(minPreClassAlertMinutes, maxPreClassAlertMinutes);
@@ -391,11 +499,20 @@ class DesktopScheduleProvider extends ChangeNotifier {
       'weather_kind': label == null ? null : _weather!.kind.name,
       'weather_description': label == null ? null : _weather!.description,
       'show_preparation_hint': showPreparationHint,
+      // 桌面态（无程序遮挡）：键名沿用旧字段，浮窗解析向后兼容。
       'scale': _scale,
       'opacity': _opacity,
       'position': _position.name,
       'layer': _layer.name,
       'click_through': _clickThrough,
+      // 前台态（有程序在前台）：开关 + 第二套外观，由浮窗按原生探测到的
+      // 前台状态与开关一起选出实际生效值（pickDesktopBarAppearance）。
+      'foreground_enabled': _foregroundEnabled,
+      'foreground_scale': _foregroundScale,
+      'foreground_opacity': _foregroundOpacity,
+      'foreground_position': _foregroundPosition.name,
+      'foreground_layer': _foregroundLayer.name,
+      'foreground_click_through': _foregroundClickThrough,
     };
   }
 
@@ -423,16 +540,22 @@ class DesktopScheduleProvider extends ChangeNotifier {
   static double? _parseNullableDouble(String? value) =>
       double.tryParse(value ?? '');
 
-  static DesktopBarPosition _parsePosition(String? value) =>
+  static DesktopBarPosition _parsePosition(
+    String? value, {
+    DesktopBarPosition fallback = DesktopBarPosition.top,
+  }) =>
       DesktopBarPosition.values.firstWhere(
         (item) => item.name == value,
-        orElse: () => DesktopBarPosition.top,
+        orElse: () => fallback,
       );
 
-  static DesktopBarLayer _parseLayer(String? value) =>
+  static DesktopBarLayer _parseLayer(
+    String? value, {
+    DesktopBarLayer fallback = DesktopBarLayer.desktop,
+  }) =>
       DesktopBarLayer.values.firstWhere(
         (item) => item.name == value,
-        orElse: () => DesktopBarLayer.desktop,
+        orElse: () => fallback,
       );
 
   static WeatherSnapshot? _parseWeatherCache(String? value) {

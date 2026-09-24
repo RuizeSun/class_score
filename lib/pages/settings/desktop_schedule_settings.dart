@@ -37,10 +37,10 @@ class DesktopScheduleSettingsView extends StatelessWidget {
         const Divider(height: 1),
         const SizedBox(height: SettingsLayout.sectionSpacing),
 
-        // ---- 外观 ----
+        // ---- 外观（桌面态：无程序遮挡时）----
         const SettingsSectionTitle(
-          title: '外观',
-          subtitle: '胶囊水平居中悬浮，宽度固定，不会盖住桌面左侧的快捷方式',
+          title: '外观（桌面态）',
+          subtitle: '无程序遮挡、只看得到桌面时的样式；胶囊水平居中悬浮，不会盖住桌面左侧的快捷方式',
         ),
         const SizedBox(height: 8),
         ChoiceTile<DesktopBarPosition>(
@@ -91,6 +91,78 @@ class DesktopScheduleSettingsView extends StatelessWidget {
           label: '${(provider.scale * 100).round()}%',
           onChanged: provider.setScale,
         ),
+
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+        const Divider(height: 1),
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+
+        // ---- 外观（前台态：有程序在前台时）----
+        const SettingsSectionTitle(
+          title: '外观（有程序在前台时）',
+          subtitle:
+              '开启后，检测到有程序窗口在前台（不含桌面与任务栏）时自动换用另一套位置、大小等样式；回到桌面再换回来',
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          secondary: const Icon(Icons.picture_in_picture_alt_outlined),
+          title: const Text('有程序在前台时使用另一套外观'),
+          subtitle: const Text(
+            '关闭时（默认）任何时刻都用上面的桌面态外观；开启后才按前台状态自动切换',
+          ),
+          value: provider.foregroundEnabled,
+          onChanged: provider.setForegroundEnabled,
+        ),
+        if (provider.foregroundEnabled) ...[
+          const SizedBox(height: 4),
+          ChoiceTile<DesktopBarPosition>(
+            icon: Icons.vertical_align_top,
+            title: '前台显示位置',
+            subtitle: '有程序在前台时胶囊的落点，同样水平居中',
+            value: provider.foregroundPosition,
+            options: DesktopBarPosition.values,
+            labelOf: (value) => value.label,
+            onChanged: provider.setForegroundPosition,
+          ),
+          ChoiceTile<DesktopBarLayer>(
+            icon: Icons.layers,
+            title: '前台窗口层级',
+            subtitle: '默认置顶显示，避免被程序窗口挡住；可改回桌面级',
+            value: provider.foregroundLayer,
+            options: DesktopBarLayer.values,
+            labelOf: (value) => value.label,
+            onChanged: provider.setForegroundLayer,
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.mouse),
+            title: const Text('前台鼠标穿透'),
+            subtitle: const Text('与桌面态的鼠标穿透相互独立'),
+            value: provider.foregroundClickThrough,
+            onChanged: provider.setForegroundClickThrough,
+          ),
+          SliderTile(
+            icon: Icons.opacity,
+            title: '前台不透明度',
+            value: provider.foregroundOpacity,
+            min: 0.3,
+            max: 1.0,
+            divisions: 14,
+            label: '${(provider.foregroundOpacity * 100).round()}%',
+            onChanged: provider.setForegroundOpacity,
+          ),
+          SliderTile(
+            icon: Icons.format_size,
+            title: '前台整体缩放',
+            subtitle: '盖在程序上时通常调小一点，少挡内容',
+            value: provider.foregroundScale,
+            min: 0.8,
+            max: 1.6,
+            divisions: 16,
+            label: '${(provider.foregroundScale * 100).round()}%',
+            onChanged: provider.setForegroundScale,
+          ),
+        ],
 
         const SizedBox(height: SettingsLayout.sectionSpacing),
         const Divider(height: 1),
@@ -301,10 +373,12 @@ class SliderTile extends StatelessWidget {
     required this.divisions,
     required this.label,
     required this.onChanged,
+    this.subtitle,
   });
 
   final IconData icon;
   final String title;
+  final String? subtitle;
   final double value;
   final double min;
   final double max;
@@ -318,6 +392,8 @@ class SliderTile extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
       leading: Icon(icon),
       title: Text(title),
+      // 前台态的滑块带说明时保持单行，避免与右侧滑块挤在同一行换行。
+      subtitle: subtitle == null ? null : Text(subtitle!),
       trailing: SizedBox(
         width: 220,
         child: Row(

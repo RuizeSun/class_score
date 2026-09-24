@@ -71,6 +71,172 @@ RECT GetWorkArea(HWND hwnd) {
 // sync with the label in lib/models/desktop_bar_style.dart).
 constexpr double kUpperCenterRatio = 0.25;
 
+// Whether a normal program window currently owns the foreground (used by the
+// dual-appearance feature: desktop look vs. foreground look).
+//
+// "Foreground program" = GetForegroundWindow() returns a visible, non-minimized
+// top-level window that is neither the desktop shell (icons / taskbar popups)
+// nor the bar window itself. The bar's own main window counts as a program, so
+// opening the app switches the capsule to the foreground look too.
+//
+// Detection is pull-based: Dart asks "get_foreground" once per payload tick
+// instead of native pushing events, so no timer or native-to-Dart call
+// outlives the engine (the channel's messenger pointer would dangle after
+// teardown).
+bool IsProgramInForeground(HWND bar) {
+  HWND foreground = GetForegroundWindow();
+  if (foreground == nullptr || foreground == bar) return false;
+  if (!IsWindowVisible(foreground) || IsIconic(foreground)) return false;
+
+  wchar_t class_name[64] = L"";
+  GetClassNameW(foreground, class_name, 64);
+  // Desktop shell windows: clicking the desktop, the taskbar or the Start menu
+  // makes one of these the foreground window, but none of them is "a program
+  // in front of the desktop".
+  constexpr const wchar_t* kShellClasses[] = {
+      L"Progman",
+      L"WorkerW",
+      L"Shell_TrayWnd",
+      L"Shell_SecondaryTrayWnd",
+      L"NotifyIconOverflowWindow",
+      L"Windows.UI.Core.CoreWindow",
+  };
+  for (const wchar_t* shell_class : kShellClasses) {
+    if (lstrcmpW(class_name, shell_class) == 0) return false;
+  }
+  return true;
+}
+
+// ---- Fade transition for the desktop <-> foreground appearance switch ----
+//
+// Dart orchestrates the sequence: fade_out (old look fades away in place,
+// geometry and content still match) -> configure at alpha 0 (geometry, layer
+// and content scale jump while invisible) -> fade_in (new look fades in).
+// Driven by SetTimer with a TIMERPROC on this thread's message loop; there are
+// no native-to-Dart calls, so nothing here can outlive the engine.
+constexpr DWORD kFadeOutMs = 140;
+constexpr DWORD kFadeInMs = 220;
+constexpr UINT kFadeTimerIntervalMs = 16;  // ~60 fps
+
+struct AlphaFade {
+  HWND hwnd = nullptr;
+  double from = 1.0;
+  double to = 1.0;
+  DWORD duration_ms = 1;
+  DWORD start_tick = 0;
+  UINT_PTR timer_id = 0;
+  std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result;
+};
+
+std::unique_ptr<AlphaFade> g_fade;
+
+double CurrentAlpha(HWND hwnd, double fallback) {
+  DWORD flags = 0;
+  BYTE alpha = 255;
+  COLORREF key = 0;
+  if (!GetLayeredWindowAttributes(hwnd, &key, &alpha, &flags)) return fallback;
+  return static_cast<double>(alpha) / 255.0;
+}
+
+void SetAlphaNow(HWND hwnd, double alpha) {
+  const double clamped = alpha < 0.0 ? 0.0 : (alpha > 1.0 ? 1.0 : alpha);
+  SetLayeredWindowAttributes(hwnd, 0, static_cast<BYTE>(clamped * 255 + 0.5),
+                             LWA_ALPHA);
+}
+
+// Stops any running fade. A pending MethodResult is dropped without a reply:
+// Dart wraps every fade call in a timeout, so a silent drop cannot hang the
+// bar. configure() also cancels, so a plain reconfigure always wins over a
+// still-running fade.
+void CancelAlphaFade() {
+  if (g_fade == nullptr) return;
+  if (g_fade->timer_id != 0) KillTimer(nullptr, g_fade->timer_id);
+  g_fade.reset();
+}
+
+// Respect the system "Show animations in Windows" setting: when animations are
+// off, apply the final alpha directly instead of fading.
+bool SystemAnimationsDisabled() {
+  BOOL enabled = TRUE;
+  SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0);
+  return !enabled;
+}
+
+void CALLBACK AlphaFadeProc(HWND, UINT, UINT_PTR timer_id, DWORD) {
+  if (g_fade == nullptr || g_fade->timer_id != timer_id) {
+    KillTimer(nullptr, timer_id);
+    return;
+  }
+  if (!IsWindow(g_fade->hwnd)) {
+    // Bar closed mid-fade: drop everything (the Dart side has timed out).
+    CancelAlphaFade();
+    return;
+  }
+  const DWORD elapsed = GetTickCount() - g_fade->start_tick;
+  double t = g_fade->duration_ms == 0
+                 ? 1.0
+                 : static_cast<double>(elapsed) / g_fade->duration_ms;
+  if (t > 1.0) t = 1.0;
+  const double eased = t * t * (3.0 - 2.0 * t);  // smoothstep easing
+  SetAlphaNow(g_fade->hwnd, g_fade->from + (g_fade->to - g_fade->from) * eased);
+  if (t >= 1.0) {
+    auto result = std::move(g_fade->result);
+    CancelAlphaFade();
+    if (result != nullptr) result->Success();
+  }
+}
+
+void StartAlphaFade(
+    HWND hwnd, double to, DWORD duration_ms, double from_fallback,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  if (g_fade != nullptr && IsWindow(g_fade->hwnd)) {
+    result->Error("BUSY", "another fade is still running");
+    return;
+  }
+  CancelAlphaFade();  // stale state from a destroyed window
+  if (!IsWindow(hwnd)) {
+    result->Error("INVALID_WINDOW", "bar window is gone");
+    return;
+  }
+  if (SystemAnimationsDisabled()) {
+    SetAlphaNow(hwnd, to);
+    result->Success();
+    return;
+  }
+  auto fade = std::make_unique<AlphaFade>();
+  fade->hwnd = hwnd;
+  fade->from = CurrentAlpha(hwnd, from_fallback);
+  fade->to = to;
+  fade->duration_ms = duration_ms;
+  fade->start_tick = GetTickCount();
+  const UINT_PTR timer_id =
+      SetTimer(nullptr, 0, kFadeTimerIntervalMs, AlphaFadeProc);
+  if (timer_id == 0) {
+    // Timer creation failed: degrade to an instant switch.
+    SetAlphaNow(hwnd, to);
+    result->Success();
+    return;
+  }
+  fade->timer_id = timer_id;
+  fade->result = std::move(result);
+  g_fade = std::move(fade);
+}
+
+void HandleFadeOut(
+    HWND hwnd,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  // Fallback 0.92 = the default appearance opacity (attributes query failing
+  // is rare and only shifts the perceived start brightness slightly).
+  StartAlphaFade(hwnd, 0.0, kFadeOutMs, 0.92, std::move(result));
+}
+
+void HandleFadeIn(
+    HWND hwnd, const flutter::EncodableMap& args,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  const double target = GetDouble(args, "opacity", 0.92);
+  StartAlphaFade(hwnd, target, kFadeInMs, 0.0, std::move(result));
+}
+
 // Applies the desktop schedule capsule look: frameless, no taskbar button,
 // layered (opacity + optional click-through), clipped into a capsule and
 // centered horizontally near the top/upper-middle/bottom of the work area.
@@ -78,6 +244,10 @@ constexpr double kUpperCenterRatio = 0.25;
 // A full-width docked bar covered the desktop shortcuts on the left; a centered
 // capsule leaves them visible.
 void ConfigureWindow(HWND hwnd, const flutter::EncodableMap& args) {
+  // A plain configure always wins over a still-running fade: settings edits
+  // must never leave the window at a stale alpha.
+  CancelAlphaFade();
+
   const double bar_width = GetDouble(args, "bar_width", 720.0);
   const double bar_height = GetDouble(args, "bar_height", 52.0);
   const double screen_margin = GetDouble(args, "screen_margin", 16.0);
@@ -183,7 +353,27 @@ void RegisterDesktopBarWindowChannel(
           HandleConfigure(hwnd, call, std::move(result));
           return;
         }
+        if (call.method_name() == "get_foreground") {
+          // Dual-appearance probe: the bar's Dart side polls this once per
+          // payload tick and picks the desktop/foreground look accordingly.
+          result->Success(
+              flutter::EncodableValue(IsProgramInForeground(hwnd)));
+          return;
+        }
+        if (call.method_name() == "fade_out") {
+          HandleFadeOut(hwnd, std::move(result));
+          return;
+        }
+        if (call.method_name() == "fade_in") {
+          const auto* args = std::get_if<flutter::EncodableMap>(
+              call.arguments());
+          HandleFadeIn(hwnd, args == nullptr ? flutter::EncodableMap{}
+                                             : *args,
+                       std::move(result));
+          return;
+        }
         if (call.method_name() == "close") {
+          CancelAlphaFade();
           PostMessage(hwnd, WM_CLOSE, 0, 0);
           result->Success();
           return;

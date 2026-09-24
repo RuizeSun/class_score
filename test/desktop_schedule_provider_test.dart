@@ -103,4 +103,93 @@ void main() {
       expect(provider.toBarPayload()['position'], 'top');
     });
   });
+
+  group('双外观（桌面态 / 有程序在前台时）', () {
+    late DesktopScheduleProvider provider;
+
+    setUp(() {
+      // 与上组同约定：不调 init()，只验证内存默认值与推送内容。
+      provider = DesktopScheduleProvider();
+    });
+
+    tearDown(() => provider.dispose());
+
+    test('默认关闭；前台态默认置顶，其余默认值与桌面态一致', () {
+      // 开关默认关：老用户行为完全不变。
+      expect(provider.foregroundEnabled, isFalse);
+      expect(provider.foregroundPosition, DesktopBarPosition.top);
+      // 前台态默认置顶：程序盖在桌面上时，桌面级胶囊会被完全挡住，
+      // 功能看起来就像坏了。
+      expect(provider.foregroundLayer, DesktopBarLayer.topMost);
+      expect(provider.foregroundClickThrough, isTrue);
+      expect(provider.foregroundOpacity, closeTo(0.92, 1e-9));
+      expect(provider.foregroundScale, closeTo(1.0, 1e-9));
+
+      final payload = provider.toBarPayload();
+      expect(payload['foreground_enabled'], isFalse);
+      expect(payload['foreground_position'], 'top');
+      expect(payload['foreground_layer'], 'topMost');
+      expect(payload['foreground_click_through'], isTrue);
+      expect(payload['foreground_opacity'], closeTo(0.92, 1e-9));
+      expect(payload['foreground_scale'], closeTo(1.0, 1e-9));
+
+      // 桌面态字段（老键名）语义不变：仍是「无程序遮挡时」的外观。
+      expect(payload['position'], 'top');
+      expect(payload['layer'], 'desktop');
+      expect(payload['scale'], 1.0);
+    });
+
+    test('pickDesktopBarAppearance：开关 × 前台态四组合', () {
+      const desktop = DesktopBarAppearance(
+        position: DesktopBarPosition.top,
+        layer: DesktopBarLayer.desktop,
+        clickThrough: true,
+        opacity: 0.92,
+        scale: 1.0,
+      );
+      const foreground = DesktopBarAppearance(
+        position: DesktopBarPosition.bottom,
+        layer: DesktopBarLayer.topMost,
+        clickThrough: false,
+        opacity: 0.6,
+        scale: 0.8,
+      );
+
+      DesktopBarAppearance pick({required bool enabled, required bool active}) =>
+          pickDesktopBarAppearance(
+            foregroundEnabled: enabled,
+            foregroundActive: active,
+            desktop: desktop,
+            foreground: foreground,
+          );
+
+      // 开关关闭：无论前台与否都用桌面态（same 断言返回的是同一实例）
+      expect(pick(enabled: false, active: false), same(desktop));
+      expect(pick(enabled: false, active: true), same(desktop));
+      // 开关开启：只有「确实在前台」才切到前台态
+      expect(pick(enabled: true, active: false), same(desktop));
+      expect(pick(enabled: true, active: true), same(foreground));
+    });
+
+    test('shouldAnimateDesktopBarSwitch：仅「已应用 + 前台态翻转 + 外观有变」才播切换动画', () {
+      bool animate({
+        bool applied = true,
+        bool flipped = true,
+        bool changed = true,
+      }) => shouldAnimateDesktopBarSwitch(
+        alreadyApplied: applied,
+        foregroundFlipped: flipped,
+        appearanceChanged: changed,
+      );
+
+      // 三条件齐备：桌面态 ↔ 前台态交叉淡化
+      expect(animate(), isTrue);
+      // 首次应用没有「旧外观」可淡出（调用方单独淡入）
+      expect(animate(applied: false), isFalse);
+      // 设置页改参数 / 拖滑块：前台标记没翻转，直接生效避免连续闪烁
+      expect(animate(flipped: false), isFalse);
+      // 两套外观配得完全相同：原地淡出再淡入只会白闪一下
+      expect(animate(changed: false), isFalse);
+    });
+  });
 }

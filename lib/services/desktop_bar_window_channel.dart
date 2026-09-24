@@ -40,6 +40,36 @@ class DesktopBarWindowChannel {
     });
   }
 
+  /// 查询当前「是否有程序在前台」（双外观切换的依据）。
+  ///
+  /// 原生用 `GetForegroundWindow()` 判定：桌面 / 外壳窗口、不可见 / 最小化、
+  /// 或浮窗自身在前台都算「桌面态」，其余可见程序窗口算「前台态」。
+  /// 浮窗每个内容 tick 拉一次（而不是原生推送），通道生命周期完全由 Dart
+  /// 掌控，窗口/引擎 teardown 后不会有悬挂调用。
+  static Future<bool> getForeground() async {
+    final value = await _channel.invokeMethod<bool>('get_foreground');
+    return value ?? false;
+  }
+
+  /// 淡出超时兜底（原生淡出约 140ms）：通道无应答时不要卡死内容推送。
+  static const Duration _fadeTimeout = Duration(seconds: 1);
+
+  /// 把窗口不透明度平滑降到 0（约 140ms，时长由原生控制）。
+  ///
+  /// 桌面态 ↔ 前台态交叉淡化的前半段：淡出期间窗口几何与内容缩放仍是
+  /// **旧**外观，两者保持一致，不会出现尺寸错位。
+  static Future<void> fadeOut() =>
+      _channel.invokeMethod<void>('fade_out').timeout(_fadeTimeout);
+
+  /// 把窗口不透明度从当前值平滑升到 [opacity]（约 220ms）。
+  ///
+  /// 交叉淡化的后半段：调用前窗口已经切到新几何（`configure` 时先压到全透明）。
+  /// 淡入挂掉时调用方负责用一次不带动画的 `configure` 兜底，不能把窗口
+  /// 留在全透明上。
+  static Future<void> fadeIn({required double opacity}) => _channel
+      .invokeMethod<void>('fade_in', {'opacity': opacity})
+      .timeout(_fadeTimeout);
+
   /// 关闭浮窗（主窗口退出或用户关闭桌面课表时）。
   static Future<void> close() => _channel.invokeMethod<void>('close');
 }
