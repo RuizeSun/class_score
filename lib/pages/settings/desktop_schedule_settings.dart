@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/desktop_ball_style.dart';
 import '../../models/desktop_bar_style.dart';
 import '../../models/weather_snapshot.dart';
 import '../../providers/desktop_schedule_provider.dart';
@@ -32,6 +33,67 @@ class DesktopScheduleSettingsView extends StatelessWidget {
           value: provider.enabled,
           onChanged: provider.setEnabled,
         ),
+
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+        const Divider(height: 1),
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+
+        // ---- 桌面悬浮球 ----
+        const SettingsSectionTitle(
+          title: '桌面悬浮球',
+          subtitle: '桌面常驻的小圆球入口；与上面的课表开关相互独立，课表关掉时球依然在',
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          secondary: const Icon(Icons.circle_outlined),
+          title: const Text('在桌面显示悬浮球'),
+          subtitle: const Text(
+            '显示课表胶囊时球贴在胶囊右侧（两者作为整体居中于屏幕）；'
+            '没有胶囊时停在屏幕右上角，可拖动调整',
+          ),
+          value: provider.ballEnabled,
+          onChanged: provider.setBallEnabled,
+        ),
+        if (provider.ballEnabled) ...[
+          SliderTile(
+            icon: Icons.radio_button_unchecked,
+            title: '悬浮球大小',
+            subtitle: '相对课表胶囊的高度，并跟随「整体缩放」一起变化',
+            value: provider.ballSizeRatio,
+            min: minBallSizeRatio,
+            max: maxBallSizeRatio,
+            divisions: 12,
+            label: '${(provider.ballSizeRatio * 100).round()}%',
+            onChanged: provider.setBallSizeRatio,
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.open_with),
+            title: const Text('悬浮球位置'),
+            subtitle: Text(
+              provider.ballOffsetX == 0 && provider.ballOffsetY == 0
+                  ? '屏幕右上角（默认）；直接拖动球即可调整，位置会自动记忆'
+                  : '已拖动调整（偏移 ${provider.ballOffsetX.round()}，'
+                        '${provider.ballOffsetY.round()}）；显示课表胶囊时球会贴回胶囊右侧',
+            ),
+            trailing: TextButton(
+              onPressed: provider.resetBallOffset,
+              child: const Text('重置位置'),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 40, top: 4, bottom: 4),
+            child: Text(
+              '单击悬浮球唤起主窗口，右键是「显示 / 隐藏 / 退出」菜单；'
+              '球贴着课表胶囊时位置由胶囊决定，不响应拖动。',
+              style: TextStyle(
+                fontSize: SettingsLayout.hintFontSize,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ),
+        ],
 
         const SizedBox(height: SettingsLayout.sectionSpacing),
         const Divider(height: 1),

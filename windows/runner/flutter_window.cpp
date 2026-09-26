@@ -2,9 +2,11 @@
 
 #include <optional>
 
+#include "desktop_ball_window.h"
 #include "desktop_bar_channel.h"
 #include "desktop_multi_window/desktop_multi_window_plugin.h"
 #include "flutter/generated_plugin_registrant.h"
+#include "tray_icon.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -27,6 +29,12 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  // Close-to-tray and the floating ball belong to the main window: both are
+  // plain runner-side windows/channels (no extra engine), so they are
+  // registered here - never in the multi-window callback below, which also
+  // fires for the capsule engine.
+  RegisterTrayChannel(flutter_controller_.get(), GetHandle());
+  RegisterDesktopBallChannel(flutter_controller_.get(), GetHandle());
   // Extra engines created by desktop_multi_window must NOT register the whole
   // plugin set: window_manager keeps its method channel in a process-wide
   // global and uses COM taskbar objects, so a second registration hijacks the
@@ -52,6 +60,11 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  // The tray icon and the floating ball live and die with this window: take
+  // them down first so no ghost tray entry or orphan ball outlives it.
+  RemoveTrayIcon();
+  DestroyDesktopBallWindow();
+
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -63,6 +76,12 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // Tray icon callbacks and the explorer-restart broadcast are ours; check
+  // them before handing the message to Flutter (which does not know them).
+  if (HandleTrayMessage(hwnd, message, wparam, lparam)) {
+    return 0;
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =

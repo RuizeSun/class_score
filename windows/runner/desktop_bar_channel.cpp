@@ -19,6 +19,11 @@ constexpr char kChannelName[] = "class_score/desktop_bar_window";
 std::vector<std::shared_ptr<flutter::MethodChannel<flutter::EncodableValue>>>
     g_channels;
 
+// Capsule window of the bar engine, refreshed on every channel call (see
+// GetDesktopBarWindow in the header for why this cannot be set at
+// registration time: the same callback runs for every extra engine).
+HWND g_bar_window = nullptr;
+
 double GetDouble(const flutter::EncodableMap& args, const char* key,
                  double fallback) {
   auto it = args.find(flutter::EncodableValue(key));
@@ -326,6 +331,12 @@ void ConfigureWindow(HWND hwnd, const flutter::EncodableMap& args) {
   const double bar_width = GetDouble(args, "bar_width", 720.0);
   const double bar_height = GetDouble(args, "bar_height", 52.0);
   const double screen_margin = GetDouble(args, "screen_margin", 16.0);
+  // Floating ball reservation (0 = no ball): the capsule shifts left by half
+  // the reserve so the capsule + ball pair stays centred as a whole. Kept as
+  // two raw values instead of a precomputed width so the ball can mirror them
+  // exactly from the capsule's real height.
+  const double ball_gap = GetDouble(args, "ball_gap", 0.0);
+  const double ball_ratio = GetDouble(args, "ball_ratio", 0.0);
   const double opacity = GetDouble(args, "opacity", 0.92);
   const bool click_through = GetBool(args, "click_through", true);
   const std::string position = GetString(args, "position", "top");
@@ -360,9 +371,25 @@ void ConfigureWindow(HWND hwnd, const flutter::EncodableMap& args) {
   LONG width = ToPhysical(hwnd, bar_width);
   if (max_width > 0 && width > max_width) width = max_width;
 
+  // Reserve for the floating ball, computed exactly the way the ball computes
+  // its own diameter (capsule height x ratio) so the two windows agree on the
+  // same integers. A zero gap means no ball and the old layout is unchanged.
+  LONG reserve = 0;
+  if (ball_gap > 0.0 && ball_ratio > 0.0) {
+    reserve =
+        ToPhysical(hwnd, ball_gap) + static_cast<LONG>(height * ball_ratio + 0.5);
+  }
+  // On narrow screens the reserve gives way first: the capsule + ball pair has
+  // to stay inside the work area rather than pushing the ball off-screen.
+  if (max_width > 0 && width + reserve > max_width) {
+    reserve = max_width - width;
+    if (reserve < 0) reserve = 0;
+  }
+
   // All three anchors are horizontally centered, so the desktop icons on the
-  // left stay clear.
-  const LONG left = work.left + (work_width - width) / 2;
+  // left stay clear; the reserve shifts the capsule left by half of it, which
+  // is what keeps capsule + ball centred together.
+  const LONG left = work.left + (work_width - width) / 2 - reserve / 2;
 
   LONG top = work.top + margin;
   if (position == "bottom") {
@@ -403,6 +430,13 @@ void HandleConfigure(
 
 }  // namespace
 
+HWND GetDesktopBarWindow() {
+  if (g_bar_window == nullptr || !IsWindow(g_bar_window)) return nullptr;
+  return g_bar_window;
+}
+
+RECT GetDesktopWorkArea(HWND hwnd) { return GetWorkArea(hwnd); }
+
 void RegisterDesktopBarWindowChannel(
     flutter::FlutterViewController* view_controller) {
   if (view_controller == nullptr || view_controller->view() == nullptr) {
@@ -424,6 +458,10 @@ void RegisterDesktopBarWindowChannel(
       [hwnd](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
                  result) {
+        // Only the bar engine ever calls this channel, so this is where the
+        // capsule HWND is learned (the registration callback itself runs for
+        // every extra engine and cannot tell them apart).
+        g_bar_window = hwnd;
         if (call.method_name() == "configure") {
           HandleConfigure(hwnd, call, std::move(result));
           return;

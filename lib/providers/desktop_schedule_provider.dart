@@ -4,11 +4,13 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../database/database_helper.dart';
+import '../models/desktop_ball_style.dart';
 import '../models/desktop_bar_style.dart';
 import '../models/desktop_schedule_state.dart';
 import '../models/weather_snapshot.dart';
 import '../services/schedule_timeline_service.dart';
 import '../services/weather_service.dart';
+import '../widgets/desktop_schedule/desktop_schedule_common.dart';
 
 /// 桌面课表（桌面条）的状态中枢。
 ///
@@ -28,6 +30,10 @@ class DesktopScheduleProvider extends ChangeNotifier {
   static const String _keyClickThrough = 'desktop_schedule_click_through';
   static const String _keyOpacity = 'desktop_schedule_opacity';
   static const String _keyScale = 'desktop_schedule_scale';
+  static const String _keyBallEnabled = 'desktop_ball_enabled';
+  static const String _keyBallSizeRatio = 'desktop_ball_size_ratio';
+  static const String _keyBallOffsetX = 'desktop_ball_offset_x';
+  static const String _keyBallOffsetY = 'desktop_ball_offset_y';
   static const String _keyForegroundEnabled =
       'desktop_schedule_foreground_enabled';
   static const String _keyForegroundPosition =
@@ -87,6 +93,29 @@ class DesktopScheduleProvider extends ChangeNotifier {
 
   double _scale = 1.0;
   double get scale => _scale;
+
+  // ---- 桌面悬浮球 ----
+  //
+  // 球与「课表开关」相互独立：课表胶囊在屏上时球贴在它右侧（组合整体居中），
+  // 否则停在屏幕右上角。位置只来自拖动（设置页不提供偏移滑块）。
+  bool _ballEnabled = true;
+  bool get ballEnabled => _ballEnabled;
+
+  double _ballSizeRatio = defaultBallSizeRatio;
+  double get ballSizeRatio => _ballSizeRatio;
+
+  double _ballOffsetX = 0;
+  double get ballOffsetX => _ballOffsetX;
+
+  double _ballOffsetY = 0;
+  double get ballOffsetY => _ballOffsetY;
+
+  /// 无课表时球到工作区右上角的留白（与胶囊的顶部留白共用一套值）。
+  double get ballMargin => DesktopBarMetrics.screenMargin;
+
+  /// 当前缩放下的胶囊高度（逻辑像素）。无课表时原生用它推算球的直径，
+  /// 保证「课表开着的球」和「课表关掉的球」大小一致。
+  double get scaledCapsuleHeight => DesktopBarMetrics.height * scale;
 
   // ---- 前台态（有程序在前台时的第二套外观）----
   //
@@ -199,6 +228,17 @@ class DesktopScheduleProvider extends ChangeNotifier {
     _scale = _parseDouble(await settings.getSetting(_keyScale), 1.0).clamp(
       0.8,
       1.6,
+    );
+    _ballEnabled = await _readBool(settings, _keyBallEnabled, fallback: true);
+    _ballSizeRatio = _parseDouble(
+      await settings.getSetting(_keyBallSizeRatio),
+      defaultBallSizeRatio,
+    ).clamp(minBallSizeRatio, maxBallSizeRatio);
+    _ballOffsetX = clampBallOffset(
+      _parseDouble(await settings.getSetting(_keyBallOffsetX), 0),
+    );
+    _ballOffsetY = clampBallOffset(
+      _parseDouble(await settings.getSetting(_keyBallOffsetY), 0),
     );
     _foregroundEnabled = await _readBool(
       settings,
@@ -347,6 +387,39 @@ class DesktopScheduleProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---- 桌面悬浮球配置写入 ----
+
+  Future<void> setBallEnabled(bool value) async {
+    if (_ballEnabled == value) return;
+    _ballEnabled = value;
+    await _save(_keyBallEnabled, value.toString());
+    notifyListeners();
+  }
+
+  /// 球径 = 胶囊高度 × 该比例，跟随「整体缩放」一起变。
+  Future<void> setBallSizeRatio(double value) async {
+    final clamped = value.clamp(minBallSizeRatio, maxBallSizeRatio);
+    if (_ballSizeRatio == clamped) return;
+    _ballSizeRatio = clamped;
+    await _save(_keyBallSizeRatio, clamped.toString());
+    notifyListeners();
+  }
+
+  /// 记录一次拖动结果：原生松手时回传的偏移（相对右上角默认位置）。
+  Future<void> setBallOffset(double x, double y) async {
+    final clampedX = clampBallOffset(x);
+    final clampedY = clampBallOffset(y);
+    if (clampedX == _ballOffsetX && clampedY == _ballOffsetY) return;
+    _ballOffsetX = clampedX;
+    _ballOffsetY = clampedY;
+    await _save(_keyBallOffsetX, clampedX.toString());
+    await _save(_keyBallOffsetY, clampedY.toString());
+    notifyListeners();
+  }
+
+  /// 把球放回屏幕右上角的默认位置。
+  Future<void> resetBallOffset() => setBallOffset(0, 0);
+
   // ---- 前台态配置写入 ----
 
   Future<void> setForegroundEnabled(bool value) async {
@@ -493,6 +566,10 @@ class DesktopScheduleProvider extends ChangeNotifier {
   /// 外观参数也放在这里，浮窗发现变化时再调原生通道设置窗口样式。
   Map<String, dynamic> toBarPayload() {
     final label = weatherLabel;
+    final reserve = desktopBallReserve(
+      ballEnabled: _ballEnabled,
+      sizeRatio: _ballSizeRatio,
+    );
     return {
       'state': _state.toJson(),
       'weather_label': label,
@@ -513,6 +590,12 @@ class DesktopScheduleProvider extends ChangeNotifier {
       'foreground_position': _foregroundPosition.name,
       'foreground_layer': _foregroundLayer.name,
       'foreground_click_through': _foregroundClickThrough,
+      // 悬浮球占位（只有球开着才让位，关掉即回到老布局）：原生按
+      // gap + 胶囊高 × ratio 算出让位宽度并把胶囊左移半个让位，使
+      // 「胶囊 + 悬浮球」整体居中。这两个值与推给球的是同一套，两边算出的
+      // 整数必然一致。
+      'ball_gap': reserve.gap,
+      'ball_ratio': reserve.ratio,
     };
   }
 

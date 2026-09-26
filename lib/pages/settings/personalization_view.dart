@@ -89,6 +89,27 @@ class PersonalizationView extends StatelessWidget {
           onChanged: (value) => personalization.setAllowCloseWhenLocked(value),
           contentPadding: EdgeInsets.zero,
         ),
+
+        // ---- 关闭行为 ----
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+        const Divider(height: 1),
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+        const SettingsSectionTitle(
+          title: '关闭行为',
+          subtitle: '点击窗口右上角的关闭按钮时，是收进系统托盘还是直接退出程序',
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          secondary: const Icon(Icons.notifications_active_outlined),
+          title: const Text('关闭窗口时最小化到托盘'),
+          subtitle: const Text(
+            '开启后（默认）关闭只是把窗口收进托盘，程序继续在后台运行：'
+            '桌面课表与悬浮球保持显示，要彻底退出请点托盘图标的「退出程序」',
+          ),
+          value: personalization.closeToTray,
+          onChanged: (value) => personalization.setCloseToTray(value),
+          contentPadding: EdgeInsets.zero,
+        ),
       ],
     );
   }

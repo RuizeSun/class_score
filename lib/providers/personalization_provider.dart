@@ -17,6 +17,13 @@ class PersonalizationProvider extends ChangeNotifier {
   bool _allowCloseWhenLocked = false;
   bool get allowCloseWhenLocked => _allowCloseWhenLocked;
 
+  // ---- 关闭行为 ----
+  //
+  // 关闭时收进托盘（默认开）：主窗口只是隐藏，程序继续跑，桌面课表胶囊与
+  // 悬浮球保持显示；要真正退出得走托盘 / 悬浮球的「退出程序」。
+  bool _closeToTray = true;
+  bool get closeToTray => _closeToTray;
+
   // ---- 「查询」页左右分栏比例（左栏占比）----
   double _analysisSplitRatio = defaultAnalysisSplitRatio;
   double get analysisSplitRatio => _analysisSplitRatio;
@@ -64,6 +71,12 @@ class PersonalizationProvider extends ChangeNotifier {
       'allow_close_locked',
     );
     _allowCloseWhenLocked = allowClose == 'true';
+
+    // 关闭进托盘：老用户没有这个 key，按默认值「开」处理。
+    final closeToTray = await DatabaseHelper.instance.getSetting(
+      'close_to_tray',
+    );
+    _closeToTray = closeToTray == null || closeToTray == 'true';
 
     // Load analysis split ratio
     final ratio = double.tryParse(
@@ -117,6 +130,17 @@ class PersonalizationProvider extends ChangeNotifier {
     _allowCloseWhenLocked = value;
     await DatabaseHelper.instance.setSetting(
       'allow_close_locked',
+      value.toString(),
+    );
+    notifyListeners();
+  }
+
+  /// 关闭窗口时收进托盘（而不是真正退出）。
+  Future<void> setCloseToTray(bool value) async {
+    if (_closeToTray == value) return;
+    _closeToTray = value;
+    await DatabaseHelper.instance.setSetting(
+      'close_to_tray',
       value.toString(),
     );
     notifyListeners();

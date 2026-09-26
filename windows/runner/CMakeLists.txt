@@ -7,14 +7,24 @@ project(runner LANGUAGES CXX)
 #
 # Any new source files that you add to the application should be added here.
 add_executable(${BINARY_NAME} WIN32
+  "desktop_ball_window.cpp"
   "desktop_bar_channel.cpp"
   "flutter_window.cpp"
   "main.cpp"
+  "tray_icon.cpp"
   "utils.cpp"
   "win32_window.cpp"
+  "window_menu.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
   "Runner.rc"
   "runner.exe.manifest"
+)
+
+# Runner sources carry Chinese UI strings (tray menu, balloon, ball) and UTF-8
+# comments. Without /utf-8 MSVC would read them in the system codepage and
+# mangle the text; scoped to CXX so rc.exe never sees the flag.
+target_compile_options(${BINARY_NAME} PRIVATE
+  $<$<COMPILE_LANGUAGE:CXX>:/utf-8>
 )
 
 # Apply the standard set of build settings. This can be removed for applications

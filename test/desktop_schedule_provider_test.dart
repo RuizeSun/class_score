@@ -1,6 +1,8 @@
+import 'package:class_score/models/desktop_ball_style.dart';
 import 'package:class_score/models/desktop_bar_style.dart';
 import 'package:class_score/models/desktop_schedule_state.dart';
 import 'package:class_score/providers/desktop_schedule_provider.dart';
+import 'package:class_score/widgets/desktop_schedule/desktop_schedule_common.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// 固定日期，避免用例随真实“今天”漂移。
@@ -86,6 +88,9 @@ void main() {
       expect(payload['layer'], 'desktop');
       expect(payload['click_through'], isTrue);
       expect(payload['scale'], 1.0);
+      // 悬浮球默认开着：让位参数随内容一起下发（原生据此把胶囊左移半个让位）
+      expect(payload['ball_gap'], DesktopBarMetrics.ballGap);
+      expect(payload['ball_ratio'], closeTo(defaultBallSizeRatio, 1e-9));
     });
 
     test('显示位置：三个居中锚点，默认顶部居中（name 就是原生比对的锚点）', () {
@@ -190,6 +195,38 @@ void main() {
       expect(animate(flipped: false), isFalse);
       // 两套外观配得完全相同：原地淡出再淡入只会白闪一下
       expect(animate(changed: false), isFalse);
+    });
+  });
+
+  group('桌面悬浮球', () {
+    late DesktopScheduleProvider provider;
+
+    setUp(() {
+      // 同约定：不调 init()，只验证内存默认值与派生值。
+      provider = DesktopScheduleProvider();
+    });
+
+    tearDown(() => provider.dispose());
+
+    test('默认开启、大小 85%，停在屏幕右上角（偏移为 0）', () {
+      expect(provider.ballEnabled, isTrue);
+      expect(provider.ballSizeRatio, closeTo(defaultBallSizeRatio, 1e-9));
+      expect(provider.ballOffsetX, 0);
+      expect(provider.ballOffsetY, 0);
+      // 无课表时的默认落点留白与胶囊顶部留白共用一套值
+      expect(provider.ballMargin, DesktopBarMetrics.screenMargin);
+    });
+
+    test('球的基准高度跟随「整体缩放」，默认等于胶囊高度', () {
+      expect(
+        provider.scaledCapsuleHeight,
+        closeTo(DesktopBarMetrics.height, 1e-9),
+      );
+      // 默认球径 ≈ 44px（52 × 0.85）：比胶囊略小一圈，不会压住胶囊两端的圆弧
+      expect(
+        provider.scaledCapsuleHeight * provider.ballSizeRatio,
+        closeTo(DesktopBarMetrics.height * defaultBallSizeRatio, 1e-9),
+      );
     });
   });
 }

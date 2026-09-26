@@ -40,6 +40,11 @@ class _DesktopBarWindowState extends State<DesktopBarWindow> {
   bool _showPreparationHint = false;
   double _scale = 1.0;
 
+  /// 悬浮球占位参数（payload 推来）：球开着时原生会据此把胶囊左移半个让位，
+  /// 让「胶囊 + 球」整体居中；球关掉时两者为 0，布局与老版本完全一致。
+  double _ballGap = 0;
+  double _ballRatio = 0;
+
   /// 最近一次探测到的「有程序在前台」状态（查询失败时沿用上次值）。
   bool _foregroundActive = false;
   bool? _lastLoggedForeground;
@@ -127,7 +132,15 @@ class _DesktopBarWindowState extends State<DesktopBarWindow> {
         shouldAnimateDesktopBarSwitch(
           alreadyApplied: _appearanceApplied,
           foregroundFlipped: resolved.flipped,
-          appearanceChanged: _signatureOf(appearance) != _appliedAppearance,
+          // 这里仍用「已应用」的球参数（新值要到下面 setState 才更新），
+          // 因此只改球占位不会触发一轮胶囊的交叉淡化。
+          appearanceChanged:
+              _signatureOf(
+                appearance,
+                ballGap: _ballGap,
+                ballRatio: _ballRatio,
+              ) !=
+              _appliedAppearance,
         );
     if (crossFade) {
       _transitioning = true;
@@ -152,6 +165,8 @@ class _DesktopBarWindowState extends State<DesktopBarWindow> {
         _showPreparationHint =
             payload['show_preparation_hint'] as bool? ?? false;
         _scale = appearance.scale;
+        _ballGap = (payload['ball_gap'] as num?)?.toDouble() ?? 0;
+        _ballRatio = (payload['ball_ratio'] as num?)?.toDouble() ?? 0;
       });
 
       await _applyAppearance(
@@ -270,11 +285,19 @@ class _DesktopBarWindowState extends State<DesktopBarWindow> {
   }
 
   /// 生效外观的去重签名：只有变化才重新调用原生通道。
-  static String _signatureOf(DesktopBarAppearance appearance) =>
+  ///
+  /// 悬浮球的占位参数也算进签名：球开关 / 大小变了，胶囊的让位宽度也得跟着
+  /// 重算，否则组合会偏心。
+  static String _signatureOf(
+    DesktopBarAppearance appearance, {
+    double ballGap = 0,
+    double ballRatio = 0,
+  }) =>
       '${appearance.position.name}|${appearance.layer.name}|'
       '${appearance.clickThrough}|${appearance.opacity}|'
       '${DesktopBarMetrics.height * appearance.scale}|'
-      '${DesktopBarMetrics.capsuleWidth * appearance.scale}';
+      '${DesktopBarMetrics.capsuleWidth * appearance.scale}|'
+      '$ballGap|$ballRatio';
 
   /// 把生效外观交给原生通道（无边框、居中悬浮、胶囊裁剪、透明度、穿透 + 显示窗口）。
   ///
@@ -285,7 +308,11 @@ class _DesktopBarWindowState extends State<DesktopBarWindow> {
     DesktopBarAppearance appearance, {
     required bool fadeIn,
   }) async {
-    final signature = _signatureOf(appearance);
+    final signature = _signatureOf(
+      appearance,
+      ballGap: _ballGap,
+      ballRatio: _ballRatio,
+    );
     if (signature == _appliedAppearance && !fadeIn) return;
 
     final barHeight = DesktopBarMetrics.height * appearance.scale;
@@ -302,6 +329,8 @@ class _DesktopBarWindowState extends State<DesktopBarWindow> {
           barHeight: barHeight,
           barWidth: barWidth,
           screenMargin: DesktopBarMetrics.screenMargin,
+          ballGap: _ballGap,
+          ballRatio: _ballRatio,
         );
 
     try {

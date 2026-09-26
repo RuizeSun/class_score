@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
+import '../../models/window_close_action.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/personalization_provider.dart';
-import '../../services/desktop_window_service.dart';
+import '../../services/app_shell_service.dart';
+import '../../services/tray_service.dart';
 import '../../services/window_service.dart';
 import '../score/score_input_page.dart';
 import '../analysis/statistics_page.dart';
@@ -59,27 +63,37 @@ class _HomePageState extends State<HomePage>
     _updatePreventClose();
   }
 
+  /// 关闭动作统一在 [onWindowClose] 里分流（锁定提示 / 收进托盘 / 真正退出），
+  /// 因此这里始终拦截原生的关闭消息，由 Dart 决定走哪条路。
   void _updatePreventClose() {
-    final auth = context.read<AuthProvider>();
-    final personalization = context.read<PersonalizationProvider>();
-    final shouldPreventClose =
-        !auth.isUnlocked && !personalization.allowCloseWhenLocked;
-    windowManager.setPreventClose(shouldPreventClose);
+    windowManager.setPreventClose(true);
   }
 
   @override
   void onWindowClose() {
     final auth = context.read<AuthProvider>();
     final personalization = context.read<PersonalizationProvider>();
-    if (!auth.isUnlocked && !personalization.allowCloseWhenLocked) {
-      // Show lock message only if close is not allowed when locked
-      _showLockMessage();
-    } else {
-      // 允许关闭：主窗口退出前把桌面条浮窗一起关掉，否则会留下一个再也收不到
-      // 状态的「孤条」停在桌面上。
-      DesktopWindowService.closeBar();
+    switch (pickWindowCloseAction(
+      locked: !auth.isUnlocked,
+      allowCloseWhenLocked: personalization.allowCloseWhenLocked,
+      closeToTray: personalization.closeToTray,
+    )) {
+      case WindowCloseAction.blocked:
+        // 锁定态下不允许关闭：只提示，窗口原样保留。
+        _showLockMessage();
+        return;
+      case WindowCloseAction.hideToTray:
+        // 收进托盘：窗口只是隐藏，程序继续在后台跑——桌面课表胶囊与悬浮球
+        // 都保持显示；真正退出走托盘 / 悬浮球菜单里的「退出程序」。
+        unawaited(AppShellService.hideMainWindow());
+        unawaited(TrayService.showFirstCloseHint());
+        return;
+      case WindowCloseAction.quit:
+        // 允许真正退出：主窗口退出前把桌面上的子窗口一起关掉，否则会留下一个
+        // 再也收不到状态的「孤条 / 孤球」停在桌面上。
+        unawaited(AppShellService.quitApplication());
+        return;
     }
-    // If unlocked or close allowed when locked, allow close
   }
 
   @override

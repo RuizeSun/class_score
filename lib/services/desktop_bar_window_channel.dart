@@ -20,6 +20,11 @@ class DesktopBarWindowChannel {
   /// （胶囊外的区域不显示也不接收点击），按 [barHeight] / [barWidth]（逻辑像素）
   /// 设置窗口尺寸（窄屏时原生会把宽度收缩到工作区内），照设置应用透明度与
   /// 鼠标穿透，最后把窗口显示出来。
+  ///
+  /// [ballGap] / [ballRatio] 是悬浮球的占位参数（两者都为 0 表示没有球）：
+  /// 原生按 `ballGap + 胶囊高 × ballRatio` 算出让位宽度并把胶囊左移半个让位，
+  /// 让「胶囊 + 悬浮球」这一对在屏幕上整体居中。数值与球窗口侧完全一致，
+  /// 两边算出的整数必然相同。
   static Future<void> configure({
     required String position,
     required String layer,
@@ -28,6 +33,8 @@ class DesktopBarWindowChannel {
     required double barHeight,
     required double barWidth,
     required double screenMargin,
+    required double ballGap,
+    required double ballRatio,
   }) {
     return _channel.invokeMethod<void>('configure', {
       'position': position,
@@ -37,6 +44,8 @@ class DesktopBarWindowChannel {
       'bar_height': barHeight,
       'bar_width': barWidth,
       'screen_margin': screenMargin,
+      'ball_gap': ballGap,
+      'ball_ratio': ballRatio,
     });
   }
 

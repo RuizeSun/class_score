@@ -1,10 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'models/desktop_ball_style.dart';
 import 'pages/desktop_bar/desktop_bar_window.dart';
+import 'services/app_shell_service.dart';
+import 'services/desktop_ball_service.dart';
 import 'services/desktop_bar_log.dart';
 import 'services/desktop_window_service.dart';
+import 'services/tray_service.dart';
 import 'services/window_service.dart';
+import 'widgets/desktop_schedule/desktop_schedule_common.dart';
 import 'providers/group_provider.dart';
 import 'providers/student_provider.dart';
 import 'providers/score_provider.dart';
@@ -136,6 +143,12 @@ class _AppEntryState extends State<AppEntry> {
   /// 下一次允许尝试创建浮窗的时间（失败退避，避免每秒重试刷屏）。
   DateTime _nextBarAttempt = DateTime.fromMillisecondsSinceEpoch(0);
 
+  /// 悬浮球最近一次推给原生的配置签名；null = 球当前是关闭的（窗口不存在）。
+  String? _ballSignature;
+
+  /// 托盘图标当前是否已显示：主题色之类的无关通知不该反复过通道。
+  bool? _trayEnabled;
+
   @override
   void initState() {
     super.initState();
@@ -152,6 +165,23 @@ class _AppEntryState extends State<AppEntry> {
       // 首帧后按真实非客户区再校准一次窗口尺寸，确保内容区为 1280x800。
       await WindowService.refresh();
 
+      // 托盘与悬浮球的原生事件接线：两个通道都由 Windows runner 注册
+      // （见 windows/runner/flutter_window.cpp），其它平台会在服务内部
+      // 以 MissingPluginException 静默降级成日志。
+      TrayService.attach(
+        onShow: AppShellService.showMainWindow,
+        onHide: AppShellService.hideMainWindow,
+        onQuit: AppShellService.quitApplication,
+      );
+      DesktopBallService.attach(
+        onShow: AppShellService.showMainWindow,
+        onHide: AppShellService.hideMainWindow,
+        onQuit: AppShellService.quitApplication,
+        onMoved: desktop.setBallOffset,
+      );
+      personalization.addListener(_syncTrayIcon);
+      _syncTrayIcon();
+
       // 桌面课表：课表数据来自 AuthProvider，状态机与配置在 DesktopScheduleProvider，
       // 这里只做两者的接线与「把状态推给浮窗」。
       _desktop = desktop;
@@ -162,6 +192,16 @@ class _AppEntryState extends State<AppEntry> {
       await desktop.init();
       await _syncDesktopBar();
     });
+  }
+
+  /// 托盘图标跟着「关闭窗口时最小化到托盘」设置走：关掉设置连图标一起收掉
+  /// （关闭就变成真正退出，留着图标反而误导）。
+  void _syncTrayIcon() {
+    if (!mounted) return;
+    final enabled = context.read<PersonalizationProvider>().closeToTray;
+    if (_trayEnabled == enabled) return;
+    _trayEnabled = enabled;
+    unawaited(TrayService.setEnabled(enabled));
   }
 
   void _syncSchedulesToDesktop() {
@@ -221,17 +261,68 @@ class _AppEntryState extends State<AppEntry> {
           await DesktopWindowService.pushBarPayload(desktop.toBarPayload());
         }
       } while (_barSyncPending);
+
+      // 球的落点取决于「胶囊是否真的在屏上」，必须等这一拍结束后再推。
+      await _syncDesktopBall(desktop);
     } finally {
       _syncingBar = false;
     }
+  }
+
+  /// 把悬浮球的落点与外观推给原生球窗口（`windows/runner/desktop_ball_window.cpp`）。
+  ///
+  /// 状态每秒通知一次，但内容没变时不必过通道：用签名去重（null 表示球当前
+  /// 关闭、窗口不存在）。胶囊在屏上 → 贴胶囊右侧（原生读胶囊真实矩形对齐，
+  /// 组合整体居中）；否则 → 屏幕右上角（偏移来自用户拖动）。
+  Future<void> _syncDesktopBall(DesktopScheduleProvider desktop) async {
+    if (!mounted) return;
+
+    if (!desktop.ballEnabled) {
+      if (_ballSignature == null) return;
+      _ballSignature = null;
+      await DesktopBallService.close();
+      return;
+    }
+
+    final personalization = context.read<PersonalizationProvider>();
+    final mode = pickDesktopBallMode(barVisible: _barVisible);
+    final color = personalization.seedColor.toARGB32();
+    final signature = [
+      mode.name,
+      desktop.ballSizeRatio,
+      desktop.scaledCapsuleHeight,
+      desktop.ballOffsetX,
+      desktop.ballOffsetY,
+      desktop.layer.name,
+      desktop.opacity,
+      color,
+    ].join('|');
+    if (signature == _ballSignature) return;
+    _ballSignature = signature;
+
+    await DesktopBallService.configure(
+      mode: mode,
+      enabled: true,
+      sizeRatio: desktop.ballSizeRatio,
+      capsuleHeight: desktop.scaledCapsuleHeight,
+      gap: DesktopBarMetrics.ballGap,
+      margin: desktop.ballMargin,
+      offsetX: desktop.ballOffsetX,
+      offsetY: desktop.ballOffsetY,
+      layer: desktop.layer,
+      opacity: desktop.opacity,
+      color: color,
+    );
   }
 
   @override
   void dispose() {
     _auth?.removeListener(_syncSchedulesToDesktop);
     _desktop?.removeListener(_syncDesktopBar);
-    // 主窗口退出时一并关掉浮窗，避免留下一个没有数据来源的孤条
+    context.read<PersonalizationProvider>().removeListener(_syncTrayIcon);
+    // 主窗口退出时一并关掉浮窗与悬浮球，避免留下没有数据来源的孤窗
     DesktopWindowService.closeBar();
+    unawaited(DesktopBallService.close());
     super.dispose();
   }
 
