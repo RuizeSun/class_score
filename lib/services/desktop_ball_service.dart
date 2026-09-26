@@ -63,13 +63,13 @@ class DesktopBallService {
 
   /// 推一次落点与外观。
   ///
-  /// [DesktopBallMode.besideBar] 时原生读**胶囊窗口的真实矩形**来对齐，并镜像
-  /// 它的层级 / 不透明度（前台态换一套外观也自动跟随），因此这里只额外给
-  /// [gap]；[offsetX] / [offsetY] 只在右上角（[DesktopBallMode.corner]）生效。
+  /// [DesktopBallMode.besideBar] 时原生读**胶囊窗口的真实矩形**来对齐（球高与
+  /// 配色也都取胶囊本身），并镜像它的层级 / 不透明度（前台态换一套外观也自动
+  /// 跟随），因此这里只额外给 [gap]；[offsetX] / [offsetY] 只在右上角
+  /// （[DesktopBallMode.corner]）生效。
   static Future<void> configure({
     required DesktopBallMode mode,
     required bool enabled,
-    required double sizeRatio,
     required double capsuleHeight,
     required double gap,
     required double margin,
@@ -84,7 +84,6 @@ class DesktopBallService {
           .invokeMethod<void>('configure', {
             'mode': mode == DesktopBallMode.besideBar ? 'beside' : 'corner',
             'enabled': enabled,
-            'size_ratio': sizeRatio,
             'capsule_height': capsuleHeight,
             'gap': gap,
             'margin': margin,
@@ -96,7 +95,7 @@ class DesktopBallService {
           })
           .timeout(_callTimeout);
       await _log(
-        '悬浮球：落点=${mode.label} 比例=$sizeRatio '
+        '悬浮球：落点=${mode.label} '
         '偏移=(${offsetX.round()}, ${offsetY.round()})',
       );
     } catch (error) {

@@ -1,4 +1,3 @@
-import 'package:class_score/models/desktop_ball_style.dart';
 import 'package:class_score/models/desktop_bar_style.dart';
 import 'package:class_score/models/desktop_schedule_state.dart';
 import 'package:class_score/providers/desktop_schedule_provider.dart';
@@ -90,7 +89,8 @@ void main() {
       expect(payload['scale'], 1.0);
       // 悬浮球默认开着：让位参数随内容一起下发（原生据此把胶囊左移半个让位）
       expect(payload['ball_gap'], DesktopBarMetrics.ballGap);
-      expect(payload['ball_ratio'], closeTo(defaultBallSizeRatio, 1e-9));
+      // 球与胶囊等高：比例恒为 1
+      expect(payload['ball_ratio'], 1.0);
     });
 
     test('显示位置：三个居中锚点，默认顶部居中（name 就是原生比对的锚点）', () {
@@ -208,24 +208,25 @@ void main() {
 
     tearDown(() => provider.dispose());
 
-    test('默认开启、大小 85%，停在屏幕右上角（偏移为 0）', () {
+    test('默认开启、停在屏幕右上角（偏移为 0）', () {
       expect(provider.ballEnabled, isTrue);
-      expect(provider.ballSizeRatio, closeTo(defaultBallSizeRatio, 1e-9));
       expect(provider.ballOffsetX, 0);
       expect(provider.ballOffsetY, 0);
       // 无课表时的默认落点留白与胶囊顶部留白共用一套值
       expect(provider.ballMargin, DesktopBarMetrics.screenMargin);
     });
 
-    test('球的基准高度跟随「整体缩放」，默认等于胶囊高度', () {
+    test('球径恒等于胶囊高度（同色同高，没有单独的大小设置）', () {
+      // 缩放后的胶囊高度就是球的直径：贴胶囊时原生还会直接读胶囊窗口的真实
+      // 高度，两者因此始终相等。
       expect(
         provider.scaledCapsuleHeight,
         closeTo(DesktopBarMetrics.height, 1e-9),
       );
-      // 默认球径 ≈ 44px（52 × 0.85）：比胶囊略小一圈，不会压住胶囊两端的圆弧
+      final reserve = desktopBallReserve(ballEnabled: provider.ballEnabled);
       expect(
-        provider.scaledCapsuleHeight * provider.ballSizeRatio,
-        closeTo(DesktopBarMetrics.height * defaultBallSizeRatio, 1e-9),
+        provider.scaledCapsuleHeight * reserve.ratio,
+        closeTo(DesktopBarMetrics.height, 1e-9),
       );
     });
   });

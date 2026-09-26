@@ -85,24 +85,27 @@ class DesktopBarMetrics {
 ///
 /// 球关掉时两者归零：原生的让位宽度为 0，胶囊回到「水平居中」的老布局，
 /// 因此开关悬浮球不会影响没开悬浮球的用户。
+///
+/// 球的直径恒等于胶囊高度（[ratio] 恒为 1，见
+/// `windows/runner/desktop_ball_window.cpp`）：球与胶囊同色同高、拼在一起读作
+/// 同一个挂件，所以不再有单独的「悬浮球大小」比例设置。
 class DesktopBallReserve {
   const DesktopBallReserve(this.gap, this.ratio);
 
   /// 胶囊与球之间的间距（逻辑像素）。
   final double gap;
 
-  /// 球径占胶囊高度的比例。
+  /// 球径占胶囊高度的比例（恒为 1 = 与胶囊等高；0 表示没有球）。
   final double ratio;
 
   static const DesktopBallReserve none = DesktopBallReserve(0, 0);
 }
 
-DesktopBallReserve desktopBallReserve({
-  required bool ballEnabled,
-  required double sizeRatio,
-}) => ballEnabled
-    ? DesktopBallReserve(DesktopBarMetrics.ballGap, sizeRatio)
-    : DesktopBallReserve.none;
+/// 球开着时让位，并声明「球径 = 胶囊高」。
+DesktopBallReserve desktopBallReserve({required bool ballEnabled}) =>
+    ballEnabled
+        ? const DesktopBallReserve(DesktopBarMetrics.ballGap, 1)
+        : DesktopBallReserve.none;
 
 /// WMO 天气类型 → 图标（与 [WeatherSnapshot.kindOf] 的归一化结果一一对应）。
 IconData weatherIconOf(WeatherKind kind) {

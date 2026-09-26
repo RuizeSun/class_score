@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../models/desktop_ball_style.dart';
 import '../../models/desktop_bar_style.dart';
 import '../../models/weather_snapshot.dart';
 import '../../providers/desktop_schedule_provider.dart';
@@ -49,23 +48,21 @@ class DesktopScheduleSettingsView extends StatelessWidget {
           secondary: const Icon(Icons.circle_outlined),
           title: const Text('在桌面显示悬浮球'),
           subtitle: const Text(
-            '显示课表胶囊时球贴在胶囊右侧（两者作为整体居中于屏幕）；'
+            '显示课表胶囊时球贴在胶囊右侧（与胶囊同色同高，两者作为整体居中于屏幕）；'
             '没有胶囊时停在屏幕右上角，可拖动调整',
           ),
           value: provider.ballEnabled,
           onChanged: provider.setBallEnabled,
         ),
         if (provider.ballEnabled) ...[
-          SliderTile(
-            icon: Icons.radio_button_unchecked,
-            title: '悬浮球大小',
-            subtitle: '相对课表胶囊的高度，并跟随「整体缩放」一起变化',
-            value: provider.ballSizeRatio,
-            min: minBallSizeRatio,
-            max: maxBallSizeRatio,
-            divisions: 12,
-            label: '${(provider.ballSizeRatio * 100).round()}%',
-            onChanged: provider.setBallSizeRatio,
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.school_outlined),
+            title: const Text('悬浮球外观'),
+            subtitle: const Text(
+              '与胶囊同色同高（球径 = 胶囊高度 × 整体缩放），中间是 Material '
+              '「毕业帽」图标；球的高度固定跟随胶囊，不单独设置大小',
+            ),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -86,7 +83,7 @@ class DesktopScheduleSettingsView extends StatelessWidget {
             padding: const EdgeInsets.only(left: 40, top: 4, bottom: 4),
             child: Text(
               '单击悬浮球唤起主窗口，右键是「显示 / 隐藏 / 退出」菜单；'
-              '球贴着课表胶囊时位置由胶囊决定，不响应拖动。',
+              '球贴着课表胶囊时位置与大小都由胶囊决定，不响应拖动。',
               style: TextStyle(
                 fontSize: SettingsLayout.hintFontSize,
                 color: Colors.grey.shade600,

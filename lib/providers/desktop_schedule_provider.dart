@@ -31,7 +31,6 @@ class DesktopScheduleProvider extends ChangeNotifier {
   static const String _keyOpacity = 'desktop_schedule_opacity';
   static const String _keyScale = 'desktop_schedule_scale';
   static const String _keyBallEnabled = 'desktop_ball_enabled';
-  static const String _keyBallSizeRatio = 'desktop_ball_size_ratio';
   static const String _keyBallOffsetX = 'desktop_ball_offset_x';
   static const String _keyBallOffsetY = 'desktop_ball_offset_y';
   static const String _keyForegroundEnabled =
@@ -97,12 +96,10 @@ class DesktopScheduleProvider extends ChangeNotifier {
   // ---- 桌面悬浮球 ----
   //
   // 球与「课表开关」相互独立：课表胶囊在屏上时球贴在它右侧（组合整体居中），
-  // 否则停在屏幕右上角。位置只来自拖动（设置页不提供偏移滑块）。
+  // 否则停在屏幕右上角。位置只来自拖动（设置页不提供偏移滑块）；大小与配色
+  // 都不需要设置——球恒等于「胶囊高 × 整体缩放」，颜色直接取胶囊底色。
   bool _ballEnabled = true;
   bool get ballEnabled => _ballEnabled;
-
-  double _ballSizeRatio = defaultBallSizeRatio;
-  double get ballSizeRatio => _ballSizeRatio;
 
   double _ballOffsetX = 0;
   double get ballOffsetX => _ballOffsetX;
@@ -113,8 +110,8 @@ class DesktopScheduleProvider extends ChangeNotifier {
   /// 无课表时球到工作区右上角的留白（与胶囊的顶部留白共用一套值）。
   double get ballMargin => DesktopBarMetrics.screenMargin;
 
-  /// 当前缩放下的胶囊高度（逻辑像素）。无课表时原生用它推算球的直径，
-  /// 保证「课表开着的球」和「课表关掉的球」大小一致。
+  /// 当前缩放下的胶囊高度（逻辑像素）= 球的直径：原生在贴胶囊时直接读胶囊窗口
+  /// 的真实高度，无课表时用这个值推算，保证两种落点的球一样大。
   double get scaledCapsuleHeight => DesktopBarMetrics.height * scale;
 
   // ---- 前台态（有程序在前台时的第二套外观）----
@@ -230,10 +227,6 @@ class DesktopScheduleProvider extends ChangeNotifier {
       1.6,
     );
     _ballEnabled = await _readBool(settings, _keyBallEnabled, fallback: true);
-    _ballSizeRatio = _parseDouble(
-      await settings.getSetting(_keyBallSizeRatio),
-      defaultBallSizeRatio,
-    ).clamp(minBallSizeRatio, maxBallSizeRatio);
     _ballOffsetX = clampBallOffset(
       _parseDouble(await settings.getSetting(_keyBallOffsetX), 0),
     );
@@ -393,15 +386,6 @@ class DesktopScheduleProvider extends ChangeNotifier {
     if (_ballEnabled == value) return;
     _ballEnabled = value;
     await _save(_keyBallEnabled, value.toString());
-    notifyListeners();
-  }
-
-  /// 球径 = 胶囊高度 × 该比例，跟随「整体缩放」一起变。
-  Future<void> setBallSizeRatio(double value) async {
-    final clamped = value.clamp(minBallSizeRatio, maxBallSizeRatio);
-    if (_ballSizeRatio == clamped) return;
-    _ballSizeRatio = clamped;
-    await _save(_keyBallSizeRatio, clamped.toString());
     notifyListeners();
   }
 
@@ -566,10 +550,7 @@ class DesktopScheduleProvider extends ChangeNotifier {
   /// 外观参数也放在这里，浮窗发现变化时再调原生通道设置窗口样式。
   Map<String, dynamic> toBarPayload() {
     final label = weatherLabel;
-    final reserve = desktopBallReserve(
-      ballEnabled: _ballEnabled,
-      sizeRatio: _ballSizeRatio,
-    );
+    final reserve = desktopBallReserve(ballEnabled: _ballEnabled);
     return {
       'state': _state.toJson(),
       'weather_label': label,
@@ -592,8 +573,8 @@ class DesktopScheduleProvider extends ChangeNotifier {
       'foreground_click_through': _foregroundClickThrough,
       // 悬浮球占位（只有球开着才让位，关掉即回到老布局）：原生按
       // gap + 胶囊高 × ratio 算出让位宽度并把胶囊左移半个让位，使
-      // 「胶囊 + 悬浮球」整体居中。这两个值与推给球的是同一套，两边算出的
-      // 整数必然一致。
+      // 「胶囊 + 悬浮球」整体居中。ratio 恒为 1（球与胶囊等高），这两个值与
+      // 推给球的是同一套，两边算出的整数必然一致。
       'ball_gap': reserve.gap,
       'ball_ratio': reserve.ratio,
     };

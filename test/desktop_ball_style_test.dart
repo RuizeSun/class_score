@@ -29,14 +29,14 @@ void main() {
   });
 
   group('推给胶囊浮窗的让位参数', () {
-    test('球开着：间距 + 用户设置的比例', () {
-      final reserve = desktopBallReserve(ballEnabled: true, sizeRatio: 1.1);
+    test('球开着：间距 + 与胶囊等高的球径（ratio 恒为 1）', () {
+      final reserve = desktopBallReserve(ballEnabled: true);
       expect(reserve.gap, DesktopBarMetrics.ballGap);
-      expect(reserve.ratio, closeTo(1.1, 1e-9));
+      expect(reserve.ratio, 1);
     });
 
     test('球关掉：归零，胶囊布局与老版本一致', () {
-      final reserve = desktopBallReserve(ballEnabled: false, sizeRatio: 1.1);
+      final reserve = desktopBallReserve(ballEnabled: false);
       expect(reserve.gap, 0);
       expect(reserve.ratio, 0);
     });
@@ -53,7 +53,8 @@ void main() {
       const double scale = 1.3;
       final capsuleWidth = DesktopBarMetrics.capsuleWidth * scale;
       final capsuleHeight = DesktopBarMetrics.height * scale;
-      final ballDiameter = capsuleHeight * defaultBallSizeRatio;
+      // 球与胶囊等高：球径就是缩放后的胶囊高度。
+      final ballDiameter = capsuleHeight;
       final reserve = DesktopBarMetrics.ballGap + ballDiameter;
 
       final capsuleLeft =
@@ -68,7 +69,7 @@ void main() {
 
     test('没有球时让位为 0，胶囊依旧水平居中', () {
       final capsuleWidth = DesktopBarMetrics.capsuleWidth;
-      final reserve = desktopBallReserve(ballEnabled: false, sizeRatio: 1);
+      final reserve = desktopBallReserve(ballEnabled: false);
       final capsuleLeft = workLeft + (workRight - workLeft - capsuleWidth) / 2;
 
       expect(reserve.gap, 0);

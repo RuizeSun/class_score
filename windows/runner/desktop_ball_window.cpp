@@ -6,6 +6,7 @@
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -53,7 +54,6 @@ struct BallState {
   // whether the window is currently visible on screen.
   bool enabled = false;
   BallMode mode = BallMode::kCorner;
-  double size_ratio = 0.85;
   double capsule_height = 52.0;
   double gap = 12.0;
   double margin = 16.0;
@@ -61,7 +61,9 @@ struct BallState {
   double offset_y = 0.0;
   std::string layer = "desktop";
   double opacity = 0.92;
-  COLORREF color = RGB(0x5b, 0x86, 0xe5);
+  // Fallback only: Dart always pushes DesktopBarPalette.barBackground, the same
+  // colour the capsule is filled with.
+  COLORREF color = RGB(0x14, 0x1a, 0x24);
   bool hover = false;
   bool press = false;
   bool drag_started = false;
@@ -171,10 +173,14 @@ bool ComputeGeometry(BallGeometry* out) {
     RECT bar_rect{};
     if (bar != nullptr && IsWindowVisible(bar) &&
         GetWindowRect(bar, &bar_rect)) {
+      // Same height as the capsule, by definition: the ball is diameter =
+      // capsule height, so the two read as one widget glued together. Taking it
+      // from the capsule's real rect (not from the setting) keeps them equal
+      // even during the desktop <-> foreground cross-fade, when the capsule is
+      // still drawn at the old scale for a moment.
       const LONG bar_height = bar_rect.bottom - bar_rect.top;
       const UINT dpi = DpiOf(bar);
-      LONG diameter =
-          static_cast<LONG>(bar_height * g_state.size_ratio + 0.5);
+      LONG diameter = bar_height;
       if (diameter <= 0) diameter = 1;
       const LONG padding = ToPhysical(dpi, kPaddingLogical);
       const LONG gap = ToPhysical(dpi, g_state.gap);
@@ -210,8 +216,10 @@ bool ComputeGeometry(BallGeometry* out) {
   const UINT dpi = DpiOf(anchor);
   const LONG margin = ToPhysical(dpi, g_state.margin);
   const LONG padding = ToPhysical(dpi, kPaddingLogical);
-  const LONG diameter = ToPhysical(
-      dpi, g_state.capsule_height * g_state.size_ratio);
+  // Same diameter the capsule-anchored branch uses (see above): the ball is
+  // always exactly as tall as the capsule, so the capsule height is the only
+  // input it needs. There is no separate ball size setting any more.
+  const LONG diameter = ToPhysical(dpi, g_state.capsule_height);
   if (diameter <= 0) return false;
   const LONG width = diameter + 2 * padding;
 
@@ -238,28 +246,117 @@ bool ComputeGeometry(BallGeometry* out) {
   return true;
 }
 
-// Draws 「课」 centred in the ball. The glyph is drawn with plain GDI *inside*
-// the already-opaque circle, so it only rewrites RGB and never the alpha
-// channel (alpha stays 1 where the ball is solid).
-void DrawGlyph(HDC hdc, int width, int height, double radius) {
-  const int font_px = static_cast<int>(radius * 1.05);
-  if (font_px <= 0) return;
-  HFONT font =
-      CreateFontW(-font_px, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
-                  DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                  ANTIALIASED_QUALITY, DEFAULT_PITCH, L"Microsoft YaHei UI");
-  if (font == nullptr) return;
+// The ball's glyph: the Material **school** icon (graduation cap + tassel),
+// filled 24x24 variant. Its path data is
+//   M5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82zM12 3L1 9l11 6l9-4.91V17h2V9L12 3z
+// and every segment of it is a straight line, so the icon is two polygons
+// here - no SVG parser, no font and no bitmap asset:
+//   * the MaterialIcons font Flutter ships in `data/flutter_assets` is
+//     tree-shaken down to the icons the Dart code actually uses, so a
+//     codepoint lookup could silently disappear the day that usage changes;
+//   * a bitmap asset would need one file per DPI to stay crisp.
+// The coordinates below are the path's own 24x24 units (ink spans y 3..21 and
+// x 1..23, i.e. it is centred in its box).
+constexpr int kGlyphShapeCount = 2;
+constexpr int kGlyphPointCount[kGlyphShapeCount] = {6, 7};
+constexpr double kGlyphShape[kGlyphShapeCount][7][2] = {
+    // The band under the mortarboard.
+    {{5.0, 13.18},
+     {5.0, 17.18},
+     {12.0, 21.0},
+     {19.0, 17.18},
+     {19.0, 13.18},
+     {12.0, 17.0}},
+    // The mortarboard plus the tassel hanging off its right corner.
+    {{12.0, 3.0},
+     {1.0, 9.0},
+     {12.0, 15.0},
+     {21.0, 10.09},
+     {21.0, 17.0},
+     {23.0, 17.0},
+     {23.0, 9.0}},
+};
 
-  HGDIOBJ old_font = SelectObject(hdc, font);
-  const int old_mode = SetBkMode(hdc, TRANSPARENT);
-  const COLORREF old_color = SetTextColor(hdc, RGB(255, 255, 255));
-  RECT text_rect{0, 0, width, height};
-  DrawTextW(hdc, L"课", -1, &text_rect,
-            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-  SetTextColor(hdc, old_color);
-  SetBkMode(hdc, old_mode);
-  SelectObject(hdc, old_font);
-  DeleteObject(font);
+// True when (x, y) - in glyph units - is inside the icon.
+//
+// Winding number rather than a bounding-box guess: the two polygons are
+// disjoint, so any winding count other than zero means "inside". The y
+// comparisons are half-open (<= on the first edge, > on the second) so a
+// corner vertex shared by two edges is crossed exactly once and stays solid.
+bool InsideGlyph(double x, double y) {
+  int winding = 0;
+  for (int shape = 0; shape < kGlyphShapeCount; ++shape) {
+    const int count = kGlyphPointCount[shape];
+    for (int index = 0; index < count; ++index) {
+      const int next = (index + 1) % count;
+      const double x0 = kGlyphShape[shape][index][0];
+      const double y0 = kGlyphShape[shape][index][1];
+      const double x1 = kGlyphShape[shape][next][0];
+      const double y1 = kGlyphShape[shape][next][1];
+      const double side = (x1 - x0) * (y - y0) - (x - x0) * (y1 - y0);
+      if (y0 <= y) {
+        if (y1 > y && side > 0.0) ++winding;
+      } else if (y1 <= y && side < 0.0) {
+        --winding;
+      }
+    }
+  }
+  return winding != 0;
+}
+
+// Paints the icon centred in the already-filled circle.
+//
+// The icon is rasterised from the polygons above with 4x4 supersampling per
+// pixel: GDI has no anti-aliasing for filled shapes, and for a single glyph
+// per-pixel coverage is both shorter and sharper than pulling a whole drawing
+// stack in for one icon. Only the RGB channels are written - the icon always
+// stays inside the opaque part of the circle (its box diagonal is shorter than
+// the diameter) and the edge's own coverage is already in the alpha channel, so
+// blending over the existing pixels is exact and cannot punch a hole in the
+// ball. The icon is white, matching the capsule's text on its dark fill.
+void DrawGlyph(unsigned char* pixels, int width, int height, double radius) {
+  constexpr int kSamples = 4;
+  constexpr int kSamplesTotal = kSamples * kSamples;
+  constexpr double kGlyphRgb = 255.0;
+  if (pixels == nullptr || radius <= 0.0) return;
+
+  // Material icons keep ~2/24 of padding inside their box, so a box of
+  // 1.15 x radius lands the ink at about half the diameter - the optical size
+  // Flutter uses for a 24px icon in a 48-52px container.
+  const double box = radius * 1.15;
+  const double scale = box / 24.0;
+  const double origin_x = width / 2.0 - box / 2.0;
+  const double origin_y = height / 2.0 - box / 2.0;
+
+  const int left = std::max(0, static_cast<int>(std::floor(origin_x)));
+  const int top = std::max(0, static_cast<int>(std::floor(origin_y)));
+  const int right =
+      std::min(width, static_cast<int>(std::ceil(origin_x + box)) + 1);
+  const int bottom =
+      std::min(height, static_cast<int>(std::ceil(origin_y + box)) + 1);
+
+  for (int y = top; y < bottom; ++y) {
+    for (int x = left; x < right; ++x) {
+      int hits = 0;
+      for (int sample_y = 0; sample_y < kSamples; ++sample_y) {
+        for (int sample_x = 0; sample_x < kSamples; ++sample_x) {
+          const double px = x + (sample_x + 0.5) / kSamples;
+          const double py = y + (sample_y + 0.5) / kSamples;
+          if (InsideGlyph((px - origin_x) / scale, (py - origin_y) / scale)) {
+            ++hits;
+          }
+        }
+      }
+      if (hits == 0) continue;
+
+      const double cover = static_cast<double>(hits) / kSamplesTotal;
+      unsigned char* pixel = pixels + (static_cast<size_t>(y) * width + x) * 4;
+      for (int channel = 0; channel < 3; ++channel) {
+        pixel[channel] = static_cast<unsigned char>(
+            kGlyphRgb * cover + pixel[channel] * (1.0 - cover) + 0.5);
+      }
+    }
+  }
 }
 
 LRESULT CALLBACK BallWndProc(HWND hwnd, UINT message, WPARAM wparam,
@@ -309,8 +406,13 @@ void Paint() {
 
   const double center_x = width / 2.0;
   const double center_y = height / 2.0;
-  const COLORREF top_color = BlendColor(g_state.color, RGB(255, 255, 255), 0.20);
-  const COLORREF bottom_color = BlendColor(g_state.color, RGB(0, 0, 0), 0.28);
+  // One flat colour - the very one the capsule's normal bar uses (Dart passes
+  // DesktopBarPalette.barBackground): the ball reads as part of the capsule, so
+  // a gradient of its own would break the match. Hover only lifts the fill a
+  // touch, which is feedback enough without becoming a second colour.
+  const COLORREF fill_color =
+      g_state.hover ? BlendColor(g_state.color, RGB(255, 255, 255), 0.10)
+                    : g_state.color;
 
   auto* pixel = static_cast<unsigned char*>(bits);
   for (int y = 0; y < height; ++y) {
@@ -322,22 +424,25 @@ void Paint() {
       if (cover <= 0.0) continue;
       if (cover > 1.0) cover = 1.0;
 
-      COLORREF base =
-          BlendColor(top_color, bottom_color, (dy + radius) / (2.0 * radius));
-      // One bright pixel at the rim: without it the edge reads as a jagged
-      // ring, especially on small circles.
-      if (distance > radius - 1.0) {
-        base = BlendColor(base, RGB(255, 255, 255),
-                          0.35 * (distance - (radius - 1.0)));
+      COLORREF base = fill_color;
+      // The capsule draws a 1px 15%-white border (DesktopBarPalette
+      // .capsuleBorder); the ball repeats it, ramped over 1.5px so the curve of
+      // a small circle does not show a staircase where the border starts.
+      double border = (distance - (radius - 1.5)) / 1.5;
+      if (border > 0.0) {
+        if (border > 1.0) border = 1.0;
+        base = BlendColor(base, RGB(255, 255, 255), 0.15 * border);
       }
-      pixel[0] = static_cast<unsigned char>(GetRValue(base) * cover + 0.5);
+      // UpdateLayeredWindow takes premultiplied BGRA, so byte 0 is blue (not
+      // the red GetRValue names - a swap here silently recolours the ball).
+      pixel[0] = static_cast<unsigned char>(GetBValue(base) * cover + 0.5);
       pixel[1] = static_cast<unsigned char>(GetGValue(base) * cover + 0.5);
-      pixel[2] = static_cast<unsigned char>(GetBValue(base) * cover + 0.5);
+      pixel[2] = static_cast<unsigned char>(GetRValue(base) * cover + 0.5);
       pixel[3] = static_cast<unsigned char>(cover * 255.0 + 0.5);
     }
   }
 
-  DrawGlyph(mem, width, height, radius);
+  DrawGlyph(static_cast<unsigned char*>(bits), width, height, radius);
 
   POINT source{0, 0};
   POINT dest{g_state.geometry.rect.left, g_state.geometry.rect.top};
@@ -378,8 +483,7 @@ void SendMoved() {
   const UINT dpi = DpiOf(g_ball);
   const LONG margin = ToPhysical(dpi, g_state.margin);
   const LONG padding = ToPhysical(dpi, kPaddingLogical);
-  const LONG diameter =
-      ToPhysical(dpi, g_state.capsule_height * g_state.size_ratio);
+  const LONG diameter = ToPhysical(dpi, g_state.capsule_height);
   // Mirror of ComputeGeometry's corner placement: the default spot measures the
   // margin to the painted circle, not to the transparent padded window.
   const LONG default_left = work.right - margin - diameter - padding;
@@ -641,7 +745,6 @@ void HandleConfigure(const flutter::EncodableMap& args) {
   g_state.mode = GetString(args, "mode", "corner") == "beside"
                      ? BallMode::kBesideBar
                      : BallMode::kCorner;
-  g_state.size_ratio = Clamp(GetDouble(args, "size_ratio", 0.85), 0.3, 2.0);
   g_state.capsule_height = GetDouble(args, "capsule_height", 52.0);
   g_state.gap = GetDouble(args, "gap", 12.0);
   g_state.margin = GetDouble(args, "margin", 16.0);
@@ -650,7 +753,7 @@ void HandleConfigure(const flutter::EncodableMap& args) {
   g_state.layer = GetString(args, "layer", "desktop");
   g_state.opacity = Clamp(GetDouble(args, "opacity", 0.92), 0.0, 1.0);
 
-  const int64_t argb = GetInt(args, "color", 0xFF5B86E5);
+  const int64_t argb = GetInt(args, "color", 0xFF141A24);
   g_state.color = RGB(static_cast<BYTE>((argb >> 16) & 0xFF),
                       static_cast<BYTE>((argb >> 8) & 0xFF),
                       static_cast<BYTE>(argb & 0xFF));

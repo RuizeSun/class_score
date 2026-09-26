@@ -273,7 +273,7 @@ class _AppEntryState extends State<AppEntry> {
   ///
   /// 状态每秒通知一次，但内容没变时不必过通道：用签名去重（null 表示球当前
   /// 关闭、窗口不存在）。胶囊在屏上 → 贴胶囊右侧（原生读胶囊真实矩形对齐，
-  /// 组合整体居中）；否则 → 屏幕右上角（偏移来自用户拖动）。
+  /// 球高与胶囊等高、底色用胶囊底色）；否则 → 屏幕右上角（偏移来自用户拖动）。
   Future<void> _syncDesktopBall(DesktopScheduleProvider desktop) async {
     if (!mounted) return;
 
@@ -284,12 +284,12 @@ class _AppEntryState extends State<AppEntry> {
       return;
     }
 
-    final personalization = context.read<PersonalizationProvider>();
     final mode = pickDesktopBallMode(barVisible: _barVisible);
-    final color = personalization.seedColor.toARGB32();
+    // 球与胶囊同色：直接取胶囊常态条的底色，拼在一起才像同一个挂件。色值仍是
+    // Dart 侧的 DesktopBarPalette 一份真相，原生只负责照着画。
+    final color = DesktopBarPalette.barBackground.toARGB32();
     final signature = [
       mode.name,
-      desktop.ballSizeRatio,
       desktop.scaledCapsuleHeight,
       desktop.ballOffsetX,
       desktop.ballOffsetY,
@@ -303,7 +303,6 @@ class _AppEntryState extends State<AppEntry> {
     await DesktopBallService.configure(
       mode: mode,
       enabled: true,
-      sizeRatio: desktop.ballSizeRatio,
       capsuleHeight: desktop.scaledCapsuleHeight,
       gap: DesktopBarMetrics.ballGap,
       margin: desktop.ballMargin,

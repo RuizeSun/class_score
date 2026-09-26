@@ -17,7 +17,10 @@
 // Geometry rule: next to the capsule the ball reads the capsule window's real
 // rect (so it always matches, including the centre-shifted reserve, narrow
 // screens and the second foreground appearance); otherwise it parks itself at
-// the work-area's top-right corner with the user's saved offsets.
+// the work-area's top-right corner with the user's saved offsets. In both cases
+// the ball is exactly as tall as the capsule, filled with the capsule's own
+// background colour and marked with the Material "school" icon - the ball is
+// meant to read as part of the capsule rather than as a widget of its own.
 void RegisterDesktopBallChannel(flutter::FlutterViewController* view_controller,
                                 HWND main_window);
 

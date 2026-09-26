@@ -1,7 +1,7 @@
 /// 桌面悬浮球的落点模式。
 enum DesktopBallMode {
   /// 贴在桌面课表胶囊右侧：原生侧读胶囊窗口的真实矩形对齐，
-  /// 「胶囊 + 悬浮球」组合整体居中于屏幕。
+  /// 「胶囊 + 悬浮球」组合整体居中于屏幕；球与胶囊同色同高，读作同一个挂件。
   besideBar('贴着课表胶囊'),
 
   /// 屏幕右上角（默认），可拖动调整，位置自动记忆。
@@ -11,11 +11,6 @@ enum DesktopBallMode {
 
   final String label;
 }
-
-/// 悬浮球直径的默认比例（= 胶囊高度 × 该比例，随「整体缩放」一起变大变小）。
-const double defaultBallSizeRatio = 0.85;
-const double minBallSizeRatio = 0.6;
-const double maxBallSizeRatio = 1.2;
 
 /// 拖动偏移的允许范围（逻辑像素，相对右上角默认位置）。
 ///
