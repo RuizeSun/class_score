@@ -1,17 +1,15 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:window_manager/window_manager.dart';
 
-import 'desktop_ball_service.dart';
 import 'desktop_bar_log.dart';
 import 'desktop_window_service.dart';
+import 'tray_service.dart';
 
 /// 托盘与悬浮球共用的应用级窗口动作。
 ///
 /// 两处入口（托盘菜单、球的单击 / 右键菜单）都要「显示主窗口」与「退出程序」，
-/// 各写一遍必然走样；退出更要统一先收掉桌面上的子窗口（课表胶囊、悬浮球），
-/// 否则会留下收不到状态的孤窗。
+/// 各写一遍必然走样，所以统一收在这里。
 class AppShellService {
   AppShellService._();
 
@@ -37,21 +35,26 @@ class AppShellService {
     }
   }
 
-  /// 彻底退出：先关课表胶囊与悬浮球，再销毁主窗口
-  /// （window_manager 的 destroy 即 PostQuitMessage，消息循环结束后进程退出）。
+  /// 彻底退出。
   ///
-  /// 子窗口的关闭只是「别留孤窗」，不能因为某个通道没回消息就把退出卡住：
-  /// 两条关闭指令都是发出即走（各自内部有超时），短暂等待后一律销毁主窗口；
-  /// 连销毁都没成功的话兜底强杀进程——托盘应用绝不能出现「点退出没反应」。
+  /// 交给原生的「立即退出」（`windows/runner/app_quit.cpp`：摘掉托盘图标 →
+  /// `TerminateProcess`），**不用** `window_manager.destroy()`：那只是
+  /// `PostQuitMessage(0)`，之后进程还要走完「关子窗口 → 各 Flutter 引擎
+  /// shutdown」的收尾路径（桌面课表子引擎跑在独立线程上），实测点完要等
+  /// 5.8 秒才真正消失。托盘图标必须由原生先摘掉，所以这里不能只 `exit(0)`。
+  ///
+  /// 原生通道不可用（测试环境 / 非 Windows）时兜底直接终止进程：托盘应用
+  /// 绝不能出现「点退出没反应」。
   static Future<void> quitApplication() async {
-    unawaited(DesktopBallService.close());
-    unawaited(DesktopWindowService.closeBar());
-    await Future<void>.delayed(const Duration(milliseconds: 300));
     try {
-      await windowManager.destroy().timeout(const Duration(seconds: 2));
+      await TrayService.quitNow().timeout(_nativeQuitTimeout);
     } catch (error) {
-      await _log('退出程序失败（强制结束进程）：$error');
-      exit(0);
+      await _log('原生退出无应答，改由 Dart 直接结束进程：$error');
     }
+    exit(0);
   }
+
+  /// 原生「立即退出」的等待上限：正常情况下进程在通道那一步就没了，
+  /// 只有原生缺席时才会走到后面的兜底。
+  static const Duration _nativeQuitTimeout = Duration(seconds: 1);
 }

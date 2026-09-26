@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 
+#include "app_quit.h"
 #include "desktop_bar_channel.h"
 #include "window_menu.h"
 
@@ -698,7 +699,8 @@ LRESULT CALLBACK BallWndProc(HWND hwnd, UINT message, WPARAM wparam,
       } else if (command == kMenuHide) {
         SendCommand("hide");
       } else if (command == kMenuQuit) {
-        SendCommand("quit");
+        // 与托盘菜单同一套「立即退出」：绕 Dart 再等引擎收尾，实测要 5.8 秒。
+        QuitApplicationNow();
       }
       return 0;
     }

@@ -27,10 +27,12 @@ class DesktopBallService {
       DesktopBarLog.write(DesktopWindowService.mainTag, message);
 
   /// 挂载原生事件（原生 → Dart）。
+  ///
+  /// 只有单击（回主窗口）与拖动落点会回传：球菜单里的「退出程序」由原生
+  /// 直接结束进程（见 `windows/runner/app_quit.cpp`），不再绕 Dart。
   static void attach({
     required Future<void> Function() onShow,
     required Future<void> Function() onHide,
-    required Future<void> Function() onQuit,
     required Future<void> Function(double offsetX, double offsetY) onMoved,
   }) {
     _channel.setMethodCallHandler((call) async {
@@ -51,8 +53,6 @@ class DesktopBallService {
             await onShow();
           } else if (command == 'hide') {
             await onHide();
-          } else if (command == 'quit') {
-            await onQuit();
           }
           return null;
         default:

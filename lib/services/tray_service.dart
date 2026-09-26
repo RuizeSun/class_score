@@ -8,6 +8,9 @@ import 'desktop_window_service.dart';
 /// 关闭主窗口时窗口只是隐藏、程序仍在跑：托盘图标就是「回到程序 / 彻底退出」
 /// 的入口之一（另一个是桌面悬浮球）。图标、右键菜单与气泡提示都在原生侧，
 /// Dart 只负责按设置开关图标，并处理原生回传的命令。
+///
+/// 「退出程序」不在这条回传链上：菜单项由原生直接结束进程（见
+/// `windows/runner/app_quit.cpp`），Dart 侧只用 [quitNow] 主动发起一次。
 class TrayService {
   TrayService._();
 
@@ -21,10 +24,12 @@ class TrayService {
   static bool _hintShown = false;
 
   /// 挂载原生事件（原生 → Dart）。
+  ///
+  /// 只有「显示 / 隐藏主窗口」会回传：「退出程序」由原生自己收尾并结束进程，
+  /// 多绕一趟 Dart 只会让退出变慢。
   static void attach({
     required Future<void> Function() onShow,
     required Future<void> Function() onHide,
-    required Future<void> Function() onQuit,
   }) {
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'on_command') {
@@ -33,14 +38,17 @@ class TrayService {
           await onShow();
         } else if (command == 'hide') {
           await onHide();
-        } else if (command == 'quit') {
-          await onQuit();
         }
         return null;
       }
       throw MissingPluginException('未实现的托盘方法：${call.method}');
     });
   }
+
+  /// 立刻退出程序：原生先摘掉托盘图标，再 `TerminateProcess`——
+  /// 不等桌面条浮窗 / 悬浮球 / 各 Flutter 引擎收尾（那是「点退出要等 5 秒」
+  /// 的根源），所以返回的 Future 通常永远不会完成，进程已经没了。
+  static Future<void> quitNow() => _channel.invokeMethod<void>('quit_now');
 
   /// 显示 / 隐藏托盘图标（跟随「关闭窗口时最小化到托盘」设置）。
   static Future<void> setEnabled(bool enabled) async {

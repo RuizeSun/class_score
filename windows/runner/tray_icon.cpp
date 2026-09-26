@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "app_quit.h"
 #include "resource.h"
 #include "window_menu.h"
 
@@ -96,7 +97,9 @@ void HandleTrayCallback(UINT event) {
       } else if (command == kMenuHide) {
         SendCommand("hide");
       } else if (command == kMenuQuit) {
-        SendCommand("quit");
+        // 退出不绕 Dart：绕一趟要等 Dart 发回关闭指令，再等各引擎收尾，
+        // 实测要 5.8 秒进程才消失（见 app_quit.h）。
+        QuitApplicationNow();
       }
       return;
     }
@@ -136,6 +139,13 @@ void RegisterTrayChannel(flutter::FlutterViewController* view_controller,
             RemoveTrayIcon();
           }
           result->Success();
+          return;
+        }
+        if (call.method_name() == "quit_now") {
+          // Dart 侧的「关闭窗口即退出」走这里。先回执再动手：调用方不需要真的
+          // 等到进程结束，反正下一步进程就没了。
+          result->Success();
+          QuitApplicationNow();
           return;
         }
         if (call.method_name() == "show_balloon") {

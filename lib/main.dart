@@ -168,15 +168,14 @@ class _AppEntryState extends State<AppEntry> {
       // 托盘与悬浮球的原生事件接线：两个通道都由 Windows runner 注册
       // （见 windows/runner/flutter_window.cpp），其它平台会在服务内部
       // 以 MissingPluginException 静默降级成日志。
+      // 菜单里的「退出程序」不在其中：由原生直接结束进程（app_quit.cpp）。
       TrayService.attach(
         onShow: AppShellService.showMainWindow,
         onHide: AppShellService.hideMainWindow,
-        onQuit: AppShellService.quitApplication,
       );
       DesktopBallService.attach(
         onShow: AppShellService.showMainWindow,
         onHide: AppShellService.hideMainWindow,
-        onQuit: AppShellService.quitApplication,
         onMoved: desktop.setBallOffset,
       );
       personalization.addListener(_syncTrayIcon);

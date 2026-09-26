@@ -11,9 +11,11 @@ constexpr UINT kTrayCallbackMessage = WM_APP + 1;
 // Registers `class_score/tray` on the main engine.
 //
 // Dart turns the icon on and off (「关闭窗口时最小化到托盘」开关) and receives
-// the menu picks back as `on_command("show"|"hide"|"quit")`. The icon itself
-// comes from the exe's own resource, so no loose .ico file is needed at
-// runtime.
+// the menu picks back as `on_command("show"|"hide")`. 「退出程序」does *not*
+// round-trip through Dart: the native side tears the icon down and ends the
+// process right away (see app_quit.h). Dart-initiated quits call `quit_now`
+// on this same channel. The icon itself comes from the exe's own resource, so
+// no loose .ico file is needed at runtime.
 void RegisterTrayChannel(flutter::FlutterViewController* view_controller,
                          HWND main_window);
 

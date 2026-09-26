@@ -6,6 +6,7 @@
 - commit：f2f564464da07b24f82f7f0eacf4767c7c19d8a2（f2f5644，2026-09-26 19:44 +0800）
 - 分支：main
 - last_verified_commit：f2f564464da07b24f82f7f0eacf4767c7c19d8a2（本版基于此 commit 只读侦察，`fvm flutter test` 全过）
+- 工作区另有未提交改动：托盘 / 悬浮球「退出程序」改为原生即刻退出（`app_quit.cpp`），实测 5.8s → 0.14s
 - 仅支持 Windows（用户明确；android/ios/macos/linux/web 目录为脚手架残留）
 
 ## 项目一句话
@@ -21,7 +22,7 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
 - lib/models/ — 数据模型（手写 toMap/fromMap）
 - lib/services/ — 窗口/托盘/天气/备份/导入等服务
 - lib/widgets/ — 通用组件，含 desktop_schedule/ 浮窗 UI
-- windows/runner/ — 原生 C++（desktop_bar_channel.cpp、desktop_ball_window.cpp、tray_icon.cpp）
+- windows/runner/ — 原生 C++（desktop_bar_channel.cpp、desktop_ball_window.cpp、tray_icon.cpp、app_quit.cpp）
 - test/ — 139 个测试；.github/workflows/flutter.yml — CI
 
 ## 核心链路
@@ -52,4 +53,5 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
 - 加依赖：pubspec.yaml → fvm flutter pub get。
 - 改主题：personalization_provider.dart:97 setSeedColor（存 app_settings 十六进制串，读取 :52 用 radix 16）+ main.dart:117-119；选择 UI 在 pages/settings/personalization_view.dart。
 - 平台权限/原生：windows/runner/（runner.exe.manifest、CMakeLists.txt、\*.cpp 通道），Dart 侧通道常量在 services/desktop_window_service.dart:18、desktop_ball_service.dart、tray_service.dart。
+- 退出程序：原生 app_quit.cpp QuitApplicationNow()（RemoveTrayIcon → TerminateProcess）；托盘 / 悬浮球菜单直接调用它，Dart 侧走 tray_service.dart quitNow()（「关闭窗口即退出」经 app_shell_service.dart quitApplication）。**不要**改回 `window_manager.destroy()` 或 `ExitProcess`：前者只是 PostQuitMessage、后者会跑 DLL detach 收尾子引擎，都要 3~5 秒（实测 5.8s vs 0.14s）。
 - 打包：本地 `fvm flutter build windows --release`；CI：commit message 以 `build: <版本号>` 开头推 main → flutter.yml:12 触发、:31 构建、:38 取版本、:70 打 tag 并发布 Release zip。用户没有要求的情况下严禁私自发布。
