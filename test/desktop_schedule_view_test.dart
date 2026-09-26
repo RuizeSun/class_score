@@ -1,6 +1,7 @@
 import 'package:class_score/models/desktop_schedule_state.dart';
 import 'package:class_score/models/weather_snapshot.dart';
 import 'package:class_score/services/schedule_timeline_service.dart';
+import 'package:class_score/widgets/desktop_schedule/desktop_schedule_bar.dart';
 import 'package:class_score/widgets/desktop_schedule/desktop_schedule_common.dart';
 import 'package:class_score/widgets/desktop_schedule/desktop_schedule_widget.dart';
 import 'package:flutter/material.dart';
@@ -80,6 +81,23 @@ void main() {
     expect(find.text('数学'), findsOneWidget);
     expect(find.text('-20min'), findsOneWidget);
     expect(find.text('英语'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('天气分隔线两侧留白相等，不贴着课程名', (tester) async {
+    // 选课间这一刻：第一节课「数学」已下课、不是高亮块，量到的是课程名本身
+    // （上课中会被课程块的内补白包住，量不准「课程列表起点」）。
+    await _pumpBar(tester, _stateAt(8, 42));
+
+    final divider = tester.getRect(
+      find.byKey(DesktopScheduleBar.weatherDividerKey),
+    );
+    final temperature = tester.getRect(find.text('28℃'));
+    final firstCourse = tester.getRect(find.text('数学'));
+
+    const gap = DesktopBarMetrics.weatherDividerGap;
+    expect(divider.left - temperature.right, closeTo(gap, 0.01));
+    expect(firstCourse.left - divider.right, closeTo(gap, 0.01));
     expect(tester.takeException(), isNull);
   });
 

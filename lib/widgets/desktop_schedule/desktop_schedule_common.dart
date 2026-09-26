@@ -79,6 +79,12 @@ class DesktopBarMetrics {
 
   /// 天气图标大小。
   static const double weatherIconSize = 18;
+
+  /// 天气温度与课程列表之间那根分隔线的左右留白。
+  ///
+  /// 两侧共用同一个值，线才会落在正中：之前温度侧是 12、课程侧只剩天气块
+  /// 2 像素的内补白，分隔线看起来贴在第一个课程名上。
+  static const double weatherDividerGap = 12;
 }
 
 /// 推给桌面浮窗的悬浮球占位参数。

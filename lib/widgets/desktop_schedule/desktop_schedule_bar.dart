@@ -19,6 +19,11 @@ class DesktopScheduleBar extends StatelessWidget {
     this.scale = 1.0,
   });
 
+  /// 天气与课程之间那根分隔线的 Key：留白是否匀称只能靠几何断言来守。
+  static const ValueKey<String> weatherDividerKey = ValueKey(
+    'desktop_schedule_bar_weather_divider',
+  );
+
   final DesktopScheduleState state;
 
   /// 天气温度文案（如「28℃」）；为空表示不显示天气块。
@@ -56,7 +61,17 @@ class DesktopScheduleBar extends StatelessWidget {
         children: [
           SizedBox(width: DesktopBarMetrics.capsulePadding * scale),
           if (weatherLabel != null) _buildWeather(scale),
-          Expanded(child: _buildCourses(scale)),
+          Expanded(
+            child: Padding(
+              // 分隔线右侧的留白（没有天气就没有线，课程照旧从胶囊内边距起步）。
+              padding: EdgeInsets.only(
+                left: weatherLabel == null
+                    ? 0
+                    : DesktopBarMetrics.weatherDividerGap * scale,
+              ),
+              child: _buildCourses(scale),
+            ),
+          ),
           SizedBox(width: DesktopBarMetrics.capsulePadding * scale),
         ],
       ),
@@ -65,10 +80,7 @@ class DesktopScheduleBar extends StatelessWidget {
 
   Widget _buildWeather(double scale) {
     return Padding(
-      padding: EdgeInsets.symmetric(
-        vertical: 10 * scale,
-        horizontal: 2 * scale,
-      ),
+      padding: EdgeInsets.symmetric(vertical: 10 * scale),
       child: Row(
         children: [
           Icon(
@@ -85,9 +97,10 @@ class DesktopScheduleBar extends StatelessWidget {
               fontWeight: FontWeight.w500,
             ),
           ),
-          SizedBox(width: 12 * scale),
+          SizedBox(width: DesktopBarMetrics.weatherDividerGap * scale),
           Center(
             child: Container(
+              key: weatherDividerKey,
               width: 1,
               height: 18 * scale,
               color: DesktopBarPalette.divider,
