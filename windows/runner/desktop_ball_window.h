@@ -6,7 +6,8 @@
 
 // The floating ball is a runner-owned native window: it never spawns a third
 // Flutter engine, it just needs the main engine's method channel to be told
-// where to sit and to report clicks / drags / menu picks back to Dart.
+// where to sit / whether to be on screen and to report clicks / drags / menu
+// picks back to Dart.
 //
 // Why native: the capsule keeps its own WS_EX_TRANSPARENT (mouse
 // click-through) setting, and Win32 cannot make *part* of a window
@@ -21,6 +22,11 @@
 // the ball is exactly as tall as the capsule, filled with the capsule's own
 // background colour and marked with the Material "school" icon - the ball is
 // meant to read as part of the capsule rather than as a widget of its own.
+//
+// Show / hide rule: `visible` comes from Dart (false while the main window is
+// on screen, because the ball only exists to bring that window back). The
+// window is never destroyed for that - it fades out and hides, then fades back
+// in, so the switch costs no window creation and no flash.
 void RegisterDesktopBallChannel(flutter::FlutterViewController* view_controller,
                                 HWND main_window);
 

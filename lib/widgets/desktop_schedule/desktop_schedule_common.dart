@@ -108,10 +108,16 @@ class DesktopBallReserve {
 }
 
 /// 球开着时让位，并声明「球径 = 胶囊高」。
-DesktopBallReserve desktopBallReserve({required bool ballEnabled}) =>
-    ballEnabled
-        ? const DesktopBallReserve(DesktopBarMetrics.ballGap, 1)
-        : DesktopBallReserve.none;
+///
+/// [ballVisible] 是球此刻是否真的在屏幕上：球只是「叫回主窗口」的入口，主窗口
+/// 显示在屏幕上时球会淡出隐藏（见 [shouldShowDesktopBall]）。藏起来时让位必须
+/// 归零——否则胶囊会停在「给球留出的半个让位」上，看起来偏左、右边空一块。
+DesktopBallReserve desktopBallReserve({
+  required bool ballEnabled,
+  bool ballVisible = true,
+}) => ballEnabled && ballVisible
+    ? const DesktopBallReserve(DesktopBarMetrics.ballGap, 1)
+    : DesktopBallReserve.none;
 
 /// WMO 天气类型 → 图标（与 [WeatherSnapshot.kindOf] 的归一化结果一一对应）。
 IconData weatherIconOf(WeatherKind kind) {

@@ -2,11 +2,10 @@
 
 ## 元信息
 
-- 生成时间：2026-09-26
-- commit：f2f564464da07b24f82f7f0eacf4767c7c19d8a2（f2f5644，2026-09-26 19:44 +0800）
+- 生成时间：2026-09-26（2026-09-27 更新悬浮球显隐 / 让位）
+- commit：5e7828e（悬浮球显隐 + 胶囊让位；上一版 2a9e75c = build: 1.5.0）
 - 分支：main
-- last_verified_commit：f2f564464da07b24f82f7f0eacf4767c7c19d8a2（本版基于此 commit 只读侦察，`fvm flutter test` 全过）
-- 工作区另有未提交改动：托盘 / 悬浮球「退出程序」改为原生即刻退出（`app_quit.cpp`），实测 5.8s → 0.14s
+- last_verified_commit：5e7828e（`fvm flutter test` 143 全过、`fvm flutter analyze` 无新增、`fvm flutter build windows --release` 通过；运行时实测：球隐藏时胶囊 left=920（2560 宽屏精确居中）、球显示时 888，位移是 140/220ms 缓动滑动）
 - 仅支持 Windows（用户明确；android/ios/macos/linux/web 目录为脚手架残留）
 
 ## 项目一句话
@@ -27,9 +26,9 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
 
 ## 核心链路
 
-1. 启动：main.dart:26 main → main.dart:31 判定是否浮窗引擎（是则只跑 DesktopBarWindow，不读数据库）→ main.dart:44 WindowService.setup → main.dart:45 runApp。
-2. 主体：main.dart:114 MaterialApp（主题 main.dart:118 取 PersonalizationProvider.seedColor）→ main.dart:126 AppEntry → main.dart:339 未设 PIN 走 PinSetupPage，否则 HomePage。
-3. 初始化：main.dart:162-193 各 provider.init + 托盘/悬浮球/课表浮窗接线。
+1. 启动：main.dart:27 main → main.dart:32 判定是否浮窗引擎（是则只跑 DesktopBarWindow，不读数据库）→ main.dart:45 WindowService.setup → main.dart:46 runApp。
+2. 主体：main.dart:115 MaterialApp（主题 main.dart:119 取 PersonalizationProvider.seedColor）→ main.dart:122 AppEntry → main.dart:467 未设 PIN 走 PinSetupPage，否则 HomePage。
+3. 初始化：main.dart:189-230（post-frame）各 provider.init + 托盘/悬浮球/课表浮窗接线；悬浮球显隐由 main.dart:382 _refreshBallOnScreen 判定、main.dart:336 _pushDesktopBall 推送。
 4. 页面：home_page.dart:43 4 个 Tab（Dashboard/评分/统计与查询/设置），home_page.dart:201 NavigationBar + home_page.dart:210 PageView 切换；设置子页在 settings_hub_page.dart:100 setState(\_current) 就地切换（:195-234 返回各子视图）。
 5. 数据：DatabaseHelper.instance（database_helper.dart:5）→ 数据库在 exe 同级 data/score.db（:11-17），版本 10（:35），设置存 app_settings 表（:292 getSetting）。
 6. 浮窗：DesktopScheduleProvider 状态 → main.dart:261 pushBarPayload → windows/runner/desktop_bar_channel.cpp 原生绘制/裁剪。
@@ -53,5 +52,6 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
 - 加依赖：pubspec.yaml → fvm flutter pub get。
 - 改主题：personalization_provider.dart:97 setSeedColor（存 app_settings 十六进制串，读取 :52 用 radix 16）+ main.dart:117-119；选择 UI 在 pages/settings/personalization_view.dart。
 - 平台权限/原生：windows/runner/（runner.exe.manifest、CMakeLists.txt、\*.cpp 通道），Dart 侧通道常量在 services/desktop_window_service.dart:18、desktop_ball_service.dart、tray_service.dart。
+- 悬浮球显隐 / 让位：球只是「叫回主窗口」的入口，**主窗口在屏上（isVisible && !isMinimized）就不显示**——判定在 main.dart:382 `_refreshBallOnScreen`（windowManager.isVisible/isMinimized，窗口事件 `onWindowMinimize/onWindowRestore/onWindowEvent('show'/'hide')` 即时触发，每秒推送只兜底），显隐经 `desktop_ball_service.dart` 的 `configure(visible:)` 推给原生；原生淡出/淡入 + 隐藏见 desktop_ball_window.cpp 的 `ApplyVisibility`/`StepFade`/`Paint`（fade 走 `SourceConstantAlpha`，淡出中 `WM_NCHITTEST` 不接点击，窗口只隐藏不销毁）。**胶囊的让位必须跟着球的显隐走**：`desktop_schedule_common.dart` 的 `desktopBallReserve(ballEnabled:, ballVisible:)`（球藏着 → 归零 → 胶囊回正）→ provider `toBarPayload(ballVisible:)` → desktop_bar_channel.cpp 的 reserve 计算 + `StartXSlide`（只改了 x 才滑动 0.14/0.22s，其余改动瞬时）。
 - 退出程序：原生 app_quit.cpp QuitApplicationNow()（RemoveTrayIcon → TerminateProcess）；托盘 / 悬浮球菜单直接调用它，Dart 侧走 tray_service.dart quitNow()（「关闭窗口即退出」经 app_shell_service.dart quitApplication）。**不要**改回 `window_manager.destroy()` 或 `ExitProcess`：前者只是 PostQuitMessage、后者会跑 DLL detach 收尾子引擎，都要 3~5 秒（实测 5.8s vs 0.14s）。
 - 打包：本地 `fvm flutter build windows --release`；CI：commit message 以 `build: <版本号>` 开头推 main → flutter.yml:12 触发、:31 构建、:38 取版本、:70 打 tag 并发布 Release zip。用户没有要求的情况下严禁私自发布。

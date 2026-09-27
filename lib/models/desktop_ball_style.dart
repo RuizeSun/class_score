@@ -28,3 +28,23 @@ DesktopBallMode pickDesktopBallMode({required bool barVisible}) =>
 
 /// 夹紧拖动得到的偏移，避免异常值把球留在屏幕外。
 double clampBallOffset(double value) => value.clamp(minBallOffset, maxBallOffset);
+
+/// 主窗口是否正显示在屏幕上（未最小化、未收进托盘）。
+///
+/// 两个输入直接来自 `windowManager.isVisible()` / `isMinimized()`：
+/// - 收进托盘（[WindowCloseAction.hideToTray]）→ `visible == false`；
+/// - 最小化 → `visible == true` 但 `minimized == true`。
+///
+/// 用「窗口是否就在眼前」而不是「是否获得焦点」：程序已经打开摆在屏幕上时，
+/// 悬浮球这个入口就是多余的；只有收进托盘 / 最小化之后才需要它把窗口叫回来。
+bool appWindowOnScreen({required bool visible, required bool minimized}) =>
+    visible && !minimized;
+
+/// 悬浮球现在是否该出现在屏幕上。
+///
+/// 开关关掉时永远不显示（此时窗口会被销毁，见 [DesktopBallService.close]）；
+/// 主窗口在屏上时也不显示——球是「叫回窗口」的入口，窗口就在眼前时它没有意义。
+bool shouldShowDesktopBall({
+  required bool ballEnabled,
+  required bool onScreen,
+}) => ballEnabled && !onScreen;

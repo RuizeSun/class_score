@@ -32,6 +32,25 @@ constexpr UINT kMenuQuit = 3;
 constexpr UINT_PTR kFollowTimerId = 1;
 constexpr UINT kFollowTimerMs = 200;
 
+// Show / hide animation: the ball fades (and grows from 72% size on the way in)
+// instead of cutting in and out. Same shape as the capsule's own cross-fade in
+// desktop_bar_channel.cpp - SetTimer + smoothstep - and the system-wide "show
+// animations in Windows" switch is honoured (SPI_GETCLIENTAREAANIMATION), so
+// users who turn animations off get an instant cut.
+constexpr UINT_PTR kFadeTimerId = 2;
+constexpr UINT kFadeTimerMs = 16;  // ~60 fps
+constexpr DWORD kFadeOutMs = 140;
+constexpr DWORD kFadeInMs = 220;
+
+// Size at the very start of a fade-in (ramps up to 1.0 = the capsule's height):
+// a pure alpha ramp on a 40-50px circle is hard to notice, the slight pop is
+// what makes it read as an entrance rather than a flicker.
+constexpr double kFadeScaleFrom = 0.72;
+
+// Below this opacity the ball stops taking clicks: hitting a ball that is on
+// its way out (or not all the way in) is more likely a miss than a hit.
+constexpr double kInteractiveFade = 0.5;
+
 // Transparent padding around the painted circle: it absorbs the anti-aliased
 // edge and gives hover room. The padding never changes the window size on
 // hover (that would make the ball jump away from under the cursor).
@@ -54,6 +73,15 @@ struct BallState {
   // Whether Dart wants the ball shown (the feature toggle); independent of
   // whether the window is currently visible on screen.
   bool enabled = false;
+  // Whether the ball should currently be on screen. False while the app's main
+  // window is on screen: the ball is only the way back to that window, so it
+  // has no job while the window itself is right there. Unlike `enabled` this
+  // never destroys the window - the ball fades out and the window is hidden,
+  // ready to fade back in.
+  bool visible = true;
+  // Current multiplier of the show/hide animation (1 = fully shown, 0 = the
+  // animation reached "hidden"; see kFade* above).
+  double fade = 1.0;
   BallMode mode = BallMode::kCorner;
   double capsule_height = 52.0;
   double gap = 12.0;
@@ -76,6 +104,19 @@ struct BallState {
 BallState g_state;
 HWND g_ball = nullptr;
 HWND g_main = nullptr;
+
+// Progress of the show/hide animation (see kFade*). `from` / `to` are the fade
+// values at the two ends, so a reversed animation (shown again mid fade-out)
+// picks up smoothly from wherever it currently is.
+struct FadeState {
+  bool active = false;
+  double from = 1.0;
+  double to = 1.0;
+  DWORD duration_ms = 1;
+  DWORD start_tick = 0;
+};
+
+FadeState g_fade;
 
 // Keeps the method channel alive: the engine only holds a raw pointer to the
 // handler, so the channel object must outlive the engine.
@@ -369,6 +410,10 @@ LRESULT CALLBACK BallWndProc(HWND hwnd, UINT message, WPARAM wparam,
 // circle would look like a staircase).
 void Paint() {
   if (g_ball == nullptr) return;
+  // While the window is hidden a fully transparent surface is not worth
+  // pushing; the faint last frame painted during a fade-out is what the window
+  // is re-shown with, so a fade-in never flashes a solid ball.
+  if (g_state.fade <= 0.0 && !IsWindowVisible(g_ball)) return;
 
   RECT client{};
   if (!GetClientRect(g_ball, &client)) return;
@@ -376,11 +421,15 @@ void Paint() {
   const int height = client.bottom - client.top;
   if (width <= 0 || height <= 0) return;
 
-  const double radius = g_state.geometry.diameter / 2.0 +
-                        (g_state.hover ? kHoverGrowLogical *
-                                             static_cast<double>(DpiOf(g_ball)) /
-                                             96.0
-                                       : 0.0);
+  // Fade-in grows the ball from kFadeScaleFrom of its size; hover lifts it a
+  // touch on top of that.
+  const double faded =
+      kFadeScaleFrom + (1.0 - kFadeScaleFrom) * Clamp(g_state.fade, 0.0, 1.0);
+  const double radius =
+      g_state.geometry.diameter / 2.0 * faded +
+      (g_state.hover
+           ? kHoverGrowLogical * static_cast<double>(DpiOf(g_ball)) / 96.0
+           : 0.0);
   if (radius <= 0.0) return;
 
   BITMAPINFO bitmap_info{};
@@ -451,8 +500,12 @@ void Paint() {
   BLENDFUNCTION blend{};
   blend.BlendOp = AC_SRC_OVER;
   blend.BlendFlags = 0;
+  // The show/hide animation rides on the same constant alpha the appearance
+  // opacity uses: UpdateLayeredWindow multiplies it into the per-pixel alpha,
+  // so the fade needs no second window attribute (swapping the window over to
+  // SetLayeredWindowAttributes would fight the per-pixel surface).
   blend.SourceConstantAlpha = static_cast<BYTE>(
-      Clamp(g_state.geometry.alpha, 0.0, 1.0) * 255.0 + 0.5);
+      Clamp(g_state.geometry.alpha * g_state.fade, 0.0, 1.0) * 255.0 + 0.5);
   blend.AlphaFormat = AC_SRC_ALPHA;
   UpdateLayeredWindow(g_ball, nullptr, &dest, &size, mem, &source, 0, &blend,
                       ULW_ALPHA);
@@ -523,21 +576,134 @@ void ApplyPlacement() {
                  0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
   }
 
+  // On screen = the feature is on and the ball is either meant to be shown or
+  // still dissolving away (fade > 0): the window only gets hidden once the fade
+  // has reached 0, so the last visible frame is the transparent one.
+  const bool on_screen =
+      g_state.enabled && (g_state.visible || g_state.fade > 0.0);
   SetWindowPos(g_ball, want_topmost ? HWND_TOPMOST : HWND_BOTTOM, rect.left,
                rect.top, width, height,
-               SWP_NOACTIVATE |
-                   (g_state.enabled ? SWP_SHOWWINDOW : SWP_HIDEWINDOW));
+               SWP_NOACTIVATE | (on_screen ? SWP_SHOWWINDOW : SWP_HIDEWINDOW));
 
   if (!g_state.enabled) {
     KillTimer(g_ball, kFollowTimerId);
     return;
   }
   Paint();
-  if (g_state.mode == BallMode::kBesideBar) {
+  // Only chase the capsule while the ball is actually on the desktop: a hidden
+  // ball has nothing to line up with.
+  if (g_state.mode == BallMode::kBesideBar && g_state.visible) {
     SetTimer(g_ball, kFollowTimerId, kFollowTimerMs, nullptr);
   } else {
     KillTimer(g_ball, kFollowTimerId);
   }
+}
+
+// ---- Show / hide animation ----
+//
+// Dart decides *whether* the ball belongs on screen (`visible`, false while the
+// app's main window is on screen); the animation itself is native because the
+// ball is a layered native window and the fade is just a multiplier on the
+// per-pixel surface it already pushes every frame (see Paint).
+
+void StopFade() {
+  g_fade.active = false;
+  if (g_ball != nullptr) KillTimer(g_ball, kFadeTimerId);
+}
+
+// Respect the system "Show animations in Windows" setting (same probe the
+// capsule uses): with animations off the ball cuts in / out instead of fading.
+bool SystemAnimationsDisabled() {
+  BOOL enabled = TRUE;
+  SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0);
+  return !enabled;
+}
+
+void StartFade(double to, DWORD duration_ms) {
+  if (g_ball == nullptr) return;
+  g_fade.active = true;
+  g_fade.from = g_state.fade;
+  g_fade.to = to;
+  g_fade.duration_ms = duration_ms == 0 ? 1 : duration_ms;
+  g_fade.start_tick = GetTickCount();
+  SetTimer(g_ball, kFadeTimerId, kFadeTimerMs, nullptr);
+}
+
+// One animation step: smoothstep the fade towards its target, repaint, and let
+// ApplyPlacement hide the window when a fade-out reaches 0.
+void StepFade() {
+  if (g_ball == nullptr) return;
+  if (!g_fade.active) {
+    KillTimer(g_ball, kFadeTimerId);
+    return;
+  }
+
+  const DWORD elapsed = GetTickCount() - g_fade.start_tick;
+  double t = g_fade.duration_ms == 0
+                 ? 1.0
+                 : static_cast<double>(elapsed) / g_fade.duration_ms;
+  if (t > 1.0) t = 1.0;
+  const double eased = t * t * (3.0 - 2.0 * t);  // smoothstep easing
+  g_state.fade = g_fade.from + (g_fade.to - g_fade.from) * eased;
+
+  if (t >= 1.0) {
+    g_state.fade = g_fade.to;
+    g_fade.active = false;
+    KillTimer(g_ball, kFadeTimerId);
+  }
+
+  if (g_state.fade <= 0.0) {
+    g_state.hover = false;  // the next fade-in starts from a clean slate
+    ApplyPlacement();       // fade 到 0：窗口在这里被 SWP_HIDEWINDOW 收起来
+    return;
+  }
+  Paint();
+}
+
+// Drives the window from the current state: shows and fades in, or fades out
+// and hides. Called from HandleConfigure (Dart pushed a new state) and from the
+// follow timer paths that repaint - it is idempotent, a state that is already
+// reached never restarts an animation.
+void ApplyVisibility() {
+  if (g_ball == nullptr) return;
+  const bool animations = !SystemAnimationsDisabled();
+
+  if (g_state.visible) {
+    if (g_fade.active && g_fade.to >= 1.0) {
+      ApplyPlacement();  // 正在淡入：只跟着新几何摆位，不重播
+      return;
+    }
+    const bool on_screen = IsWindowVisible(g_ball) != FALSE;
+    if (on_screen && g_state.fade >= 1.0) {
+      ApplyPlacement();  // 已经完全显示
+      return;
+    }
+    if (!animations) {
+      g_state.fade = 1.0;
+      ApplyPlacement();
+      return;
+    }
+    if (!on_screen) {
+      // 从「藏着」的状态回来：先把窗口亮出来（画的是上一次留下的近乎透明的
+      // 表面），再从 0 淡入，绝不会闪出一颗实心球。
+      g_state.fade = 0.0;
+      ApplyPlacement();
+    }
+    StartFade(1.0, kFadeInMs);
+    return;
+  }
+
+  // 不显示：先淡出，淡到 0 才把窗口藏起来（由 StepFade / ApplyPlacement 完成）。
+  if (g_fade.active && g_fade.to <= 0.0) {
+    return;  // 正在淡出
+  }
+  if (!animations || !IsWindowVisible(g_ball) || g_state.fade <= 0.0) {
+    // 系统关了动画，或者窗口本来就还没亮出来：直接落到「藏着」的状态。
+    g_state.fade = 0.0;
+    ApplyPlacement();
+    return;
+  }
+  StartFade(0.0, kFadeOutMs);
 }
 
 bool IsInsideBall(POINT client) {
@@ -633,8 +799,12 @@ LRESULT CALLBACK BallWndProc(HWND hwnd, UINT message, WPARAM wparam,
       POINT pt{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
       ScreenToClient(hwnd, &pt);
       // Outside the circle nothing belongs to the ball: the transparent ring
-      // must stay usable (desktop icons, other windows, ...).
-      return IsInsideBall(pt) ? HTCLIENT : HTTRANSPARENT;
+      // must stay usable (desktop icons, other windows, ...). A ball that is
+      // fading out (or not all the way in) is not clickable either - hitting it
+      // would be a miss more often than a hit.
+      const bool interactive =
+          g_state.visible && g_state.fade >= kInteractiveFade;
+      return interactive && IsInsideBall(pt) ? HTCLIENT : HTTRANSPARENT;
     }
 
     case WM_MOUSEMOVE: {
@@ -715,10 +885,15 @@ LRESULT CALLBACK BallWndProc(HWND hwnd, UINT message, WPARAM wparam,
       return 1;
 
     case WM_TIMER:
+      if (wparam == kFadeTimerId) {
+        StepFade();
+        return 0;
+      }
       if (wparam == kFollowTimerId) {
         // The capsule can move on its own (position setting, foreground look,
         // narrow-screen clamp) while Dart's pushes stay deduplicated.
-        if (g_state.enabled && g_state.mode == BallMode::kBesideBar) {
+        if (g_state.enabled && g_state.visible &&
+            g_state.mode == BallMode::kBesideBar) {
           BallGeometry next{};
           if (ComputeGeometry(&next) &&
               (!EqualRect(&next.rect, &g_state.geometry.rect) ||
@@ -735,6 +910,7 @@ LRESULT CALLBACK BallWndProc(HWND hwnd, UINT message, WPARAM wparam,
 
     case WM_DESTROY:
       KillTimer(hwnd, kFollowTimerId);
+      KillTimer(hwnd, kFadeTimerId);
       g_ball = nullptr;
       return 0;
   }
@@ -760,9 +936,15 @@ void HandleConfigure(const flutter::EncodableMap& args) {
                       static_cast<BYTE>((argb >> 8) & 0xFF),
                       static_cast<BYTE>(argb & 0xFF));
   g_state.enabled = GetBool(args, "enabled", false);
+  // Default true keeps the plain "configure and show" behaviour for callers that
+  // do not know about the show/hide state.
+  const bool want_visible = GetBool(args, "visible", true);
 
   if (!g_state.enabled) {
     if (g_ball != nullptr) {
+      StopFade();
+      g_state.visible = false;
+      g_state.fade = 0.0;
       ShowWindow(g_ball, SW_HIDE);
       KillTimer(g_ball, kFollowTimerId);
     }
@@ -773,16 +955,21 @@ void HandleConfigure(const flutter::EncodableMap& args) {
   BallGeometry geometry{};
   if (!ComputeGeometry(&geometry)) return;
   g_state.geometry = geometry;
-  ApplyPlacement();
+  g_state.visible = want_visible;
+  // Decides between a plain repaint and a fade in / out, then places the window
+  // (ApplyVisibility always ends in ApplyPlacement).
+  ApplyVisibility();
 }
 
 void DestroyBall() {
   if (g_ball != nullptr) {
+    StopFade();
     KillTimer(g_ball, kFollowTimerId);
     // WM_DESTROY clears g_ball.
     DestroyWindow(g_ball);
   }
   g_state = BallState{};
+  g_fade = FadeState{};
 }
 
 }  // namespace

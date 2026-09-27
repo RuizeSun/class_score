@@ -317,9 +317,104 @@ void HandleFadeIn(
   StartAlphaFade(hwnd, target, kFadeInMs, 0.0, std::move(result));
 }
 
-// Applies the desktop schedule capsule look: frameless, no taskbar button,
-// layered (opacity + optional click-through), clipped into a capsule and
-// centered horizontally near the top/upper-middle/bottom of the work area.
+// ---- Horizontal slide for the floating ball's reserve ----
+//
+// The capsule leaves room for the ball and shifts left by half of it, so hiding
+// the ball (the app window is on screen) moves the capsule back to the centre by
+// ~30 px. That move glides instead of snapping, with the same easing family and
+// durations as the ball's own show/hide fade, so the pair spends the transition
+// moving together. Everything else - a settings edit, a position change, a
+// scale change - still lands instantly: those change more than just the x.
+constexpr UINT kXSlideTimerMs = 16;      // ~60 fps
+constexpr DWORD kXSlideOutMs = 140;      // the ball is leaving (its fade-out)
+constexpr DWORD kXSlideInMs = 220;       // the ball is arriving (its fade-in)
+constexpr LONG kMaxSlidePx = 200;        // bigger than this is a re-layout
+
+struct XSlide {
+  HWND hwnd = nullptr;
+  bool active = false;
+  LONG from = 0;
+  LONG to = 0;
+  DWORD duration_ms = 1;
+  DWORD start_tick = 0;
+  UINT_PTR timer_id = 0;
+};
+
+XSlide g_slide;
+
+// Last geometry this channel asked for (the target of a running slide, not
+// wherever the window happens to be this frame). It is what tells "only the ball
+// reserve changed" apart from a real re-layout.
+struct AppliedGeometry {
+  bool valid = false;
+  LONG left = 0;
+  LONG top = 0;
+  LONG width = 0;
+  LONG height = 0;
+};
+
+AppliedGeometry g_geometry;
+
+void CancelXSlide() {
+  if (g_slide.timer_id != 0) KillTimer(nullptr, g_slide.timer_id);
+  g_slide = XSlide{};
+}
+
+void CALLBACK XSlideProc(HWND, UINT, UINT_PTR timer_id, DWORD) {
+  if (!g_slide.active || g_slide.timer_id != timer_id) {
+    KillTimer(nullptr, timer_id);
+    return;
+  }
+  if (!IsWindow(g_slide.hwnd)) {
+    CancelXSlide();
+    return;
+  }
+  const DWORD elapsed = GetTickCount() - g_slide.start_tick;
+  double t = g_slide.duration_ms == 0
+                 ? 1.0
+                 : static_cast<double>(elapsed) / g_slide.duration_ms;
+  if (t > 1.0) t = 1.0;
+  const double eased = t * t * (3.0 - 2.0 * t);  // smoothstep easing
+  const LONG span = g_slide.to - g_slide.from;
+  const LONG left =
+      t >= 1.0 ? g_slide.to
+               : g_slide.from + static_cast<LONG>(span * eased +
+                                                  (span >= 0 ? 0.5 : -0.5));
+  // Only x moves: the y must be read back, otherwise this would drag the capsule
+  // to the top of the screen (SWP_NOSIZE keeps the size, not the position).
+  RECT current{};
+  if (!GetWindowRect(g_slide.hwnd, &current)) {
+    CancelXSlide();
+    return;
+  }
+  SetWindowPos(g_slide.hwnd, nullptr, left, current.top, 0, 0,
+               SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+  if (t >= 1.0) CancelXSlide();
+}
+
+void StartXSlide(HWND hwnd, LONG from, LONG to, DWORD duration_ms) {
+  CancelXSlide();
+  if (!IsWindow(hwnd) || from == to) return;
+  g_slide.hwnd = hwnd;
+  g_slide.from = from;
+  g_slide.to = to;
+  g_slide.duration_ms = duration_ms == 0 ? 1 : duration_ms;
+  g_slide.start_tick = GetTickCount();
+  const UINT_PTR timer_id = SetTimer(nullptr, 0, kXSlideTimerMs, XSlideProc);
+  if (timer_id == 0) {
+    // Timer creation failed: land on the target instead of stalling in between.
+    RECT current{};
+    if (GetWindowRect(hwnd, &current)) {
+      SetWindowPos(hwnd, nullptr, to, current.top, 0, 0,
+                   SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    return;
+  }
+  g_slide.active = true;
+  g_slide.timer_id = timer_id;
+}
+
+
 //
 // A full-width docked bar covered the desktop shortcuts on the left; a centered
 // capsule leaves them visible.
@@ -327,6 +422,9 @@ void ConfigureWindow(HWND hwnd, const flutter::EncodableMap& args) {
   // A plain configure always wins over a still-running fade: settings edits
   // must never leave the window at a stale alpha.
   CancelAlphaFade();
+  // ... and over a running slide: a fresh configure re-decides the whole
+  // geometry, so a half-finished slide would only fight the new target.
+  CancelXSlide();
 
   const double bar_width = GetDouble(args, "bar_width", 720.0);
   const double bar_height = GetDouble(args, "bar_height", 52.0);
@@ -398,9 +496,25 @@ void ConfigureWindow(HWND hwnd, const flutter::EncodableMap& args) {
     top = work.top + static_cast<LONG>(work_height * kUpperCenterRatio);
   }
 
+  // Did *only* the ball's reserve move the capsule? Then glide over instead of
+  // snapping - the ball is fading in / out next to it at the same time, so the
+  // two moves read as one. Anything else (position, scale, layer, narrow-screen
+  // clamp) changes more than the x and still lands instantly.
+  RECT current{};
+  GetWindowRect(hwnd, &current);
+  const LONG dx = left - g_geometry.left;
+  const bool slide_only =
+      g_geometry.valid && dx != 0 &&
+      (dx > 0 ? dx <= kMaxSlidePx : -dx <= kMaxSlidePx) &&
+      g_geometry.top == top && g_geometry.width == width &&
+      g_geometry.height == height && !SystemAnimationsDisabled();
+  // The x this frame starts from: wherever the window is now when a slide begins
+  // (a previous slide may have been interrupted), the target otherwise.
+  const LONG start_left = slide_only ? current.left : left;
+
   // "desktop" layer stays below other windows; "topMost" floats above them.
   HWND insert_after = (layer == "topMost") ? HWND_TOPMOST : HWND_BOTTOM;
-  SetWindowPos(hwnd, insert_after, left, top, width, height,
+  SetWindowPos(hwnd, insert_after, start_left, top, width, height,
                SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
 
   // Clip the window into a capsule (ellipse diameter = height, so both ends are
@@ -414,6 +528,13 @@ void ConfigureWindow(HWND hwnd, const flutter::EncodableMap& args) {
   }
 
   ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+
+  if (slide_only) {
+    // Moving left makes room for a ball that is arriving (its longer fade-in);
+    // moving right is the capsule reclaiming the space as the ball leaves.
+    StartXSlide(hwnd, current.left, left, dx < 0 ? kXSlideInMs : kXSlideOutMs);
+  }
+  g_geometry = AppliedGeometry{true, left, top, width, height};
 }
 
 void HandleConfigure(

@@ -548,9 +548,15 @@ class DesktopScheduleProvider extends ChangeNotifier {
   /// 浮窗运行在独立的 Flutter engine（独立 isolate）里，不让它直接读数据库；
   /// 主窗口把「已算好的状态 + 外观参数」整体推过去，两边渲染同一份数据。
   /// 外观参数也放在这里，浮窗发现变化时再调原生通道设置窗口样式。
-  Map<String, dynamic> toBarPayload() {
+  ///
+  /// [ballVisible] 由主窗口按「球此刻是否真的在屏幕上」传入：球隐藏时让位归零，
+  /// 胶囊回到真正的水平居中（见 [desktopBallReserve]）。
+  Map<String, dynamic> toBarPayload({bool ballVisible = true}) {
     final label = weatherLabel;
-    final reserve = desktopBallReserve(ballEnabled: _ballEnabled);
+    final reserve = desktopBallReserve(
+      ballEnabled: _ballEnabled,
+      ballVisible: ballVisible,
+    );
     return {
       'state': _state.toJson(),
       'weather_label': label,

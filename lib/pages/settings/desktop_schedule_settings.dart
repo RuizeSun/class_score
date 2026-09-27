@@ -49,7 +49,8 @@ class DesktopScheduleSettingsView extends StatelessWidget {
           title: const Text('在桌面显示悬浮球'),
           subtitle: const Text(
             '显示课表胶囊时球贴在胶囊右侧（与胶囊同色同高，两者作为整体居中于屏幕）；'
-            '没有胶囊时停在屏幕右上角，可拖动调整',
+            '没有胶囊时停在屏幕右上角，可拖动调整；'
+            '主窗口在屏幕上时球会淡出隐藏，最小化 / 收进托盘后淡入',
           ),
           value: provider.ballEnabled,
           onChanged: provider.setBallEnabled,

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'package:window_manager/window_manager.dart';
 import 'models/desktop_ball_style.dart';
 import 'pages/desktop_bar/desktop_bar_window.dart';
 import 'services/app_shell_service.dart';
@@ -130,7 +131,7 @@ class AppEntry extends StatefulWidget {
   State<AppEntry> createState() => _AppEntryState();
 }
 
-class _AppEntryState extends State<AppEntry> {
+class _AppEntryState extends State<AppEntry> with WindowListener {
   DesktopScheduleProvider? _desktop;
   AuthProvider? _auth;
 
@@ -146,12 +147,45 @@ class _AppEntryState extends State<AppEntry> {
   /// 悬浮球最近一次推给原生的配置签名；null = 球当前是关闭的（窗口不存在）。
   String? _ballSignature;
 
+  /// 悬浮球推送的并发保护（窗口事件与每秒的状态推送可能同时进来）。
+  bool _syncingBall = false;
+  bool _ballSyncPending = false;
+
+  /// 主窗口是否正显示在屏幕上（未最小化、未收进托盘）。
+  ///
+  /// 初值取 true：启动时窗口马上就会显示，先按「在屏上」算，球不会先闪一下
+  /// 再被收起来。
+  bool _appOnScreen = true;
+
+  /// 是否已经真正观察到过一次「窗口在屏上」。
+  ///
+  /// 启动瞬间主窗口还没 `Show()`（runner 要等首帧渲染完才显示窗口），这时探测
+  /// 会得到「不在屏上」；直接采信的话球会先淡入、几十毫秒后再被收回去。所以
+  /// 只有在见过窗口在屏上之后，才允许把「不在屏上」当真。
+  bool _appOnScreenSeen = false;
+
+  /// 显隐查询失败只记一次日志：状态每秒刷新，一直失败会把日志刷爆。
+  bool _loggedOnScreenFailure = false;
+
+  /// 最近一次已记录的球的显隐，用于只在翻转时写一行日志。
+  bool? _loggedBallVisible;
+
+  /// 球此刻是否应当出现在屏幕上（开关关掉时不算：那种时候球窗口会被销毁、
+  /// 让位也归零）。
+  ///
+  /// 由 [_refreshBallOnScreen] 在每一拍开头刷新，供 [_pushDesktopBall]（球窗口的
+  /// 显隐）与 [DesktopScheduleProvider.toBarPayload]（胶囊的让位）共用。
+  bool _ballShown = false;
+
   /// 托盘图标当前是否已显示：主题色之类的无关通知不该反复过通道。
   bool? _trayEnabled;
 
   @override
   void initState() {
     super.initState();
+    // 主窗口「在屏上 / 收进托盘 / 最小化」一变就立刻同步球：事件来自真实窗口
+    // 过程（WM_SIZE / WM_SHOWWINDOW），比每秒的状态推送及时得多。
+    windowManager.addListener(this);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // 先把 Provider 取出来：下面有 await，之后再碰 context 会触发
       // use_build_context_synchronously（而且 widget 也可能已被销毁）。
@@ -225,6 +259,9 @@ class _AppEntryState extends State<AppEntry> {
     }
     _syncingBar = true;
     try {
+      // 球此刻是否在屏上要在推内容之前算好：它同时决定胶囊的让位（球藏起来时
+      // 让位归零，胶囊才真正居中），内容与球必须在同一拍里用同一个结果。
+      await _refreshBallOnScreen();
       do {
         _barSyncPending = false;
         if (!desktop.enabled) {
@@ -255,9 +292,12 @@ class _AppEntryState extends State<AppEntry> {
         }
 
         if (_barVisible) {
-          // 外观参数（位置 / 层级 / 穿透 / 透明度 / 缩放）一并放在内容快照里，
-          // 浮窗发现变化时再调原生通道应用，主窗口不需要额外的配置通道。
-          await DesktopWindowService.pushBarPayload(desktop.toBarPayload());
+          // 外观参数（位置 / 层级 / 穿透 / 透明度 / 缩放 / 球的让位）一并放在
+          // 内容快照里，浮窗发现变化时再调原生通道应用，主窗口不需要额外的
+          // 配置通道。
+          await DesktopWindowService.pushBarPayload(
+            desktop.toBarPayload(ballVisible: _ballShown),
+          );
         }
       } while (_barSyncPending);
 
@@ -273,9 +313,27 @@ class _AppEntryState extends State<AppEntry> {
   /// 状态每秒通知一次，但内容没变时不必过通道：用签名去重（null 表示球当前
   /// 关闭、窗口不存在）。胶囊在屏上 → 贴胶囊右侧（原生读胶囊真实矩形对齐，
   /// 球高与胶囊等高、底色用胶囊底色）；否则 → 屏幕右上角（偏移来自用户拖动）。
+  ///
+  /// 与 [_syncDesktopBar] 同一套「挂起标记」合并：窗口事件与每秒的推送可能同时
+  /// 进来，正在同步时只标记待处理，结束后补一次。
   Future<void> _syncDesktopBall(DesktopScheduleProvider desktop) async {
     if (!mounted) return;
+    if (_syncingBall) {
+      _ballSyncPending = true;
+      return;
+    }
+    _syncingBall = true;
+    try {
+      do {
+        _ballSyncPending = false;
+        await _pushDesktopBall(desktop);
+      } while (_ballSyncPending);
+    } finally {
+      _syncingBall = false;
+    }
+  }
 
+  Future<void> _pushDesktopBall(DesktopScheduleProvider desktop) async {
     if (!desktop.ballEnabled) {
       if (_ballSignature == null) return;
       _ballSignature = null;
@@ -283,12 +341,16 @@ class _AppEntryState extends State<AppEntry> {
       return;
     }
 
+    // 主窗口就在屏幕上时球没有意义（它是「叫回窗口」的入口）：原生侧会淡出并
+    // 隐藏窗口（保留窗口对象，下次需要时淡入）。
+    final visible = _ballShown;
     final mode = pickDesktopBallMode(barVisible: _barVisible);
     // 球与胶囊同色：直接取胶囊常态条的底色，拼在一起才像同一个挂件。色值仍是
     // Dart 侧的 DesktopBarPalette 一份真相，原生只负责照着画。
     final color = DesktopBarPalette.barBackground.toARGB32();
     final signature = [
       mode.name,
+      visible,
       desktop.scaledCapsuleHeight,
       desktop.ballOffsetX,
       desktop.ballOffsetY,
@@ -302,6 +364,7 @@ class _AppEntryState extends State<AppEntry> {
     await DesktopBallService.configure(
       mode: mode,
       enabled: true,
+      visible: visible,
       capsuleHeight: desktop.scaledCapsuleHeight,
       gap: DesktopBarMetrics.ballGap,
       margin: desktop.ballMargin,
@@ -313,8 +376,70 @@ class _AppEntryState extends State<AppEntry> {
     );
   }
 
+  /// 主窗口是否正显示在屏幕上（未最小化、未收进托盘）。
+  ///
+  /// 探测主窗口是否在屏上，刷新 [_ballShown]（球的显隐 + 胶囊的让位共用）。
+  Future<void> _refreshBallOnScreen() async {
+    final shown = shouldShowDesktopBall(
+      ballEnabled: true,
+      onScreen: await _readAppOnScreen(),
+    );
+    _ballShown = shown;
+    if (_loggedBallVisible == shown) return;
+    _loggedBallVisible = shown;
+    await DesktopBarLog.write(
+      DesktopWindowService.mainTag,
+      shown ? '悬浮球：主窗口已收进托盘 / 最小化，淡入显示' : '悬浮球：主窗口在屏上，淡出隐藏',
+    );
+  }
+
+  /// 查询失败（通道未就绪等）时沿用上次值：宁可保持现状，也不要因为一次失败的
+  /// 探测把球凭空收起或放出。
+  Future<bool> _readAppOnScreen() async {
+    try {
+      final probed = appWindowOnScreen(
+        visible: await windowManager.isVisible(),
+        minimized: await windowManager.isMinimized(),
+      );
+      if (probed) _appOnScreenSeen = true;
+      _appOnScreen = _appOnScreenSeen ? probed : true;
+    } catch (error) {
+      if (!_loggedOnScreenFailure) {
+        _loggedOnScreenFailure = true;
+        await DesktopBarLog.write(
+          DesktopWindowService.mainTag,
+          '查询主窗口显隐失败（沿用上次值=$_appOnScreen）：$error',
+        );
+      }
+    }
+    return _appOnScreen;
+  }
+
+  /// 窗口事件驱动的即时同步（每秒的状态推送只作兜底）。
+  ///
+  /// 走整条 [_syncDesktopBar]：球的显隐一变，胶囊的让位（是否居中）也要跟着
+  /// 变，两者必须同拍下发。
+  void _syncBallNow() {
+    if (_desktop == null) return;
+    unawaited(_syncDesktopBar());
+  }
+
+  @override
+  void onWindowMinimize() => _syncBallNow();
+
+  @override
+  void onWindowRestore() => _syncBallNow();
+
+  @override
+  void onWindowEvent(String eventName) {
+    // 只有影响「窗口是否在屏上」的事件需要同步；move / resize 之类的高频事件
+    // 交给每秒的推送兜底，不在这里反复查窗口状态。
+    if (eventName == 'show' || eventName == 'hide') _syncBallNow();
+  }
+
   @override
   void dispose() {
+    windowManager.removeListener(this);
     _auth?.removeListener(_syncSchedulesToDesktop);
     _desktop?.removeListener(_syncDesktopBar);
     context.read<PersonalizationProvider>().removeListener(_syncTrayIcon);

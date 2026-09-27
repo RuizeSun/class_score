@@ -67,9 +67,13 @@ class DesktopBallService {
   /// 配色也都取胶囊本身），并镜像它的层级 / 不透明度（前台态换一套外观也自动
   /// 跟随），因此这里只额外给 [gap]；[offsetX] / [offsetY] 只在右上角
   /// （[DesktopBallMode.corner]）生效。
+  /// [visible] 是「现在要不要显示」——与 [enabled]（功能开关）分离：
+  /// 关开关时 Dart 侧直接 [close] 掉窗口；主窗口在屏上时只是 `visible: false`，
+  /// 窗口留着，原生侧淡出后隐藏，下次需要时再淡入（不重建、不闪烁）。
   static Future<void> configure({
     required DesktopBallMode mode,
     required bool enabled,
+    required bool visible,
     required double capsuleHeight,
     required double gap,
     required double margin,
@@ -84,6 +88,7 @@ class DesktopBallService {
           .invokeMethod<void>('configure', {
             'mode': mode == DesktopBallMode.besideBar ? 'beside' : 'corner',
             'enabled': enabled,
+            'visible': visible,
             'capsule_height': capsuleHeight,
             'gap': gap,
             'margin': margin,
@@ -96,6 +101,7 @@ class DesktopBallService {
           .timeout(_callTimeout);
       await _log(
         '悬浮球：落点=${mode.label} '
+        '${visible ? '显示中' : '已隐藏（主窗口在屏上）'} '
         '偏移=(${offsetX.round()}, ${offsetY.round()})',
       );
     } catch (error) {

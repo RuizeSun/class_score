@@ -28,6 +28,36 @@ void main() {
     });
   });
 
+  group('程序在屏上 → 不显示悬浮球', () {
+    test('窗口在屏上（可见且未最小化）→ 球隐藏', () {
+      expect(appWindowOnScreen(visible: true, minimized: false), isTrue);
+      expect(
+        shouldShowDesktopBall(ballEnabled: true, onScreen: true),
+        isFalse,
+      );
+    });
+
+    test('收进托盘（不可见）/ 最小化 → 球显示', () {
+      expect(appWindowOnScreen(visible: false, minimized: false), isFalse);
+      expect(appWindowOnScreen(visible: true, minimized: true), isFalse);
+      expect(
+        shouldShowDesktopBall(ballEnabled: true, onScreen: false),
+        isTrue,
+      );
+    });
+
+    test('开关关掉时永远不显示（此时球窗口会被销毁）', () {
+      expect(
+        shouldShowDesktopBall(ballEnabled: false, onScreen: false),
+        isFalse,
+      );
+      expect(
+        shouldShowDesktopBall(ballEnabled: false, onScreen: true),
+        isFalse,
+      );
+    });
+  });
+
   group('推给胶囊浮窗的让位参数', () {
     test('球开着：间距 + 与胶囊等高的球径（ratio 恒为 1）', () {
       final reserve = desktopBallReserve(ballEnabled: true);
@@ -39,6 +69,23 @@ void main() {
       final reserve = desktopBallReserve(ballEnabled: false);
       expect(reserve.gap, 0);
       expect(reserve.ratio, 0);
+    });
+
+    test('球藏着（主窗口在屏上）：同样归零，胶囊回到真正的水平居中', () {
+      // 球只是「叫回主窗口」的入口，主窗口在屏幕上时它隐藏；此时让位必须归零，
+      // 否则胶囊会停在「给球留出的半个让位」上（偏左、右边空一块）。
+      final hidden = desktopBallReserve(ballEnabled: true, ballVisible: false);
+      expect(hidden.gap, 0);
+      expect(hidden.ratio, 0);
+      expect(
+        desktopBallReserve(ballEnabled: false, ballVisible: false).gap,
+        0,
+      );
+      // 球重新出现（收进托盘 / 最小化）才让位。
+      expect(
+        desktopBallReserve(ballEnabled: true, ballVisible: true).gap,
+        DesktopBarMetrics.ballGap,
+      );
     });
   });
 
