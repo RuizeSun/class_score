@@ -188,11 +188,13 @@ Widget _buildView({
 /// 渲染整个「查询」页（左右分屏）。
 Widget _buildPage({
   required ScoreProvider scoreProvider,
+  GroupProvider? groupProvider,
   PersonalizationProvider? personalization,
 }) {
   return MultiProvider(
     providers: _providers(
       scoreProvider: scoreProvider,
+      groupProvider: groupProvider,
       personalization: personalization,
     ),
     child: const MaterialApp(home: StatisticsAnalysisPage()),
@@ -408,6 +410,60 @@ void main() {
       groupId: null,
     ));
     expect(find.text('已按「张三」筛选'), findsNothing);
+    expect(
+      tester.widget<RankingTile>(find.byType(RankingTile).first).selected,
+      isFalse,
+    );
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('分屏页：右栏改筛选小组 → 左栏联动提示与高亮同步消失（不回退到全部记录）', (tester) async {
+    _useDesktopViewport(tester);
+    final scoreProvider = _FakeScoreProvider(
+      students: _students,
+      groups: _groupScores,
+    );
+    final groups = [Group(id: 1, name: '第一组'), Group(id: 2, name: '第二组')];
+
+    await tester.pumpWidget(
+      _buildPage(
+        scoreProvider: scoreProvider,
+        groupProvider: _FakeGroupProvider(groups),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 左栏切到小组榜并点「第一组」行 → 右栏出现联动提示
+    await tester.tap(find.text('小组'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(RankingTile).first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('已按「第一组」筛选'), findsOneWidget);
+    expect(scoreProvider.loadCalls.last, (
+      targetType: null,
+      targetId: null,
+      groupId: 1,
+    ));
+    expect(
+      tester.widget<RankingTile>(find.byType(RankingTile).first).selected,
+      isTrue,
+    );
+
+    // 在右栏「筛选小组」里改选另一组：联动提示与左栏高亮一起消失，
+    // 且保留用户刚选的筛选（按第二组重新拉取，而不是回到全部记录）
+    await tester.tap(find.byKey(const ValueKey('group_1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('第二组').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('已按「第一组」筛选'), findsNothing);
+    expect(scoreProvider.loadCalls.last, (
+      targetType: null,
+      targetId: null,
+      groupId: 2,
+    ));
     expect(
       tester.widget<RankingTile>(find.byType(RankingTile).first).selected,
       isFalse,

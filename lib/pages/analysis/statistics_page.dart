@@ -334,7 +334,9 @@ class _StatisticsViewState extends State<StatisticsView> {
 
 /// 记录管理栏：筛选 + 记录列表（分屏右栏）。
 ///
-/// 支持左栏（统计报表）联动：外部传入 [externalFilter] 时同步筛选并高亮提示。
+/// 支持左栏（统计报表）联动：外部传入 [externalFilter] 时同步筛选并高亮提示；
+/// 反过来说，用户在本栏下拉里改过筛选后，联动提示会随之消失（见
+/// [_RecordManagementViewState._releaseLinkedFilterIfChanged]）。
 class RecordManagementView extends StatefulWidget {
   const RecordManagementView({
     super.key,
@@ -345,7 +347,9 @@ class RecordManagementView extends StatefulWidget {
   /// 左栏联动过来的筛选目标；为空表示无联动筛选。
   final ({String type, int id, String name})? externalFilter;
 
-  /// 清除联动筛选：同时清空本栏筛选与左栏高亮。
+  /// 清除联动筛选：撤掉「已按「X」筛选」提示与左栏高亮。
+  /// 点提示上的 ✕ 时一并清空本栏筛选回到全部记录；若因本栏手动改筛选而触发，
+  /// 则保留用户刚选的筛选（见 [State.didUpdateWidget] 的判定）。
   final VoidCallback? onClearExternalFilter;
 
   @override
@@ -378,9 +382,34 @@ class _RecordManagementViewState extends State<RecordManagementView> {
   void didUpdateWidget(covariant RecordManagementView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.externalFilter == widget.externalFilter) return;
+    // 联动已被本栏手动筛选取代（见 _releaseLinkedFilterIfChanged）：本栏筛选已不是旧
+    // 联动目标，保留用户刚选的筛选，只让提示与左栏高亮消失，不回退到「全部记录」。
+    if (widget.externalFilter == null &&
+        oldWidget.externalFilter != null &&
+        !_matchesExternalFilter(oldWidget.externalFilter)) {
+      return;
+    }
     // 左栏选中变化（或清除联动）：同步筛选并重新拉取记录
     _syncExternalFilter(widget.externalFilter);
     _loadRecords();
+  }
+
+  /// 本栏当前筛选是否仍与左栏联动的目标一致（[filter] 为空表示无联动，恒为 true）。
+  bool _matchesExternalFilter(({String type, int id, String name})? filter) {
+    if (filter == null) return true;
+    if (filter.type == 'group') {
+      return _filterGroupId == filter.id && _filterStudentId == null;
+    }
+    return _filterStudentId == filter.id;
+  }
+
+  /// 本栏（记录管理）手动改过筛选后调用：一旦筛选目标已不是左栏联动的那一个，
+  /// 就通知左栏清除联动——「已按「X」筛选」提示与左栏榜单高亮同步消失。
+  /// 仍选中同一目标时不打扰联动，避免同值重选也把提示抹掉。
+  void _releaseLinkedFilterIfChanged() {
+    final filter = widget.externalFilter;
+    if (filter == null || _matchesExternalFilter(filter)) return;
+    widget.onClearExternalFilter?.call();
   }
 
   /// 把左栏联动的目标同步到本栏筛选状态。
@@ -906,6 +935,8 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                       _filterGroupId = v;
                       _filterStudentId = null;
                     });
+                    // 改成本栏自己的筛选后，左栏联动提示不再成立
+                    _releaseLinkedFilterIfChanged();
                     _loadRecords();
                   },
                 ),
@@ -947,6 +978,8 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                   ],
                   onChanged: (v) {
                     setState(() => _filterStudentId = v);
+                    // 改成本栏自己的筛选后，左栏联动提示不再成立
+                    _releaseLinkedFilterIfChanged();
                     _loadRecords();
                   },
                 ),

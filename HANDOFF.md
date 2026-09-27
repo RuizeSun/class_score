@@ -2,10 +2,10 @@
 
 ## 元信息
 
-- 生成时间：2026-09-26（2026-09-27 更新悬浮球显隐 / 让位、倒计时与提醒语显示时间）
+- 生成时间：2026-09-26（2026-09-27 更新悬浮球显隐 / 让位、倒计时与提醒语显示时间、查询页联动提示）
 - commit：本地已提交「倒计时 / 提醒语显示时间拆分」（尚未 push）；历史：9924377 docs、3305436 悬浮球显隐、2a9e75c = build: 1.5.0
 - 分支：main
-- last_verified_commit：工作区（`fvm flutter test` 146 全过、`fvm flutter analyze` 无新增）；上一次已验证提交 3305436（143 全过、analyze 无新增、`fvm flutter build windows --release` 通过；运行时实测：球隐藏时胶囊 left=920（2560 宽屏精确居中）、球显示时 888，位移是 140/220ms 缓动滑动）
+- last_verified_commit：工作区（`fvm flutter test` 147 全过、`fvm flutter analyze` 48 条既有 info、无新增）；上一次已验证提交 3305436（143 全过、analyze 无新增、`fvm flutter build windows --release` 通过；运行时实测：球隐藏时胶囊 left=920（2560 宽屏精确居中）、球显示时 888，位移是 140/220ms 缓动滑动）
 - 仅支持 Windows（用户明确；android/ios/macos/linux/web 目录为脚手架残留）
 
 ## 项目一句话
@@ -46,6 +46,7 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
 - 加页面（底部 Tab）：lib/pages/ 新建 → home_page.dart:43 \_pages 与 destinations 各加一项；Tab 间跳转仿 home_page.dart:46 onOpenQueryTab。
 - 加设置子页：lib/pages/settings/ 新建 View → settings_hub_page.dart 的 section 枚举 + :195-234 返回值 + :108 ListView 入口。
 - 二级整屏页：Navigator.push，参考 analysis/statistics_page.dart:38（注意 dashboard_page.dart:17 注释：Tab 内页面不可 push）。
+- 查询页（统计报表 ↔ 记录管理）联动：左栏点行 → 右栏 `externalFilter`（`_syncExternalFilter`）设本栏筛选；提示胶囊 ✕ 走 `onClearExternalFilter`（清筛选回全部）。本栏手动改下拉经 `_releaseLinkedFilterIfChanged`（statistics_page.dart:405）判定已非联动目标后只撤提示/高亮、留新筛选；`didUpdateWidget`（:378）为此特判提前 return，勿再无脑同步。
 - 改状态：改/加 lib/providers/\*\_provider.dart；新 Provider 需在 main.dart:86 注册；持久化经 DatabaseHelper。
 - 调 API：现有仅 weather_service.dart；新 HTTP 一律放 lib/services/，用 dart:io HttpClient（仓库无 dio/http 包）。
 - 改模型：lib/models/\*.dart（toMap/fromMap 手写，见 student.dart:18/28）+ database_helper.dart:43 \_onCreate 并在 \_onUpgrade 加迁移、version 递增（当前 10）。
