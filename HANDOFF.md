@@ -3,9 +3,9 @@
 ## 元信息
 
 - 生成时间：2026-09-26（2026-09-27 更新悬浮球显隐 / 让位）
-- commit：5e7828e（悬浮球显隐 + 胶囊让位；上一版 2a9e75c = build: 1.5.0）
+- commit：3305436（悬浮球显隐 + 胶囊让位；上一版 2a9e75c = build: 1.5.0）
 - 分支：main
-- last_verified_commit：5e7828e（`fvm flutter test` 143 全过、`fvm flutter analyze` 无新增、`fvm flutter build windows --release` 通过；运行时实测：球隐藏时胶囊 left=920（2560 宽屏精确居中）、球显示时 888，位移是 140/220ms 缓动滑动）
+- last_verified_commit：3305436（`fvm flutter test` 143 全过、`fvm flutter analyze` 无新增、`fvm flutter build windows --release` 通过；运行时实测：球隐藏时胶囊 left=920（2560 宽屏精确居中）、球显示时 888，位移是 140/220ms 缓动滑动）
 - 仅支持 Windows（用户明确；android/ios/macos/linux/web 目录为脚手架残留）
 
 ## 项目一句话
