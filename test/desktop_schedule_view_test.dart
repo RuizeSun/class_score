@@ -43,7 +43,7 @@ Future<void> _pumpBar(
   WidgetTester tester,
   DesktopScheduleState state, {
   String? weatherLabel = '28℃',
-  bool showPreparationHint = false,
+  DesktopCountdownView countdownView = DesktopCountdownView.countdown,
   double scale = 1.0,
   double? width,
   double viewportWidth = 1280,
@@ -62,7 +62,7 @@ Future<void> _pumpBar(
             state: state,
             weatherLabel: weatherLabel,
             weatherKind: WeatherKind.partlyCloudy,
-            showPreparationHint: showPreparationHint,
+            countdownView: countdownView,
             scale: scale,
             width: width ?? DesktopBarMetrics.capsuleWidth * scale,
           ),
@@ -153,10 +153,29 @@ void main() {
   });
 
   testWidgets('图四：与图三交替显示准备提醒，两图共用同一背景进度条', (tester) async {
-    await _pumpBar(tester, _stateAt(8, 59, 7), showPreparationHint: true);
+    await _pumpBar(
+      tester,
+      _stateAt(8, 59, 7),
+      countdownView: DesktopCountdownView.hint,
+    );
 
     expect(find.text('准备上课，请回到座位并保持安静，做好上课准备。'), findsOneWidget);
     expect(find.text('53 秒'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('倒计时与提醒语都设为不显示：只剩背景进度条，不显示任何文字', (tester) async {
+    await _pumpBar(
+      tester,
+      _stateAt(8, 59, 7),
+      countdownView: DesktopCountdownView.none,
+    );
+
+    expect(find.text('53 秒'), findsNothing);
+    expect(
+      find.text('准备上课，请回到座位并保持安静，做好上课准备。'),
+      findsNothing,
+    );
     expect(tester.takeException(), isNull);
   });
 

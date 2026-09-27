@@ -37,7 +37,7 @@ class _DesktopBarWindowState extends State<DesktopBarWindow> {
   DesktopScheduleState? _state;
   String? _weatherLabel;
   WeatherKind? _weatherKind;
-  bool _showPreparationHint = false;
+  DesktopCountdownView _countdownView = DesktopCountdownView.countdown;
   double _scale = 1.0;
 
   /// 悬浮球占位参数（payload 推来）：球开着时原生会据此把胶囊左移半个让位，
@@ -162,8 +162,7 @@ class _DesktopBarWindowState extends State<DesktopBarWindow> {
                 (item) => item.name == kindName,
                 orElse: () => WeatherKind.unknown,
               );
-        _showPreparationHint =
-            payload['show_preparation_hint'] as bool? ?? false;
+        _countdownView = _parseCountdownView(payload['countdown_view']);
         _scale = appearance.scale;
         _ballGap = (payload['ball_gap'] as num?)?.toDouble() ?? 0;
         _ballRatio = (payload['ball_ratio'] as num?)?.toDouble() ?? 0;
@@ -255,6 +254,13 @@ class _DesktopBarWindowState extends State<DesktopBarWindow> {
       flipped: flipped,
     );
   }
+
+  /// 解析倒计时阶段该显示的内容；字段缺失 / 非法时回退到显示倒计时明细。
+  static DesktopCountdownView _parseCountdownView(Object? value) =>
+      DesktopCountdownView.values.firstWhere(
+        (item) => item.name == value,
+        orElse: () => DesktopCountdownView.countdown,
+      );
 
   static DesktopBarPosition _parsePosition(
     Object? value, {
@@ -379,7 +385,7 @@ class _DesktopBarWindowState extends State<DesktopBarWindow> {
                 state: state,
                 weatherLabel: _weatherLabel,
                 weatherKind: _weatherKind,
-                showPreparationHint: _showPreparationHint,
+                countdownView: _countdownView,
                 scale: _scale,
               ),
       ),

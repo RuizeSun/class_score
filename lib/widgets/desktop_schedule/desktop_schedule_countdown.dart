@@ -8,19 +8,20 @@ import 'desktop_schedule_common.dart';
 /// 上课倒计时条（图三 ↔ 图四）。
 ///
 /// 两图文案共用同一层背景进度条：填充比例 = 已等待 / 整个提醒窗口时长，
-/// 于是「背景在走」这件事在两图之间是连续的，只有文字在交替。
+/// 于是「背景在走」这件事在两图之间是连续的，只有文字在交替；用户把两类内容
+/// 都设为「不显示」时（见 [DesktopCountdownView.none]）就只剩这层进度条。
 class DesktopScheduleCountdown extends StatelessWidget {
   const DesktopScheduleCountdown({
     super.key,
     required this.state,
-    required this.showPreparationHint,
+    required this.view,
     this.scale = 1.0,
   });
 
   final DesktopScheduleState state;
 
-  /// true 时显示图四（准备上课提醒），false 时显示图三（倒计时明细）。
-  final bool showPreparationHint;
+  /// 此刻显示哪种内容：倒计时明细（图三）/ 提醒语（图四）/ 都不显示。
+  final DesktopCountdownView view;
 
   final double scale;
 
@@ -51,11 +52,14 @@ class DesktopScheduleCountdown extends StatelessWidget {
               horizontal: DesktopBarMetrics.capsulePadding * scale,
             ),
             child: FadeThroughSwitcher(
-              switchKey: showPreparationHint,
+              switchKey: view,
               duration: AppMotion.medium,
-              child: showPreparationHint
-                  ? _buildPreparationHint(scale)
-                  : _buildCountdown(scale),
+              child: switch (view) {
+                DesktopCountdownView.countdown => _buildCountdown(scale),
+                DesktopCountdownView.hint => _buildPreparationHint(scale),
+                // 两个时长都设为 0：不显示任何文字，只留背景进度条
+                DesktopCountdownView.none => const SizedBox.shrink(),
+              },
             ),
           ),
         ],

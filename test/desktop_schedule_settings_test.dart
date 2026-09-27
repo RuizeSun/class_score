@@ -126,4 +126,39 @@ void main() {
     expect(find.text('前台整体缩放'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('倒计时 / 提醒语可分别设置显示时间，0 显示为「不显示」', (tester) async {
+    await _pumpSettings(tester);
+
+    // 旧的单一「交替间隔」入口已经拆成两个
+    expect(find.text('倒计时与提醒语交替间隔'), findsNothing);
+
+    final countdown = find.widgetWithText(NumberChoiceTile, '倒计时显示时间');
+    final hint = find.widgetWithText(NumberChoiceTile, '提醒语显示时间');
+    expect(countdown, findsOneWidget);
+    expect(hint, findsOneWidget);
+
+    // 默认各 4 秒，且都提供 0（不显示）这一档
+    expect(tester.widget<NumberChoiceTile>(countdown).value, 4);
+    expect(tester.widget<NumberChoiceTile>(hint).value, 4);
+    expect(tester.widget<NumberChoiceTile>(countdown).options, contains(0));
+    expect(tester.widget<NumberChoiceTile>(hint).options, contains(0));
+    expect(tester.widget<NumberChoiceTile>(countdown).zeroLabel, '不显示');
+    expect(tester.widget<NumberChoiceTile>(hint).zeroLabel, '不显示');
+    expect(find.text('4秒'), findsNWidgets(2));
+
+    // 展开选项：0 这一档读作「不显示」，而不是「0秒」
+    await tester.ensureVisible(countdown);
+    await tester.pumpAndSettle();
+    await tester.tap(countdown);
+    await tester.pumpAndSettle();
+    expect(find.byType(SimpleDialog), findsOneWidget);
+    expect(find.text('不显示'), findsOneWidget);
+    expect(find.text('0秒'), findsNothing);
+
+    // 不选中任何值直接关掉，避免触发写库
+    Navigator.pop(tester.element(find.byType(SimpleDialog)));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -2,10 +2,10 @@
 
 ## 元信息
 
-- 生成时间：2026-09-26（2026-09-27 更新悬浮球显隐 / 让位）
-- commit：3305436（悬浮球显隐 + 胶囊让位；上一版 2a9e75c = build: 1.5.0）
+- 生成时间：2026-09-26（2026-09-27 更新悬浮球显隐 / 让位、倒计时与提醒语显示时间）
+- commit：本地已提交「倒计时 / 提醒语显示时间拆分」（尚未 push）；历史：9924377 docs、3305436 悬浮球显隐、2a9e75c = build: 1.5.0
 - 分支：main
-- last_verified_commit：3305436（`fvm flutter test` 143 全过、`fvm flutter analyze` 无新增、`fvm flutter build windows --release` 通过；运行时实测：球隐藏时胶囊 left=920（2560 宽屏精确居中）、球显示时 888，位移是 140/220ms 缓动滑动）
+- last_verified_commit：工作区（`fvm flutter test` 146 全过、`fvm flutter analyze` 无新增）；上一次已验证提交 3305436（143 全过、analyze 无新增、`fvm flutter build windows --release` 通过；运行时实测：球隐藏时胶囊 left=920（2560 宽屏精确居中）、球显示时 888，位移是 140/220ms 缓动滑动）
 - 仅支持 Windows（用户明确；android/ios/macos/linux/web 目录为脚手架残留）
 
 ## 项目一句话
@@ -22,7 +22,7 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
 - lib/services/ — 窗口/托盘/天气/备份/导入等服务
 - lib/widgets/ — 通用组件，含 desktop_schedule/ 浮窗 UI
 - windows/runner/ — 原生 C++（desktop_bar_channel.cpp、desktop_ball_window.cpp、tray_icon.cpp、app_quit.cpp）
-- test/ — 139 个测试；.github/workflows/flutter.yml — CI
+- test/ — 146 个测试；.github/workflows/flutter.yml — CI
 
 ## 核心链路
 
@@ -53,5 +53,6 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
 - 改主题：personalization_provider.dart:97 setSeedColor（存 app_settings 十六进制串，读取 :52 用 radix 16）+ main.dart:117-119；选择 UI 在 pages/settings/personalization_view.dart。
 - 平台权限/原生：windows/runner/（runner.exe.manifest、CMakeLists.txt、\*.cpp 通道），Dart 侧通道常量在 services/desktop_window_service.dart:18、desktop_ball_service.dart、tray_service.dart。
 - 悬浮球显隐 / 让位：球只是「叫回主窗口」的入口，**主窗口在屏上（isVisible && !isMinimized）就不显示**——判定在 main.dart:382 `_refreshBallOnScreen`（windowManager.isVisible/isMinimized，窗口事件 `onWindowMinimize/onWindowRestore/onWindowEvent('show'/'hide')` 即时触发，每秒推送只兜底），显隐经 `desktop_ball_service.dart` 的 `configure(visible:)` 推给原生；原生淡出/淡入 + 隐藏见 desktop_ball_window.cpp 的 `ApplyVisibility`/`StepFade`/`Paint`（fade 走 `SourceConstantAlpha`，淡出中 `WM_NCHITTEST` 不接点击，窗口只隐藏不销毁）。**胶囊的让位必须跟着球的显隐走**：`desktop_schedule_common.dart` 的 `desktopBallReserve(ballEnabled:, ballVisible:)`（球藏着 → 归零 → 胶囊回正）→ provider `toBarPayload(ballVisible:)` → desktop_bar_channel.cpp 的 reserve 计算 + `StartXSlide`（只改了 x 才滑动 0.14/0.22s，其余改动瞬时）。
+- 倒计时 / 提醒语显示时间：设置页 desktop_schedule_settings.dart 两个 NumberChoiceTile（0 = 不显示）→ provider `countdownSeconds`/`hintSeconds`（key `desktop_schedule_countdown_seconds`/`_hint_seconds`；旧 `desktop_schedule_alternate_seconds` 只在尚未写过新键时回退）→ models/desktop_schedule_state.dart 纯函数 `desktopCountdownView()` 按 `now − phaseStart` 求 图三 / 图四 / 都不显示 → provider `countdownView` → payload `countdown_view` → DesktopScheduleWidget.countdownView。
 - 退出程序：原生 app_quit.cpp QuitApplicationNow()（RemoveTrayIcon → TerminateProcess）；托盘 / 悬浮球菜单直接调用它，Dart 侧走 tray_service.dart quitNow()（「关闭窗口即退出」经 app_shell_service.dart quitApplication）。**不要**改回 `window_manager.destroy()` 或 `ExitProcess`：前者只是 PostQuitMessage、后者会跑 DLL detach 收尾子引擎，都要 3~5 秒（实测 5.8s vs 0.14s）。
 - 打包：本地 `fvm flutter build windows --release`；CI：commit message 以 `build: <版本号>` 开头推 main → flutter.yml:12 触发、:31 构建、:38 取版本、:70 打 tag 并发布 Release zip。用户没有要求的情况下严禁私自发布。

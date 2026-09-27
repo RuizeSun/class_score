@@ -23,7 +23,7 @@ class DesktopScheduleWidget extends StatelessWidget {
     required this.state,
     this.weatherLabel,
     this.weatherKind,
-    this.showPreparationHint = false,
+    this.countdownView = DesktopCountdownView.countdown,
     this.scale = 1.0,
     this.width,
   });
@@ -31,7 +31,9 @@ class DesktopScheduleWidget extends StatelessWidget {
   final DesktopScheduleState state;
   final String? weatherLabel;
   final WeatherKind? weatherKind;
-  final bool showPreparationHint;
+
+  /// 上课倒计时阶段显示哪种内容（图三 / 图四 / 都不显示）。
+  final DesktopCountdownView countdownView;
   final double scale;
 
   /// 胶囊宽度；为空表示铺满可用宽度（浮窗里的默认用法）。
@@ -91,7 +93,7 @@ class DesktopScheduleWidget extends StatelessWidget {
       case DesktopSchedulePhase.preCountdown:
         return DesktopScheduleCountdown(
           state: state,
-          showPreparationHint: showPreparationHint,
+          view: countdownView,
           scale: scale,
         );
 
@@ -126,7 +128,7 @@ class DesktopScheduleLive extends StatelessWidget {
       state: provider.state,
       weatherLabel: provider.weatherLabel,
       weatherKind: provider.weatherKind,
-      showPreparationHint: provider.showPreparationHint,
+      countdownView: provider.countdownView,
       scale: scale ?? provider.scale,
       width: width,
     );

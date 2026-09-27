@@ -48,20 +48,56 @@ void main() {
       expect(provider.state.phase, DesktopSchedulePhase.preAlert);
     });
 
-    test('图三 / 图四按设置的间隔交替（默认 4 秒）', () {
+    test('倒计时与提醒语按各自时长交替（默认各 4 秒）', () {
       provider.updateSchedules(_courses, const [], now: _at(8, 57, 2));
       expect(provider.state.phase, DesktopSchedulePhase.preCountdown);
-      // 前 4 秒显示倒计时明细（图三）
-      expect(provider.showPreparationHint, isFalse);
+      // 默认倒计时 4 秒：窗口开始后的前 4 秒显示倒计时明细（图三）
+      expect(provider.countdownView, DesktopCountdownView.countdown);
 
       // 第 4-8 秒切到准备提醒（图四）
       provider.updateSchedules(_courses, const [], now: _at(8, 57, 6));
-      expect(provider.showPreparationHint, isTrue);
+      expect(provider.countdownView, DesktopCountdownView.hint);
+
+      // 第 8 秒进入下一个周期，回到倒计时明细
+      provider.updateSchedules(_courses, const [], now: _at(8, 57, 10));
+      expect(provider.countdownView, DesktopCountdownView.countdown);
     });
 
-    test('非倒计时阶段不做交替', () {
+    test('非倒计时阶段没有倒计时内容视图', () {
       provider.updateSchedules(_courses, const [], now: _at(8, 20));
-      expect(provider.showPreparationHint, isFalse);
+      expect(provider.countdownView, DesktopCountdownView.none);
+    });
+
+    test('desktopCountdownView：可单独显示 / 都不显示', () {
+      DesktopCountdownView at(
+        int seconds, {
+        required int countdown,
+        required int hint,
+      }) => desktopCountdownView(
+        elapsed: Duration(seconds: seconds),
+        countdownSeconds: countdown,
+        hintSeconds: hint,
+      );
+
+      // 只显示倒计时：全程图三
+      expect(at(0, countdown: 5, hint: 0), DesktopCountdownView.countdown);
+      expect(at(9, countdown: 5, hint: 0), DesktopCountdownView.countdown);
+
+      // 只显示提醒语：全程图四
+      expect(at(0, countdown: 0, hint: 5), DesktopCountdownView.hint);
+      expect(at(9, countdown: 0, hint: 5), DesktopCountdownView.hint);
+
+      // 两个都不显示：只剩背景进度条
+      expect(at(3, countdown: 0, hint: 0), DesktopCountdownView.none);
+
+      // 交替：5 秒倒计时 + 3 秒提醒语 = 8 秒一个周期
+      expect(at(4, countdown: 5, hint: 3), DesktopCountdownView.countdown);
+      expect(at(5, countdown: 5, hint: 3), DesktopCountdownView.hint);
+      expect(at(7, countdown: 5, hint: 3), DesktopCountdownView.hint);
+      expect(at(8, countdown: 5, hint: 3), DesktopCountdownView.countdown);
+
+      // 负时长按 0 处理（视作不显示）
+      expect(at(1, countdown: -1, hint: 5), DesktopCountdownView.hint);
     });
 
     test('默认配置与空数据下的推送内容可用', () {
@@ -73,13 +109,17 @@ void main() {
       expect(provider.layer.name, 'desktop');
       expect(provider.clickThrough, isTrue);
       expect(provider.preClassAlertMinutes, 3);
+      // 倒计时 / 提醒语各自的显示时长，默认各 4 秒（即旧版「每 4 秒交替一次」）
+      expect(provider.countdownSeconds, 4);
+      expect(provider.hintSeconds, 4);
 
       // 未设置城市 / 未取到天气时不展示天气块
       expect(provider.weatherLabel, isNull);
 
       final payload = provider.toBarPayload();
       expect(payload['weather_label'], isNull);
-      expect(payload['show_preparation_hint'], isFalse);
+      // 非倒计时阶段该字段无意义（浮窗只在倒计时阶段用它选内容）
+      expect(payload['countdown_view'], DesktopCountdownView.none.name);
       expect(payload['state']['phase'], DesktopSchedulePhase.restDay.name);
       expect(payload['state']['slots'], isEmpty);
       // 外观参数随内容一起下发（浮窗据此调原生通道设置窗口样式）

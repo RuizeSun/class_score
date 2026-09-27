@@ -198,6 +198,51 @@ class DesktopScheduleState {
   }
 }
 
+/// 上课倒计时阶段（[DesktopSchedulePhase.preCountdown]）此刻该显示的内容。
+///
+/// 倒计时把「图三（倒计时明细）」与「图四（准备上课提醒语）」按各自的显示时长
+/// 循环交替；任一时长设为 0 就表示该类内容不显示。
+enum DesktopCountdownView {
+  /// 图三：距上课还剩 N + 下节课信息。
+  countdown,
+
+  /// 图四：准备上课提醒语。
+  hint,
+
+  /// 两种内容都不显示（两个时长都是 0）：只留背景进度条。
+  none,
+}
+
+/// 按「距提醒窗口开始已过多久」与两个显示时长求出此刻该显示的内容。
+///
+/// 交替以 `倒计时时长 + 提醒语时长` 为一个周期：每个周期的前
+/// [countdownSeconds] 秒显示倒计时明细（图三），随后的 [hintSeconds] 秒显示
+/// 提醒语（图四）。任一时长为 0（或负数）表示该类内容不显示：
+/// - 只设倒计时 → 全程显示图三；
+/// - 只设提醒语 → 全程显示图四；
+/// - 两个都为 0 → 返回 [DesktopCountdownView.none]（只剩背景进度条）。
+///
+/// 相位只由时间推导（不做内部计数），因此重启、系统时间被改动后依然连续。
+DesktopCountdownView desktopCountdownView({
+  required Duration elapsed,
+  required int countdownSeconds,
+  required int hintSeconds,
+}) {
+  final countdownMilliseconds = countdownSeconds > 0
+      ? countdownSeconds * 1000
+      : 0;
+  final hintMilliseconds = hintSeconds > 0 ? hintSeconds * 1000 : 0;
+  final cycle = countdownMilliseconds + hintMilliseconds;
+  if (cycle <= 0) return DesktopCountdownView.none;
+
+  final position = elapsed.inMilliseconds % cycle;
+  if (countdownMilliseconds > 0 && position < countdownMilliseconds) {
+    return DesktopCountdownView.countdown;
+  }
+  // 走到这里 position 必然落在提醒语时段（倒计时关掉时它恒小于提醒语时长）。
+  return DesktopCountdownView.hint;
+}
+
 /// 把平台通道传回的嵌套结构转成 `Map<String, dynamic>`。
 ///
 /// 为什么需要：`StandardMethodCodec` 解码后嵌套 Map 的实际类型是

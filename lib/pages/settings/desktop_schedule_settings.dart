@@ -231,7 +231,7 @@ class DesktopScheduleSettingsView extends StatelessWidget {
         // ---- 提示时机 ----
         const SettingsSectionTitle(
           title: '提示时机',
-          subtitle: '临近上课的提前提醒与横幅、倒计时交替节奏',
+          subtitle: '临近上课的提前提醒、横幅时长，以及倒计时与提醒语各自的显示时间',
         ),
         const SizedBox(height: 8),
         NumberChoiceTile(
@@ -253,14 +253,36 @@ class DesktopScheduleSettingsView extends StatelessWidget {
           onChanged: provider.setNoticeSeconds,
         ),
         NumberChoiceTile(
-          icon: Icons.sync_alt,
-          title: '倒计时与提醒语交替间隔',
-          subtitle: '上课倒计时的两行内容（图三 / 图四）隔多久互换一次',
-          value: provider.alternateSeconds,
-          options: const [2, 3, 4, 6, 8, 10],
+          icon: Icons.hourglass_bottom,
+          title: '倒计时显示时间',
+          subtitle: '上课倒计时里「距上课还剩 …」明细（图三）每轮显示多久；0 = 不显示倒计时',
+          value: provider.countdownSeconds,
+          options: const [0, 2, 3, 4, 6, 8, 10, 15],
           suffix: '秒',
-          onChanged: provider.setAlternateSeconds,
+          zeroLabel: '不显示',
+          onChanged: provider.setCountdownSeconds,
         ),
+        NumberChoiceTile(
+          icon: Icons.record_voice_over_outlined,
+          title: '提醒语显示时间',
+          subtitle: '「准备上课，请回到座位并保持安静…」提醒语（图四）每轮显示多久；0 = 不显示提醒语',
+          value: provider.hintSeconds,
+          options: const [0, 2, 3, 4, 6, 8, 10, 15],
+          suffix: '秒',
+          zeroLabel: '不显示',
+          onChanged: provider.setHintSeconds,
+        ),
+        if (provider.countdownSeconds == 0 && provider.hintSeconds == 0)
+          Padding(
+            padding: const EdgeInsets.only(left: 40, bottom: 4),
+            child: Text(
+              '两个时长都是「不显示」时，倒计时阶段只留背景进度条，不显示文字。',
+              style: TextStyle(
+                fontSize: SettingsLayout.hintFontSize,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ),
 
         const SizedBox(height: SettingsLayout.sectionSpacing),
         const Divider(height: 1),
@@ -397,6 +419,7 @@ class NumberChoiceTile extends StatelessWidget {
     required this.suffix,
     required this.onChanged,
     this.subtitle,
+    this.zeroLabel,
   });
 
   final IconData icon;
@@ -407,15 +430,20 @@ class NumberChoiceTile extends StatelessWidget {
   final String suffix;
   final ValueChanged<int> onChanged;
 
+  /// 值为 0 时显示的文字（例如「不显示」）；为空则按「0 + 单位」显示。
+  final String? zeroLabel;
+
   @override
   Widget build(BuildContext context) {
+    final zero = zeroLabel;
     return ChoiceTile<int>(
       icon: icon,
       title: title,
       subtitle: subtitle,
       value: value,
       options: options,
-      labelOf: (option) => '$option$suffix',
+      labelOf: (option) =>
+          option == 0 && zero != null ? zero : '$option$suffix',
       onChanged: onChanged,
     );
   }

@@ -47,7 +47,13 @@ class DesktopScheduleProvider extends ChangeNotifier {
       'desktop_schedule_foreground_scale';
   static const String _keyPreClassAlert = 'desktop_schedule_pre_alert_minutes';
   static const String _keyNoticeDuration = 'desktop_schedule_notice_seconds';
-  static const String _keyAlternate = 'desktop_schedule_alternate_seconds';
+  static const String _keyCountdownSeconds =
+      'desktop_schedule_countdown_seconds';
+  static const String _keyHintSeconds = 'desktop_schedule_hint_seconds';
+
+  /// 旧版单一「交替间隔」键：仅用于升级后第一次读取时作为回退值。
+  static const String _keyLegacyAlternate =
+      'desktop_schedule_alternate_seconds';
   static const String _keyWeatherEnabled = 'desktop_weather_enabled';
   static const String _keyWeatherCity = 'desktop_weather_city';
   static const String _keyWeatherLatitude = 'desktop_weather_latitude';
@@ -66,8 +72,14 @@ class DesktopScheduleProvider extends ChangeNotifier {
   static const int maxPreClassAlertMinutes = 10;
   static const int minNoticeSeconds = 1;
   static const int maxNoticeSeconds = 10;
-  static const int minAlternateSeconds = 2;
-  static const int maxAlternateSeconds = 15;
+  static const int minCountdownSeconds = 0;
+  static const int maxCountdownSeconds = 30;
+  static const int minHintSeconds = 0;
+  static const int maxHintSeconds = 30;
+
+  /// 两个时长的默认值：4 秒 / 4 秒，观感与旧版「每 4 秒交替一次」一致。
+  static const int defaultCountdownSeconds = 4;
+  static const int defaultHintSeconds = 4;
   static const int minWeatherRefreshMinutes = 5;
   static const int maxWeatherRefreshMinutes = 180;
 
@@ -142,8 +154,15 @@ class DesktopScheduleProvider extends ChangeNotifier {
   int _noticeSeconds = 2;
   int get noticeSeconds => _noticeSeconds;
 
-  int _alternateSeconds = 4;
-  int get alternateSeconds => _alternateSeconds;
+  int _countdownSeconds = defaultCountdownSeconds;
+
+  /// 上课倒计时里「距上课还剩 …」明细（图三）的显示时长（秒）；0 = 不显示。
+  int get countdownSeconds => _countdownSeconds;
+
+  int _hintSeconds = defaultHintSeconds;
+
+  /// 上课倒计时里「准备上课」提醒语（图四）的显示时长（秒）；0 = 不显示。
+  int get hintSeconds => _hintSeconds;
 
   bool _weatherEnabled = true;
   bool get weatherEnabled => _weatherEnabled;
@@ -193,22 +212,23 @@ class DesktopScheduleProvider extends ChangeNotifier {
 
   WeatherKind? get weatherKind => weatherLabel == null ? null : _weather?.kind;
 
-  /// 图三（倒计时明细）↔ 图四（准备提醒）的交替相位。
+  /// 上课倒计时（图三 / 图四）此刻该显示哪种内容。
   ///
-  /// 用「距阶段开始经过的秒数」推导而不是内部计数器：状态自身就是时间的函数，
-  /// 重启 / 时间被改动后相位依然连续，也方便单测直接断言。
-  /// 图三（倒计时明细）↔ 图四（准备提醒）的交替相位。
-  ///
-  /// 用「距阶段开始经过的秒数」推导而不是内部计数器：状态自身就是时间的函数，
-  /// 重启 / 时间被改动后相位依然连续，也方便单测直接断言。
-  bool get showPreparationHint {
-    if (_state.phase != DesktopSchedulePhase.preCountdown) return false;
+  /// 相位用「距提醒窗口开始经过的秒数」推导而不是内部计数器：状态自身就是时间的
+  /// 函数，重启 / 时间被改动后相位依然连续，也方便单测直接断言；具体规则见
+  /// [desktopCountdownView]。非倒计时阶段没有这一层内容，返回
+  /// [DesktopCountdownView.none]（此时由 [DesktopSchedulePhase] 决定整条画什么）。
+  DesktopCountdownView get countdownView {
+    if (_state.phase != DesktopSchedulePhase.preCountdown) {
+      return DesktopCountdownView.none;
+    }
     final start = _state.phaseStart;
-    if (start == null) return false;
-    final elapsed = _state.now.difference(start).inMilliseconds;
-    final interval = _alternateSeconds * 1000;
-    if (interval <= 0) return false;
-    return (elapsed ~/ interval).isOdd;
+    if (start == null) return DesktopCountdownView.none;
+    return desktopCountdownView(
+      elapsed: _state.now.difference(start),
+      countdownSeconds: _countdownSeconds,
+      hintSeconds: _hintSeconds,
+    );
   }
 
   /// 读取设置、恢复天气缓存并启动计时器；重复调用无副作用。
@@ -270,10 +290,20 @@ class DesktopScheduleProvider extends ChangeNotifier {
       await settings.getSetting(_keyNoticeDuration),
       _noticeSeconds,
     ).clamp(minNoticeSeconds, maxNoticeSeconds);
-    _alternateSeconds = _parseInt(
-      await settings.getSetting(_keyAlternate),
-      _alternateSeconds,
-    ).clamp(minAlternateSeconds, maxAlternateSeconds);
+    // 旧版只有一个「交替间隔」：升级后第一次读取时把它当作两个时长的初值，
+    // 只要用户改过任意一个，新键就已写入，后续不再受它影响。
+    final legacyAlternate = _parseInt(
+      await settings.getSetting(_keyLegacyAlternate),
+      defaultCountdownSeconds,
+    );
+    _countdownSeconds = _parseInt(
+      await settings.getSetting(_keyCountdownSeconds),
+      legacyAlternate,
+    ).clamp(minCountdownSeconds, maxCountdownSeconds);
+    _hintSeconds = _parseInt(
+      await settings.getSetting(_keyHintSeconds),
+      legacyAlternate,
+    ).clamp(minHintSeconds, maxHintSeconds);
     _weatherEnabled = await _readBool(
       settings,
       _keyWeatherEnabled,
@@ -468,12 +498,21 @@ class DesktopScheduleProvider extends ChangeNotifier {
     _recompute(force: true);
   }
 
-  /// 图三 ↔ 图四的交替间隔（秒）。
-  Future<void> setAlternateSeconds(int value) async {
-    final clamped = value.clamp(minAlternateSeconds, maxAlternateSeconds);
-    if (_alternateSeconds == clamped) return;
-    _alternateSeconds = clamped;
-    await _save(_keyAlternate, clamped.toString());
+  /// 倒计时明细（图三）的显示时长（秒）；0 = 不显示倒计时。
+  Future<void> setCountdownSeconds(int value) async {
+    final clamped = value.clamp(minCountdownSeconds, maxCountdownSeconds);
+    if (_countdownSeconds == clamped) return;
+    _countdownSeconds = clamped;
+    await _save(_keyCountdownSeconds, clamped.toString());
+    notifyListeners();
+  }
+
+  /// 「准备上课」提醒语（图四）的显示时长（秒）；0 = 不显示提醒语。
+  Future<void> setHintSeconds(int value) async {
+    final clamped = value.clamp(minHintSeconds, maxHintSeconds);
+    if (_hintSeconds == clamped) return;
+    _hintSeconds = clamped;
+    await _save(_keyHintSeconds, clamped.toString());
     notifyListeners();
   }
 
@@ -562,7 +601,7 @@ class DesktopScheduleProvider extends ChangeNotifier {
       'weather_label': label,
       'weather_kind': label == null ? null : _weather!.kind.name,
       'weather_description': label == null ? null : _weather!.description,
-      'show_preparation_hint': showPreparationHint,
+      'countdown_view': countdownView.name,
       // 桌面态（无程序遮挡）：键名沿用旧字段，浮窗解析向后兼容。
       'scale': _scale,
       'opacity': _opacity,
