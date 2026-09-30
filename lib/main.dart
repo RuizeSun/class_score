@@ -144,6 +144,21 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
   /// 下一次允许尝试创建浮窗的时间（失败退避，避免每秒重试刷屏）。
   DateTime _nextBarAttempt = DateTime.fromMillisecondsSinceEpoch(0);
 
+  /// 浮窗「是否还存在」探测的最短间隔。
+  ///
+  /// `barExists()` 每次都要清掉本地缓存并向插件通道问一遍所有窗口；内容没变化时
+  /// 没必要跟着每一拍推送跑，因此限频到这里。
+  static const Duration _barExistenceCheckInterval = Duration(seconds: 10);
+
+  /// 下一次允许做浮窗存在性探测的时间。
+  DateTime _nextBarExistenceCheck = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// 悬浮球显隐看门狗周期（见 [_checkBallVisibility]）。
+  static const Duration _ballWatchdogInterval = Duration(seconds: 15);
+
+  /// 球的显隐看门狗（见 [_checkBallVisibility]）。
+  Timer? _ballWatchdog;
+
   /// 悬浮球最近一次推给原生的配置签名；null = 球当前是关闭的（窗口不存在）。
   String? _ballSignature;
 
@@ -224,6 +239,14 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
       _syncSchedulesToDesktop();
       await desktop.init();
       await _syncDesktopBar();
+
+      // 兜底复查：窗口事件是主路径，但万一漏了事件（或被外部改状态），球不该一直
+      // 停在错误状态上。低频定时器只查窗口显隐，翻转了才走整条同步。
+      _ballWatchdog?.cancel();
+      _ballWatchdog = Timer.periodic(
+        _ballWatchdogInterval,
+        (_) => unawaited(_checkBallVisibility()),
+      );
     });
   }
 
@@ -270,25 +293,31 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
             await DesktopWindowService.log('桌面课表已关闭，隐藏浮窗');
             await DesktopWindowService.hideBar();
           }
-          // 重新开启时立刻尝试创建，不用等退避
+          // 重新开启时立刻尝试创建与探测，不用等退避 / 限频
           _nextBarAttempt = DateTime.fromMillisecondsSinceEpoch(0);
+          _nextBarExistenceCheck = DateTime.fromMillisecondsSinceEpoch(0);
           continue;
         }
 
-        // 浮窗可能被外部关掉（任务管理器 / 系统回收），此时要重新创建，
-        // 否则会出现「设置里显示已开启、桌面上却没有条」。
-        if (_barVisible && !await DesktopWindowService.barExists()) {
-          _barVisible = false;
+        // 浮窗可能被外部关掉（任务管理器 / 系统回收），此时要重新创建，否则会出现
+        // 「设置里显示已开启、桌面上却没有条」。探测限频到 [_barExistenceCheckInterval]。
+        final now = DateTime.now();
+        if (_barVisible && !now.isBefore(_nextBarExistenceCheck)) {
+          _nextBarExistenceCheck = now.add(_barExistenceCheckInterval);
+          if (!await DesktopWindowService.barExists()) {
+            _barVisible = false;
+          }
         }
 
         if (!_barVisible) {
-          // 创建失败后退避重试：状态每秒刷新一次，不退避就会每秒重试 + 刷屏。
-          if (DateTime.now().isBefore(_nextBarAttempt)) continue;
-          _nextBarAttempt = DateTime.now().add(
-            DesktopWindowService.retryBackoff,
-          );
+          // 创建失败后退避重试：不退避就会反复重试 + 刷屏。
+          if (now.isBefore(_nextBarAttempt)) continue;
+          _nextBarAttempt = now.add(DesktopWindowService.retryBackoff);
           await DesktopWindowService.logWindowList();
           _barVisible = await DesktopWindowService.showBar();
+          if (_barVisible) {
+            _nextBarExistenceCheck = now.add(_barExistenceCheckInterval);
+          }
         }
 
         if (_barVisible) {
@@ -415,13 +444,27 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
     return _appOnScreen;
   }
 
-  /// 窗口事件驱动的即时同步（每秒的状态推送只作兜底）。
+  /// 窗口事件驱动的即时同步（低频的看门狗只作兜底）。
   ///
   /// 走整条 [_syncDesktopBar]：球的显隐一变，胶囊的让位（是否居中）也要跟着
   /// 变，两者必须同拍下发。
   void _syncBallNow() {
     if (_desktop == null) return;
     unawaited(_syncDesktopBar());
+  }
+
+  /// 球显隐的兜底复查（见 [_ballWatchdogInterval]）。
+  ///
+  /// 只有「球的显隐真的翻转」时才触发整条同步——整条同步包含查窗口、探浮窗、
+  /// 跨引擎推内容，不该为了一次复查白跑。
+  Future<void> _checkBallVisibility() async {
+    if (!mounted) return;
+    final desktop = _desktop;
+    if (desktop == null || !desktop.ballEnabled) return;
+    final before = _ballShown;
+    await _refreshBallOnScreen();
+    if (before == _ballShown) return;
+    await _syncDesktopBar();
   }
 
   @override
@@ -433,12 +476,13 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
   @override
   void onWindowEvent(String eventName) {
     // 只有影响「窗口是否在屏上」的事件需要同步；move / resize 之类的高频事件
-    // 交给每秒的推送兜底，不在这里反复查窗口状态。
+    // 交给低频的球显隐看门狗兜底，不在这里反复查窗口状态。
     if (eventName == 'show' || eventName == 'hide') _syncBallNow();
   }
 
   @override
   void dispose() {
+    _ballWatchdog?.cancel();
     windowManager.removeListener(this);
     _auth?.removeListener(_syncSchedulesToDesktop);
     _desktop?.removeListener(_syncDesktopBar);

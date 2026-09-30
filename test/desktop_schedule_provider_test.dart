@@ -68,6 +68,49 @@ void main() {
       expect(provider.countdownView, DesktopCountdownView.none);
     });
 
+    group('每秒 tick 的渲染去重', () {
+      test('上课中不逐秒通知：分钟文案与 1% 进度的步进才通知', () {
+        provider.updateSchedules(_courses, const [], now: _at(8, 20));
+        var notifications = 0;
+        provider.addListener(() => notifications++);
+
+        // 一秒后状态重算了，但状态块仍写「-20min」、进度条仍是 50% → 不通知
+        provider.tickForTest(_at(8, 20, 1));
+        expect(notifications, 0);
+
+        // 跨过分钟边界：「-20min」→「-19min」→ 通知一次
+        provider.tickForTest(_at(8, 21, 1));
+        expect(notifications, 1);
+
+        // 再等一秒，内容仍然没变 → 继续安静
+        provider.tickForTest(_at(8, 21, 2));
+        expect(notifications, 1);
+      });
+
+      test('倒计时阶段逐秒通知（图三要逐秒显示还剩多少秒）', () {
+        // 08:57 起是默认 3 分钟的提醒窗口：08:57:02 进入倒计时阶段
+        provider.updateSchedules(_courses, const [], now: _at(8, 57, 2));
+        expect(provider.state.phase, DesktopSchedulePhase.preCountdown);
+
+        var notifications = 0;
+        provider.addListener(() => notifications++);
+        provider.tickForTest(_at(8, 57, 3));
+        expect(notifications, 1);
+      });
+
+      test('阶段切换必定通知（内容整块都换了）', () {
+        provider.updateSchedules(_courses, const [], now: _at(8, 39, 59));
+        expect(provider.state.phase, DesktopSchedulePhase.inClass);
+
+        var notifications = 0;
+        provider.addListener(() => notifications++);
+        // 08:40 下课 → 课间休息
+        provider.tickForTest(_at(8, 40, 1));
+        expect(provider.state.phase, DesktopSchedulePhase.breakTime);
+        expect(notifications, 1);
+      });
+    });
+
     test('desktopCountdownView：可单独显示 / 都不显示', () {
       DesktopCountdownView at(
         int seconds, {

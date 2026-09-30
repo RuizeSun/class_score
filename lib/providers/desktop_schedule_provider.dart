@@ -346,10 +346,23 @@ class DesktopScheduleProvider extends ChangeNotifier {
     _recompute(now: now, force: true);
   }
 
+  /// 让测试直接驱动一次「秒级 tick」（不启动真实定时器、不读数据库）。
+  @visibleForTesting
+  void tickForTest(DateTime now) => _recompute(now: now);
+
+  /// 最近一次已通知监听者的渲染指纹（见 [_renderSignature]）。
+  String? _lastRenderSignature;
+
   /// 以 [now]（默认当前时间）重新求解状态。
   ///
-  /// 倒计时文案与进度条都按秒变化，因此每次 tick 都要通知：桌面条本身很轻
-  /// （一行内容 + 一条进度条），相比「每秒重建」的代价，状态不刷新才是 bug。
+  /// 状态本身必须每秒重算（倒计时文案与进度条都按秒推进），但**显示内容**变化的
+  /// 频率低得多：状态块的「-Nmin」是分钟粒度，进度条 1% 的步进肉眼就够
+  /// （40 分钟的课每 24 秒才动一格）。因此这里用渲染指纹去重，内容没变就不再
+  /// [notifyListeners]——主窗口的 `_syncDesktopBar` 是本 Provider 的监听者，
+  /// 每拍都要查窗口状态、探浮窗是否存在并跨引擎推一次内容（见 main.dart），
+  /// 去重后这些每秒开销在没内容变化时全部消失。
+  ///
+  /// [force] 用于配置变更 / 课表变化 / 初始化：这些场景必须让监听者收到一次通知。
   void _recompute({DateTime? now, bool force = false}) {
     final moment = now ?? DateTime.now();
     final next = ScheduleTimelineService.resolve(
@@ -360,7 +373,62 @@ class DesktopScheduleProvider extends ChangeNotifier {
       noticeDuration: Duration(seconds: _noticeSeconds),
     );
     _state = next;
+
+    final signature = _renderSignature(next);
+    if (!force && signature == _lastRenderSignature) return;
+    _lastRenderSignature = signature;
     notifyListeners();
+  }
+
+  /// 渲染指纹：把所有会改变桌面条 / 预览外观的字段拼成一个字符串。
+  ///
+  /// 覆盖三类内容：阶段（决定整条画什么）、时间派生文案（状态块「-Nmin」、
+  /// 倒计时「N 秒」）、以及课程列表与进度条区间。天气不进指纹——它有自己的
+  /// 刷新通知（见 [refreshWeather]）。
+  String _renderSignature(DesktopScheduleState state) {
+    final isCountdown = state.phase == DesktopSchedulePhase.preCountdown;
+    // 进度精度：倒计时阶段要逐秒（图三写着「还剩 53 秒」）；其余阶段按 1% 量化
+    // 即可——长阶段的进度条每格只动一两个像素，逐秒重画看不出区别。
+    final secondSensitive = isCountdown && _countdownSeconds > 0;
+    final tick = secondSensitive
+        ? state.remaining.inSeconds
+        : (state.progress * 100).round();
+
+    return [
+      state.phase.name,
+      tick,
+      // 状态块里的剩余时间（图一「-2min」/ 图六「-40min」）：只有常态条会渲染，
+      // 别的阶段不进指纹——否则提示横幅 / 倒计时阶段的余秒变化会被误判成内容变了。
+      _chipLabel(state),
+      // 倒计时明细文案（图三「距上课还剩 2 分 58 秒」）：同理只在倒计时阶段生效。
+      isCountdown
+          ? ScheduleTimelineService.formatCountdown(state.remaining)
+          : '',
+      // 图三 / 图四的交替周期
+      _countdownSeconds,
+      _hintSeconds,
+      // 课程列表、当前 / 下一节课的课程名与时间
+      state.slots
+          .map(
+            (slot) =>
+                '${slot.courseName}${ScheduleSlot.formatTime(slot.start)}-'
+                '${ScheduleSlot.formatTime(slot.end)}',
+          )
+          .join(','),
+      // 进度条区间（同一阶段内恒定，阶段切换时立刻变化）
+      state.phaseStart?.toIso8601String() ?? '',
+      state.phaseEnd?.toIso8601String() ?? '',
+    ].join('|');
+  }
+
+  /// 常态条状态块的剩余时间文案；当前阶段不画状态块时为空串。
+  String _chipLabel(DesktopScheduleState state) {
+    final showsChip =
+        state.phase == DesktopSchedulePhase.inClass ||
+        state.phase == DesktopSchedulePhase.breakTime;
+    return showsChip
+        ? ScheduleTimelineService.formatChipRemaining(state.remaining)
+        : '';
   }
 
   // ---- 配置写入：全部落库，设置页只调这些方法 ----
@@ -574,7 +642,12 @@ class DesktopScheduleProvider extends ChangeNotifier {
       );
       if (snapshot != null) {
         _weather = snapshot;
-        await _save(_keyWeatherCache, jsonEncode(snapshot.toJson()));
+        try {
+          await _save(_keyWeatherCache, jsonEncode(snapshot.toJson()));
+        } catch (error) {
+          // 缓存写库失败不该让天气功能报错：下一次刷新会再试一次。
+          debugPrint('天气缓存写入失败：$error');
+        }
       }
     } finally {
       _weatherLoading = false;

@@ -475,6 +475,10 @@ class AuthProvider extends ChangeNotifier {
       }
     }
 
+    // 状态没变就不通知：主窗口整棵树（主页状态栏 / 评分页 / 统计页）都订阅了本
+    // Provider，而这条规则每 10 秒跑一次，无条件通知会让它们每 10 秒重建一次。
+    if (_isUnlocked == inClass) return;
+
     _isUnlocked = inClass;
     notifyListeners();
   }
