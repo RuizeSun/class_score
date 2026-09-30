@@ -76,6 +76,19 @@ class StudentProvider extends ChangeNotifier {
     await loadStudents(groupId: _filterGroupId);
   }
 
+  /// 批量删除学生：一次备份 + 一条 SQL 删完 + 一次重载。
+  ///
+  /// 逐条调用 [deleteStudent] 会让「备份 + 全量重载 + notifyListeners」
+  /// 随人数线性增长（删 30 人 = 30 轮），因此批量删除统一走这里。
+  Future<int> deleteStudents(Iterable<int> ids) async {
+    final idList = ids.toSet().toList();
+    if (idList.isEmpty) return 0;
+    await BackupService.instance.createBackup();
+    final deleted = await DatabaseHelper.instance.deleteStudents(idList);
+    await loadStudents(groupId: _filterGroupId);
+    return deleted;
+  }
+
   /// 批量导入学生
   /// [overwrite] 是否覆盖现有数据（默认false，为true时先清空所有学生和分组）
   /// 返回成功导入的数量
@@ -85,7 +98,8 @@ class StudentProvider extends ChangeNotifier {
   }) async {
     if (importedStudents.isEmpty) return 0;
 
-    await BackupService.instance.createBackup();
+    // 覆盖导入会清空学生/分组/评分记录，属整库级破坏性操作：跳过节流、必定备份。
+    await BackupService.instance.createBackup(force: overwrite);
 
     final db = await DatabaseHelper.instance.database;
     int successCount = 0;

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart' as p;
 
@@ -8,7 +9,17 @@ class DatabaseHelper {
 
   Database? _database;
 
+  /// 数据库目录覆盖（测试用）。
+  ///
+  /// 默认目录取自 `Platform.resolvedExecutable`（exe 同级的 `data/`）；在
+  /// `flutter test` 下那是 flutter_tester 所在目录，测试若不覆盖就会把库写到
+  /// Flutter SDK 目录里，因此留出这个注入点。
+  @visibleForTesting
+  static String? dbDirOverride;
+
   String get dbDir {
+    final override = dbDirOverride;
+    if (override != null) return override;
     final exePath = Platform.resolvedExecutable;
     final exeDir = p.dirname(exePath);
     return p.join(exeDir, 'data');
@@ -572,6 +583,18 @@ class DatabaseHelper {
   Future<int> deleteStudent(int id) async {
     final db = await database;
     return db.delete('students', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// 批量删除学生（一条语句删完，避免逐条往返）。
+  Future<int> deleteStudents(List<int> ids) async {
+    if (ids.isEmpty) return 0;
+    final db = await database;
+    final placeholders = List.filled(ids.length, '?').join(', ');
+    return db.delete(
+      'students',
+      where: 'id IN ($placeholders)',
+      whereArgs: ids,
+    );
   }
 
   // ---- Score Records ----

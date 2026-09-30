@@ -187,7 +187,8 @@ Future<void> exportDatabase(BuildContext context) async {
     return;
   }
   try {
-    final path = await BackupService.instance.createBackup();
+    // 用户在设置页显式点「导出数据库」：不受节流限制，必定产生一份新备份
+    final path = await BackupService.instance.createBackup(force: true);
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('备份已创建: $path')));

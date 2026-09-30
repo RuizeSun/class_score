@@ -206,9 +206,9 @@ class _StudentManagementViewState extends State<StudentManagementView> {
             onPressed: () async {
               Navigator.pop(ctx);
               final provider = context.read<StudentProvider>();
-              for (final id in _selectedStudentIds) {
-                await provider.deleteStudent(id);
-              }
+              // 一次备份 + 一条 SQL 删完 + 一次重载（逐条删会成倍放大开销）
+              final ids = _selectedStudentIds.toList();
+              await provider.deleteStudents(ids);
               if (context.mounted) {
                 _clearSelection();
                 ScaffoldMessenger.of(context).showSnackBar(
