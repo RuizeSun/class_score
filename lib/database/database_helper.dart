@@ -598,10 +598,18 @@ class DatabaseHelper {
   }
 
   // ---- Score Records ----
+  /// 查询评分记录（按时间倒序）。
+  ///
+  /// [startDate] / [endDate] 为 ISO 时间串，用于把「只要今天 / 某段日期」的过滤
+  /// 下推到 SQL——仪表盘以前是把整个周期的记录全读进内存再用 Dart 过滤。
+  /// [limit] 直接加到 SQL 的 LIMIT 上（例如「最近 5 条」）。
   Future<List<Map<String, dynamic>>> getScoreRecords({
     String? targetType,
     int? targetId,
     int? period,
+    String? startDate,
+    String? endDate,
+    int? limit,
   }) async {
     final db = await database;
     String query = '''
@@ -640,11 +648,24 @@ class DatabaseHelper {
       }
     }
 
+    // 日期范围：create_time 是固定宽度的 ISO 串，字符串比较即时间比较。
+    if (startDate != null) {
+      conditions.add('score_records.create_time >= ?');
+      whereArgs.add(startDate);
+    }
+    if (endDate != null) {
+      conditions.add('score_records.create_time <= ?');
+      whereArgs.add(endDate);
+    }
+
     if (conditions.isNotEmpty) {
       query += ' WHERE ${conditions.join(' AND ')}';
     }
 
     query += ' ORDER BY score_records.create_time DESC';
+    if (limit != null) {
+      query += ' LIMIT ${limit.clamp(1, 100000)}';
+    }
     return db.rawQuery(query, whereArgs);
   }
 

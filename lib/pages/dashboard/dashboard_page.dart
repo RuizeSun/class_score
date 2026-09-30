@@ -44,6 +44,12 @@ class _DashboardPageState extends State<DashboardPage> {
   ScoreProvider? _scoreProvider;
   AuthProvider? _authProvider;
 
+  /// 「最近评分」卡片展示的条数（下推到 SQL 的 LIMIT）。
+  static const int recentRecordCount = 5;
+
+  /// 加载序号：见 [_loadDashboardData] 的并发保护。
+  int _loadGeneration = 0;
+
   @override
   void initState() {
     super.initState();
@@ -75,6 +81,11 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _loadDashboardData() async {
+    // 并发保护：只有最新一次加载的结果允许写进 UI。评分一次会触发两次通知
+    // （ScoreProvider 先重载记录、再重载统计），两次加载并发跑时后返回的旧
+    // 结果可能盖掉新结果。
+    final generation = ++_loadGeneration;
+
     final db = DatabaseHelper.instance;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -107,44 +118,33 @@ class _DashboardPageState extends State<DashboardPage> {
         return endTime.compareTo(currentTime) >= 0;
       }).toList();
 
-      if (mounted) {
-        setState(() {
-          _todaySchedules = todaySchedules;
-          _todayAdjustmentLabel = adjustment == null
-              ? null
-              : '调休：${ScheduleAdjustment.describeWeekday(adjustment['weekday'] as int)}';
-        });
-      }
+      final adjustmentLabel = adjustment == null
+          ? null
+          : '调休：${ScheduleAdjustment.describeWeekday(adjustment['weekday'] as int)}';
 
       final currentPeriod = _scoreProvider?.currentPeriod;
 
-      // 2. 获取今日所有评分记录
-      final allRecords = await db.getScoreRecords(period: currentPeriod);
-      final todayRecords = allRecords.where((record) {
-        final createTime = record['create_time'] as String;
-        return createTime.startsWith(startTimestamp.substring(0, 10));
-      }).toList();
+      // 2. 今日评分记录：日期条件下推到 SQL。
+      //    以前是「把整个周期的记录全读进内存，再在 Dart 里按日期前缀过滤」。
+      final todayRecords = await db.getScoreRecords(
+        period: currentPeriod,
+        startDate: startTimestamp,
+        endDate: endTimestamp,
+      );
 
-      if (mounted) {
-        setState(() {
-          _todayScores = todayRecords;
-        });
-      }
+      // 3. 最近 5 条评分记录（不限今天）：排序与截断都交给 SQL。
+      //    以前这里把「整个周期的记录」又查了一遍（与上面完全重复）。
+      final recentRecords = await db.getScoreRecords(
+        period: currentPeriod,
+        limit: recentRecordCount,
+      );
 
-      // 3. 获取最近5条评分记录
-      final recent = await db.getScoreRecords(period: currentPeriod);
-      final recentRecords = recent.take(5).toList();
-      if (mounted) {
-        setState(() {
-          _recentRecords = recentRecords;
-        });
-      }
-
-      // 4. 获取小组排名（今日）- 使用数据库计算的成员分数总和
-      final groupScores = await db.getGroupTotalScores(period: currentPeriod);
-      // 从今日记录中提取每个学生的分数
+      // 4. 今日小组排名：成员今日分数在内存里按「学生 → 小组」汇总。
+      //    以前这里用 getGroupTotalScores()（带聚合子查询）只是为了拿小组 id/name，
+      //    分数其实是从今日记录自己算的，因此换成直接读 groups 表。
+      final groups = await db.getGroups();
       final studentTodayScores = <int, double>{};
-      for (final r in _todayScores) {
+      for (final r in todayRecords) {
         if (r['target_type'] == 'student' && r['target_id'] != null) {
           final studentId = r['target_id'] as int;
           final score = (r['score'] as num?)?.toDouble() ?? 0;
@@ -167,7 +167,7 @@ class _DashboardPageState extends State<DashboardPage> {
       }
       // 计算每个小组今日总分（成员今日分数之和）
       final groupTodayScores = <int, double>{};
-      for (final g in groupScores) {
+      for (final g in groups) {
         groupTodayScores[g['id'] as int] = 0;
       }
       for (final entry in studentTodayScores.entries) {
@@ -179,7 +179,7 @@ class _DashboardPageState extends State<DashboardPage> {
         }
       }
       final groupRanking =
-          groupScores.map((g) {
+          groups.map((g) {
             final groupId = g['id'] as int;
             return {
               'id': groupId,
@@ -203,50 +203,44 @@ class _DashboardPageState extends State<DashboardPage> {
         return true;
       }).toList();
 
-      if (mounted) {
-        setState(() {
-          _groupRanking = filteredGroupRanking;
-        });
-      }
-
-      // 5. 获取全班加分分布
-      final positiveDist = await db.getScoreDistributionByItem(
+      // 5. 全班加分 / 扣分分布：一次聚合查询同时喂两张饼图
+      final distribution = await db.getScoreDistributionByItem(
         targetType: 'student',
         startDate: startTimestamp,
         endDate: endTimestamp,
         period: currentPeriod,
       );
-      final positiveData = positiveDist
+      final positiveData = distribution
           .where((d) => (d['total_score'] as num).toDouble() > 0)
           .take(6)
           .toList();
-
-      if (mounted) {
-        setState(() {
-          _positiveDistribution = positiveData;
-        });
-      }
-
-      // 6. 获取全班扣分分布
-      final negativeData = positiveDist
+      final negativeData = distribution
           .where((d) => (d['total_score'] as num).toDouble() < 0)
           .take(6)
           .toList();
 
-      if (mounted) {
-        setState(() {
-          _negativeDistribution = negativeData;
-        });
-      }
+      // 一次性写进 UI：以前这里分了 5 次 setState，每轮查询都要重建一次整页
+      // （并发保护同样在写之前再确认一次）。
+      if (!mounted || generation != _loadGeneration) return;
+      setState(() {
+        _todaySchedules = todaySchedules;
+        _todayAdjustmentLabel = adjustmentLabel;
+        _todayScores = todayRecords;
+        _recentRecords = recentRecords;
+        _groupRanking = filteredGroupRanking;
+        _positiveDistribution = positiveData;
+        _negativeDistribution = negativeData;
+        _loading = false;
+        _hasLoadedOnce = true;
+      });
     } catch (e) {
       debugPrint('Dashboard load error: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _hasLoadedOnce = true;
-        });
-      }
+      if (!mounted || generation != _loadGeneration) return;
+      // 出错也要收掉加载态，否则首屏会一直停在转圈上。
+      setState(() {
+        _loading = false;
+        _hasLoadedOnce = true;
+      });
     }
   }
 
@@ -837,15 +831,12 @@ class _PieChartCard extends StatelessWidget {
             Colors.purple,
           ];
 
+    // 这里原本在 map 回调里对整个分布做 fold 求 total（O(n²)），但算出来的占比
+    // 并没有用上——饼图不显示百分比，fl_chart 自己按 value 求比例，故整段删除。
     return distribution.asMap().entries.map((entry) {
       final i = entry.key;
       final item = entry.value;
       final score = (item['total_score'] as num).toDouble().abs();
-      final total = distribution.fold<double>(
-        0,
-        (sum, item) => sum + ((item['total_score'] as num).toDouble().abs()),
-      );
-      final pct = total > 0 ? (score / total * 100) : 0.0;
       return PieChartSectionData(
         color: colors[i % colors.length],
         value: score,
