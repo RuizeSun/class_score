@@ -63,3 +63,23 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
 - 倒计时 / 提醒语显示时间：设置页 desktop_schedule_settings.dart 两个 NumberChoiceTile（0 = 不显示）→ provider `countdownSeconds`/`hintSeconds`（key `desktop_schedule_countdown_seconds`/`_hint_seconds`；旧 `desktop_schedule_alternate_seconds` 只在尚未写过新键时回退）→ models/desktop_schedule_state.dart 纯函数 `desktopCountdownView()` 按 `now − phaseStart` 求 图三 / 图四 / 都不显示 → provider `countdownView` → payload `countdown_view` → DesktopScheduleWidget.countdownView。
 - 退出程序：原生 app_quit.cpp QuitApplicationNow()（RemoveTrayIcon → TerminateProcess）；托盘 / 悬浮球菜单直接调用它，Dart 侧走 tray_service.dart quitNow()（「关闭窗口即退出」经 app_shell_service.dart quitApplication）。**不要**改回 `window_manager.destroy()` 或 `ExitProcess`：前者只是 PostQuitMessage、后者会跑 DLL detach 收尾子引擎，都要 3~5 秒（实测 5.8s vs 0.14s）。
 - 打包：本地 `fvm flutter build windows --release`；CI：commit message 以 `build: <版本号>` 开头推 main → flutter.yml:12 触发、:31 构建、:38 取版本、:70 打 tag 并发布 Release zip。用户没有要求的情况下严禁私自发布。
+## 同步 / 服务端（v11 之后新增，未提交）
+
+- 目录：`packages/sync_protocol/`（纯 Dart 共享协议）、`lib/sync/`（客户端）、`lib/database/sync_migration_v11.dart`（触发器捕获）、`server/`（shelf 服务端 + 管理后台）。
+- 设计文档：`docs/sync-*.md` 六篇；先读 `docs/sync-boundaries.md`（同步什么/不同步什么）与 `docs/sync-transport-security.md`（默认明文，需 `--cert/--key` 开 TLS）。
+- 加同步表：`packages/sync_protocol/lib/src/protocol.dart` 的 `syncTableSpecs` + 迁移里补列/触发器；**客户端与服务端共用这一份**，改一处两边都变。
+- 服务端管理后台：`server/lib/src/admin_*.dart` + 前端 `server/web/admin/`。
+  **改了前端必须跑 `cd server && dart run tool/embed_web.dart`**（页面嵌进 Dart 代码以保单文件 exe），
+  忘跑由 `test/sync_admin_assets_test.dart` 逐字节比对拦下。
+  **管理编辑绝不直接改 `latest`**，必须走 `appendEvent` 追加事件，否则设备永远收不到（见 docs/sync-admin-console.md §2）。
+- 服务端命令：`cd server && fvm dart compile exe bin/main.dart -o build/class_score_server.exe`；运行 `class_score_server.exe --db data/server.db --port 8787 [--cert cert.pem --key key.pem]`；控制台 `回车`=新配对码、`T`=轮换管理员令牌。
+- 首次会合：v11 迁移**刻意不**给历史行记 outbox，所以配对后要靠 `SyncEngine._runInitialSync`
+  主动把本地活行推上去；两端都有数据时停下来让用户选（合并/保留本地/保留远端），
+  绝不自动挑一边。详见 `docs/sync-initial-merge.md`。
+  **rev 起点必须大于服务端 `max_rev`**，且每行递增 1；上传后要抬本地 `lamport`。
+- 迁移前备份改为在 `openDatabase` **之前**做文件级复制（旧实现在 `onUpgrade` 里 `VACUUM INTO`，
+  因 sqflite 把 onUpgrade 包在事务里而**从未成功过**）。备份目录从被打开的库路径推出。
+- 删除是墓碑，所以 `restoreArchivedRecord` 必须「复活」原行而不是重新 INSERT（否则撞主键）；
+  `upsertScheduleAdjustment` 必须复活墓碑行（`date` 有列内联 UNIQUE，隐式索引删不掉）；
+  `replaceAllCourseSchedules` 必须走差异而不是「全删再全插」（否则每次保存都换一批 uid）。
+- 测试用 TLS 证书夹具在 `test/fixtures/tls/`（已提交，勿删——早先依赖 `server/build/tls` 会被清理导致 3 条 TLS 测试必挂）。

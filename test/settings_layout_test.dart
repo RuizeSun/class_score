@@ -9,6 +9,7 @@ import 'package:class_score/providers/personalization_provider.dart';
 import 'package:class_score/providers/score_item_provider.dart';
 import 'package:class_score/providers/score_provider.dart';
 import 'package:class_score/providers/student_provider.dart';
+import 'package:class_score/providers/sync_provider.dart';
 import 'package:class_score/widgets/motion.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -105,6 +106,7 @@ Widget _buildHub({
       ChangeNotifierProvider<DesktopScheduleProvider>(
         create: (_) => DesktopScheduleProvider(),
       ),
+      ChangeNotifierProvider<SyncProvider>(create: (_) => SyncProvider()),
     ],
     child: const MaterialApp(home: SettingsHubPage()),
   );
@@ -121,6 +123,7 @@ const List<String> _sectionTitles = [
   '桌面课表',
   '评分周期',
   '物理密钥管理',
+  '同步服务',
   '系统设置',
 ];
 
