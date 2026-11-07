@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>class_score 同步服务 · 管理后台</title>
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+
+<header class="topbar">
+  <span class="brand">class_score 同步服务</span>
+  <span id="status" class="status"></span>
+  <button id="btn-logout" class="ghost hidden" type="button">退出登录</button>
+</header>
+
+<!-- 登录：未登录时这是唯一可见的东西，其它面板一个字节都不渲染 -->
+<section id="login" class="panel login">
+  <h1>管理后台</h1>
+  <p class="hint">
+    粘贴服务端启动时打印的<b>管理员令牌</b>。令牌只在首次启动时显示一次，
+    丢失后需要按 <code>T</code> 轮换。
+  </p>
+  <form id="login-form" autocomplete="off">
+    <input id="login-token" type="password" placeholder="管理员令牌" spellcheck="false" required>
+    <button type="submit">登录</button>
+  </form>
+  <p id="login-error" class="error"></p>
+</section>
+
+<main id="app" class="hidden">
+
+  <nav class="tabs">
+    <button data-tab="overview" class="tab active" type="button">概览</button>
+    <button data-tab="devices" class="tab" type="button">设备</button>
+    <button data-tab="data" class="tab" type="button">数据</button>
+    <button data-tab="audit" class="tab" type="button">审计</button>
+  </nav>
+
+  <section id="tab-overview" class="panel">
+    <h2>概览</h2>
+    <div id="overview-cards" class="cards"></div>
+    <h3>各表行数</h3>
+    <table id="overview-tables"><thead><tr><th>表</th><th>活行</th><th>墓碑</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section id="tab-devices" class="panel hidden">
+    <h2>已连接设备</h2>
+    <p class="hint">
+      撤销设备后，该设备下次同步会收到 401，App 显示「需要重新配对」；
+      <b>本地数据不受影响</b>。
+    </p>
+    <div class="row">
+      <button id="btn-new-code" type="button">生成新配对码</button>
+      <span id="pairing-info" class="mono"></span>
+    </div>
+    <table id="devices-table">
+      <thead><tr><th>设备 ID</th><th>名称</th><th>配对时间</th><th>最近活跃</th><th>事件数</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section id="tab-data" class="panel hidden">
+    <h2>数据</h2>
+    <div class="row">
+      <label>表 <select id="table-select"></select></label>
+      <input id="q" type="search" placeholder="按 uid 或字段内容搜索" spellcheck="false">
+      <label class="check"><input id="show-deleted" type="checkbox"> 含墓碑</label>
+      <button id="btn-reload" type="button">刷新</button>
+    </div>
+    <p id="table-meta" class="hint"></p>
+    <div class="split">
+      <div class="list">
+        <table id="rows-table"><thead></thead><tbody></tbody></table>
+        <div class="row pager">
+          <button id="btn-prev" type="button" class="ghost">上一页</button>
+          <span id="page-info" class="mono"></span>
+          <button id="btn-next" type="button" class="ghost">下一页</button>
+        </div>
+      </div>
+      <aside id="editor" class="editor">
+        <p class="hint">从左侧选一行查看详情。</p>
+      </aside>
+    </div>
+  </section>
+
+  <section id="tab-audit" class="panel hidden">
+    <h2>管理操作记录</h2>
+    <p class="hint">最近 200 条。编辑会记下改动前后的值。</p>
+    <table id="audit-table">
+      <thead><tr><th>时间</th><th>操作</th><th>表</th><th>uid</th><th>变化</th><th>来源</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+</main>
+
+<script src="/admin/admin.js"></script>
+</body>
+</html>
