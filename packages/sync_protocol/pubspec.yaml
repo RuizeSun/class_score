@@ -1,0 +1,7 @@
+name: class_score_sync_protocol
+description: 纯 Dart 同步协议（App 与服务端共用）：事件模型、表结构描述、LWW 冲突决议。
+version: 0.1.0
+publish_to: "none"
+
+environment:
+  sdk: ^3.9.0
