@@ -51,3 +51,6 @@ app.*.map.json
 .fvmrc
 
 .clinerules
+# 服务端的运行时产物：库文件与编译出的 exe 都不该进版本库
+/server/data/
+/server/build/

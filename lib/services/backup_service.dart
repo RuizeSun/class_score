@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
+import '../database/sync_write_guard.dart';
 import 'package:path/path.dart' as p;
 
 /// 备份节流器：决定「这次要不要真的复制一份库」。
@@ -243,90 +244,85 @@ class BackupService {
       // Backup first
       await createBackup(force: true);
 
-      // Clear existing data (in reverse order of foreign keys)
-      await db.delete('score_records');
-      await db.delete('students');
-      await db.delete('groups');
-      await db.delete('course_schedule');
-      await db.delete('schedule_adjustment');
+      // 整库覆盖不是"用户逐条编辑"：在 suppressed 区间内执行，outbox 不会
+      // 涌进几千条事件（否则恢复一次备份 = 推送一次全库）。副作用是这批
+      // 写入不会被同步——恢复备份本身就是"以本地为准"，语义上成立。
+      return await SyncWriteGuard.suppressed(db, () async {
+        // 清空旧数据（suppressed 期间 BEFORE DELETE 触发器不生效，
+        // 因此这里是**物理删除**，不会留下满库墓碑）。
+        await db.delete('score_records');
+        await db.delete('students');
+        await db.delete('groups');
+        await db.delete('course_schedule');
+        await db.delete('schedule_adjustment');
 
-      // Import groups
-      if (data['groups'] != null) {
-        for (final row in data['groups'] as List) {
-          final map = Map<String, dynamic>.from(row as Map);
-          map.remove('id'); // Let DB auto-assign
-          await db.insert('groups', map);
+        Future<void> importRows(String key, String table) async {
+          final rows = data[key];
+          if (rows is! List) return;
+          for (final row in rows) {
+            final source = Map<String, dynamic>.from(row as Map);
+            final map = Map<String, dynamic>.from(source);
+            map.remove('id'); // 让本地重新分配自增 id
+            map.remove('deleted_at');
+            // 备份里带了 uid / rev：沿用它们，这样"恢复备份"不会把同一份
+            // 数据变成另一批 uid（否则对端会看到一堆新增 + 一堆删除）。
+            await db.insert(
+              table,
+              SyncWriteGuard.preserveSyncColumns(map, source),
+            );
+          }
         }
-      }
 
-      // Import students
-      if (data['students'] != null) {
-        for (final row in data['students'] as List) {
-          final map = Map<String, dynamic>.from(row as Map);
-          map.remove('id');
-          await db.insert('students', map);
-        }
-      }
-
-      // Import score_records
-      if (data['score_records'] != null) {
-        for (final row in data['score_records'] as List) {
-          final map = Map<String, dynamic>.from(row as Map);
-          map.remove('id');
-          await db.insert('score_records', map);
-        }
-      }
-
-      // Import course_schedule
-      if (data['course_schedule'] != null) {
-        for (final row in data['course_schedule'] as List) {
-          final map = Map<String, dynamic>.from(row as Map);
-          map.remove('id');
-          await db.insert('course_schedule', map);
-        }
-      }
-
-      // Import schedule_adjustment（调休）
-      if (data['schedule_adjustment'] != null) {
-        for (final row in data['schedule_adjustment'] as List) {
-          final map = Map<String, dynamic>.from(row as Map);
-          map.remove('id');
-          await db.insert('schedule_adjustment', map);
-        }
-      }
-
-      await DatabaseHelper.instance.reloadAll();
-      return true;
+        await importRows('groups', 'groups');
+        await importRows('students', 'students');
+        await importRows('score_records', 'score_records');
+        await importRows('course_schedule', 'course_schedule');
+        await importRows('schedule_adjustment', 'schedule_adjustment');
+        return true;
+      }).then((_) async {
+        await DatabaseHelper.instance.reloadAll();
+        return true;
+      });
     } catch (e) {
       return false;
     }
   }
 
   // ---- Reset Operations ----
+  /// 清空全部评分记录。
+  ///
+  /// 走 suppressed：整库级重置不该产生"每条记录一条删除事件"，
+  /// 也不该在同步场景下留下一整批墓碑让对端跟着删一遍。
   Future<void> resetScoreRecords() async {
     await createBackup(force: true);
     final db = await DatabaseHelper.instance.database;
-    await db.delete('score_records');
+    await SyncWriteGuard.suppressed(db, () async {
+      await db.delete('score_records');
+    });
     await DatabaseHelper.instance.reloadAll();
   }
 
   Future<void> resetGroups() async {
     await createBackup(force: true);
     final db = await DatabaseHelper.instance.database;
-    await db.delete('score_records');
-    await db.delete('students');
-    await db.delete('groups');
+    await SyncWriteGuard.suppressed(db, () async {
+      await db.delete('score_records');
+      await db.delete('students');
+      await db.delete('groups');
+    });
     await DatabaseHelper.instance.reloadAll();
   }
 
   Future<void> resetAll() async {
     await createBackup(force: true);
     final db = await DatabaseHelper.instance.database;
-    await db.delete('score_records');
-    await db.delete('students');
-    await db.delete('groups');
-    await db.delete('course_schedule');
-    await db.delete('schedule_adjustment');
+    await SyncWriteGuard.suppressed(db, () async {
+      await db.delete('score_records');
+      await db.delete('students');
+      await db.delete('groups');
+      await db.delete('course_schedule');
+      await db.delete('schedule_adjustment');
+    });
     await DatabaseHelper.instance.reloadAll();
   }
 }

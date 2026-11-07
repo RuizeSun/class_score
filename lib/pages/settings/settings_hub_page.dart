@@ -10,6 +10,7 @@ import 'score_items_management.dart';
 import 'course_schedule_management.dart';
 import 'desktop_schedule_settings.dart';
 import 'usb_key_management.dart';
+import 'sync_settings_view.dart';
 import 'system_settings.dart';
 import 'period_management.dart';
 import 'personalization_view.dart';
@@ -37,6 +38,7 @@ enum SettingsSection {
   desktopSchedule,
   period,
   usbKey,
+  sync,
   system,
 }
 
@@ -121,6 +123,7 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
           ),
           item(Icons.calendar_today, '评分周期', SettingsSection.period),
           item(Icons.usb, '物理密钥管理', SettingsSection.usbKey),
+          item(Icons.cloud_sync, '同步服务', SettingsSection.sync),
           const Divider(),
           item(Icons.settings, '系统设置', SettingsSection.system),
         ],
@@ -150,6 +153,7 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
       case SettingsSection.personalization:
       case SettingsSection.scoringRules:
       case SettingsSection.period:
+      case SettingsSection.sync:
       case SettingsSection.system:
         return true;
       case SettingsSection.group:
@@ -184,6 +188,8 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
         return '查看当前评分周期，并可切换到上一 / 下一周期。';
       case SettingsSection.usbKey:
         return '管理用于解锁应用的 U 盘物理密钥。';
+      case SettingsSection.sync:
+        return '把本机的评分数据同步到自建服务端；服务端离线时不影响任何本地功能。';
       case SettingsSection.system:
         return '密码解锁、数据备份导出与重置操作。';
     }
@@ -220,6 +226,8 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
         return const DesktopScheduleSettingsView();
       case SettingsSection.period:
         return const PeriodManagementView();
+      case SettingsSection.sync:
+        return const SyncSettingsView();
       case SettingsSection.usbKey:
         return UsbKeyManagementView(
           onWriteKey: () => showWriteKeyDialog(context),
@@ -253,6 +261,8 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
         return '评分周期';
       case SettingsSection.usbKey:
         return '物理密钥管理';
+      case SettingsSection.sync:
+        return '同步服务';
       case SettingsSection.personalization:
         return '个性化';
       case SettingsSection.system:

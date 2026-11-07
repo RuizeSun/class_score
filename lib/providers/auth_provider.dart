@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
 import '../models/schedule_adjustment.dart';
+import '../sync/sync_engine.dart';
 
 class AuthProvider extends ChangeNotifier {
   bool _isInitialized = false;
@@ -161,6 +162,7 @@ class AuthProvider extends ChangeNotifier {
       'created_at': DateTime.now().toIso8601String(),
     });
     await loadScheduleAdjustments();
+    SyncEngine.instance.scheduleSync();
   }
 
   /// 取消某一天的调休。
@@ -169,6 +171,7 @@ class AuthProvider extends ChangeNotifier {
       ScheduleAdjustment.dateKey(date),
     );
     await loadScheduleAdjustments();
+    SyncEngine.instance.scheduleSync();
   }
 
   /// 清理今天之前的调休记录，返回删除条数。
@@ -228,6 +231,7 @@ class AuthProvider extends ChangeNotifier {
       _normalizeScheduleMap(map),
     );
     await loadCourseSchedules();
+    SyncEngine.instance.scheduleSync();
   }
 
   Future<void> updateCourseSchedule(int id, Map<String, dynamic> map) async {
@@ -236,11 +240,13 @@ class AuthProvider extends ChangeNotifier {
       _normalizeScheduleMap(map),
     );
     await loadCourseSchedules();
+    SyncEngine.instance.scheduleSync();
   }
 
   Future<void> deleteCourseSchedule(int id) async {
     await DatabaseHelper.instance.deleteCourseSchedule(id);
     await loadCourseSchedules();
+    SyncEngine.instance.scheduleSync();
   }
 
   /// Replace the whole course schedule with [maps].
@@ -249,6 +255,7 @@ class AuthProvider extends ChangeNotifier {
     final normalized = maps.map(_normalizeScheduleMap).toList();
     await DatabaseHelper.instance.replaceAllCourseSchedules(normalized);
     await loadCourseSchedules();
+    SyncEngine.instance.scheduleSync();
   }
 
   /// Batch import course schedules. When [overwrite] is true the existing
@@ -265,6 +272,7 @@ class AuthProvider extends ChangeNotifier {
       await DatabaseHelper.instance.insertCourseSchedules(normalized);
     }
     await loadCourseSchedules();
+    SyncEngine.instance.scheduleSync();
     return normalized.length;
   }
 

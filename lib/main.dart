@@ -20,6 +20,7 @@ import 'providers/score_item_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/personalization_provider.dart';
 import 'providers/desktop_schedule_provider.dart';
+import 'providers/sync_provider.dart';
 import 'pages/core/home_page.dart';
 import 'pages/core/pin_setup_page.dart';
 import 'widgets/motion.dart';
@@ -93,6 +94,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ScoreProvider()),
         ChangeNotifierProvider(create: (_) => ScoreItemProvider()),
         ChangeNotifierProvider(create: (_) => DesktopScheduleProvider()),
+        ChangeNotifierProvider(create: (_) => SyncProvider()),
       ],
       child: const AppBody(),
     );
@@ -210,6 +212,9 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
 
       personalization.init();
       auth.init();
+      // 同步：未配对时什么都不做（SyncEngine.configure 内部直接返回），
+      // 因此这一行对尚未使用同步功能的用户零成本。
+      unawaited(context.read<SyncProvider>().init());
       context.read<ScoreProvider>().init();
       // 首帧后按真实非客户区再校准一次窗口尺寸，确保内容区为 1280x800。
       await WindowService.refresh();

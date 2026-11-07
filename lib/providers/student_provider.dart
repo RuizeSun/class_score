@@ -6,6 +6,7 @@ import '../database/database_helper.dart';
 import '../services/backup_service.dart';
 import '../services/import_service.dart';
 import '../providers/group_provider.dart';
+import '../sync/sync_engine.dart';
 import '../widgets/student_name_text.dart';
 
 class StudentProvider extends ChangeNotifier {
@@ -50,6 +51,7 @@ class StudentProvider extends ChangeNotifier {
       'include_in_group_total': includeInGroupTotal ? 1 : 0,
     });
     await loadStudents(groupId: _filterGroupId);
+    SyncEngine.instance.scheduleSync();
   }
 
   Future<void> updateStudent(
@@ -68,12 +70,14 @@ class StudentProvider extends ChangeNotifier {
       'include_in_group_total': includeInGroupTotal ? 1 : 0,
     });
     await loadStudents(groupId: _filterGroupId);
+    SyncEngine.instance.scheduleSync();
   }
 
   Future<void> deleteStudent(int id) async {
     await BackupService.instance.createBackup();
     await DatabaseHelper.instance.deleteStudent(id);
     await loadStudents(groupId: _filterGroupId);
+    SyncEngine.instance.scheduleSync();
   }
 
   /// 批量删除学生：一次备份 + 一条 SQL 删完 + 一次重载。
@@ -86,6 +90,7 @@ class StudentProvider extends ChangeNotifier {
     await BackupService.instance.createBackup();
     final deleted = await DatabaseHelper.instance.deleteStudents(idList);
     await loadStudents(groupId: _filterGroupId);
+    SyncEngine.instance.scheduleSync();
     return deleted;
   }
 
@@ -158,7 +163,8 @@ class StudentProvider extends ChangeNotifier {
           if (finalStudentNumber == null || finalStudentNumber.isEmpty) {
             // 在事务中获取下一个学号
             final result = await txn.rawQuery(
-              'SELECT MAX(CAST(student_number AS INTEGER)) as max_num FROM students',
+              'SELECT MAX(CAST(student_number AS INTEGER)) as max_num '
+              'FROM students WHERE deleted_at IS NULL',
             );
             final maxNum = result.first['max_num'] as int?;
             finalStudentNumber = ((maxNum ?? 0) + 1).toString();
@@ -207,6 +213,7 @@ class StudentProvider extends ChangeNotifier {
     });
 
     await loadStudents(groupId: _filterGroupId);
+    SyncEngine.instance.scheduleSync();
   }
 
   /// 显示批量添加到小组的对话框

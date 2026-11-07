@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../models/score_item.dart';
 import '../database/database_helper.dart';
 import '../services/backup_service.dart';
+import '../sync/sync_engine.dart';
 
 class ScoreItemProvider extends ChangeNotifier {
   List<ScoreItem> _items = [];
@@ -17,17 +18,20 @@ class ScoreItemProvider extends ChangeNotifier {
     await BackupService.instance.createBackup();
     await DatabaseHelper.instance.insertScoreItem(item.toMap());
     await loadItems();
+    SyncEngine.instance.scheduleSync();
   }
 
   Future<void> updateItem(int id, ScoreItem item) async {
     await BackupService.instance.createBackup();
     await DatabaseHelper.instance.updateScoreItem(id, item.toMap());
     await loadItems();
+    SyncEngine.instance.scheduleSync();
   }
 
   Future<void> deleteItem(int id) async {
     await BackupService.instance.createBackup();
     await DatabaseHelper.instance.deleteScoreItem(id);
     await loadItems();
+    SyncEngine.instance.scheduleSync();
   }
 }

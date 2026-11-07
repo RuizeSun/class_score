@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../models/score_record.dart';
 import '../database/database_helper.dart';
 import '../services/backup_service.dart';
+import '../sync/sync_engine.dart';
 
 class ScoreProvider extends ChangeNotifier {
   List<ScoreRecord> _records = [];
@@ -609,6 +610,10 @@ class ScoreProvider extends ChangeNotifier {
   Future<void> _reloadAfterScoreMutation() async {
     await loadRecords();
     await loadStatistics(groupId: _filterGroupId);
+    // 打分是最热的写路径：立刻排一次同步（debounce 5 秒，不会刷爆请求）。
+    // 其余写路径（学生/小组/评分项/课表/调休）在各自的 Provider 里同样调用，
+    // 60 秒心跳只作为兜底，不作为主通道。
+    SyncEngine.instance.scheduleSync();
   }
 
   // ---- 计分规则配置 ----

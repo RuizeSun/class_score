@@ -23,11 +23,17 @@ dependencies:
     screen_retriever: ^0.2.0
     package_info_plus: ^8.0.0
     desktop_multi_window: ^0.3.1
+    class_score_sync_protocol:
+        path: packages/sync_protocol
 
 dev_dependencies:
     flutter_test:
         sdk: flutter
     flutter_lints: ^6.0.0
+    # 端到端测试需要真的把服务端起起来（server/ 是同一个仓库的子包）。
+    class_score_server:
+        path: server
+    sqlite3: ^2.4.0
 
 flutter:
     uses-material-design: true
