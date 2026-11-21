@@ -110,7 +110,7 @@ Widget _buildHub({
   );
 }
 
-/// 设置 Tab 下的 10 个分项（与侧边栏文案一致）。
+/// 设置 Tab 下的 11 个分项（与侧边栏文案一致）。
 const List<String> _sectionTitles = [
   '个性化',
   '分组管理',
@@ -121,6 +121,7 @@ const List<String> _sectionTitles = [
   '桌面课表',
   '评分周期',
   '物理密钥管理',
+  'AI 服务商',
   '系统设置',
 ];
 

@@ -23,6 +23,9 @@ dependencies:
     screen_retriever: ^0.2.0
     package_info_plus: ^8.0.0
     desktop_multi_window: ^0.3.1
+    camera: ^0.12.2
+    image: ^4.3.0
+    camera_windows: ^0.3.0+1
 
 dev_dependencies:
     flutter_test:

@@ -7,6 +7,7 @@ import '../../providers/score_provider.dart';
 import '../../providers/score_item_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/student_name_text.dart';
+import 'ai_roster/ai_roster_capture_page.dart';
 
 class ScoreInputPage extends StatefulWidget {
   const ScoreInputPage({super.key});
@@ -114,6 +115,33 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
         _selectedStudentIds.add(studentId);
       }
     });
+  }
+
+  /// 打开 AI 选学生流程：取景/选图 → 裁剪 → 规则设置 → AI 推理 → 采用。
+  Future<void> _openAiRoster() async {
+    final students = context.read<StudentProvider>().students;
+    final filtered = _selectedGroupId == null
+        ? students
+        : students.where((s) => s.groupId == _selectedGroupId).toList();
+    if (filtered.isEmpty) {
+      _showMsg('当前没有学生，请先添加学生');
+      return;
+    }
+    final picked = await Navigator.push<Set<int>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AiRosterCapturePage(
+          candidates: filtered,
+        ),
+      ),
+    );
+    if (!mounted || picked == null || picked.isEmpty) return;
+    setState(() {
+      // 采用的学生可能不在当前小组筛选内，切回全部小组避免被筛选清掉
+      _selectedGroupId = null;
+      _selectedStudentIds.addAll(picked);
+    });
+    _showMsg('已通过 AI 选中 ${picked.length} 名学生');
   }
 
   void _selectAllStudents() {
@@ -563,6 +591,12 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                         TextButton(
                           onPressed: _selectAllStudents,
                           child: const Text('全选/取消'),
+                        ),
+                        const SizedBox(width: 4),
+                        TextButton.icon(
+                          onPressed: _openAiRoster,
+                          icon: const Icon(Icons.auto_awesome, size: 16),
+                          label: const Text('AI 选学生'),
                         ),
                         const SizedBox(width: 8),
                         Container(
