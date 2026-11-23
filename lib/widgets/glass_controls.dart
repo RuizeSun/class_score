@@ -19,10 +19,14 @@ const LiquidGlassSettings _menuGlassSettings = LiquidGlassSettings(
 
 /// 下拉输入框的玻璃参数：与 GlassSegmentedControl 的轨道同色，
 /// 避免工具条里一个白一个灰。
+///
+/// 背景模糊关掉（blur: 0）：下拉框成排出现在课表表格、筛选工具条里（一课表
+/// 行就有两个），而它底下永远是纯色表单底色——模糊在纯色上看不出差别，却让
+/// 每个下拉框各开一层全窗口 BackdropFilter。玻璃底座、圆角与高光保持不变。
 const LiquidGlassSettings _fieldGlassSettings = LiquidGlassSettings(
   glassColor: Color(0x21767680),
   thickness: 18,
-  blur: 10,
+  blur: 0,
   frost: 6,
   frostOpacity: 0.3,
   chromaticAberration: 0.05,
@@ -66,7 +70,7 @@ class GlassCheckbox extends StatelessWidget {
         borderRadius: size * 0.3,
         style: value ? GlassButtonStyle.prominent : GlassButtonStyle.filled,
         tintColor: value ? scheme.primary.withValues(alpha: 0.72) : null,
-        settings: glassButtonSettings,
+        settings: denseGlassButtonSettings,
         glowRadius: 8,
       ),
     );
@@ -106,7 +110,7 @@ class GlassRadio extends StatelessWidget {
         iconColor: selected ? scheme.onPrimary : Colors.transparent,
         style: selected ? GlassButtonStyle.prominent : GlassButtonStyle.filled,
         tintColor: selected ? scheme.primary.withValues(alpha: 0.72) : null,
-        settings: glassButtonSettings,
+        settings: denseGlassButtonSettings,
         glowRadius: 8,
       ),
     );
@@ -308,6 +312,8 @@ class GlassChipControl extends StatelessWidget {
     final chip = GlassActionButton(
       onPressed: isEnabled ? (onTap ?? () {}) : null,
       height: height,
+      // 选项胶囊成排出现（调休日期、筛选项），一律用轻玻璃。
+      dense: true,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       foregroundColor: foreground,
       tintColor: selected ? scheme.primary.withValues(alpha: 0.22) : null,

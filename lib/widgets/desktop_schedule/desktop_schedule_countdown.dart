@@ -36,16 +36,15 @@ class DesktopScheduleCountdown extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           const ColoredBox(color: DesktopBarPalette.countdownBackground),
-          // 背景进度条：随时间从左向右填充（下课 / 上课前都靠它表达“还剩多少”）
-          AnimatedFractionallySizedBox(
-            duration: AppMotion.resolve(
-              context,
-              const Duration(seconds: 1),
+          // 背景进度条：随时间从左向右填充（下课 / 上课前都靠它表达“还剩多少”）。
+          // 用 CustomPaint（见 [PaintProgressBar]）：每秒只重画这条横线，
+          // 不再每秒重新布局整条倒计时。
+          Positioned.fill(
+            child: PaintProgressBar(
+              value: state.progress,
+              color: DesktopBarPalette.countdownFill,
+              duration: const Duration(seconds: 1),
             ),
-            curve: Curves.linear,
-            alignment: Alignment.centerLeft,
-            widthFactor: state.progress.clamp(0.0, 1.0),
-            child: const ColoredBox(color: DesktopBarPalette.countdownFill),
           ),
           Padding(
             padding: EdgeInsets.symmetric(

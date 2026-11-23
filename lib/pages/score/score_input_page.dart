@@ -7,6 +7,7 @@ import '../../providers/group_provider.dart';
 import '../../providers/student_provider.dart';
 import '../../providers/score_provider.dart';
 import '../../providers/score_item_provider.dart';
+import '../../models/student.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
@@ -35,6 +36,18 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
   bool _quickMode = false;
   double _quickScore = 1;
 
+  // 学生卡片统一宽度缓存。
+  //
+  // 卡片宽度取决于「所有学生里最长的姓名#学号」，原本在 build 里对每个学生
+  // 跑一次 TextPainter.layout()——一次点选（每次点学生都会 setState）就要对
+  // 全班几十人重新排版一遍文字。这是纯 CPU 工作，低配 i3 上点一下学生卡片
+  // 就能吃掉几毫秒，手感是「点一下顿一下」。
+  //
+  // 这里按「学生名单 + 可用宽度」缓存测量结果：同一份名单下点选只读缓存。
+  double? _cachedCardWidth;
+  List<Student>? _cachedCardWidthStudents;
+  double? _cachedCardWidthAvailable;
+
   @override
   void initState() {
     super.initState();
@@ -52,6 +65,45 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
         });
       });
     });
+  }
+
+  /// 计算学生卡片的统一宽度（按名单 + 可用宽度缓存）。
+  ///
+  /// 卡片宽度 = 图标(16) + 间距(6) + 最长「姓名#学号」文本宽度 + 水平内边距(16)，
+  /// 并限制不超过可用宽度的 45%（保留 [Wrap] 的 spacing 余量）。
+  ///
+  /// 测量用的是与卡片渲染完全相同的 [StudentDisplay.span]，保证两者一致；
+  /// 只是把结果缓存起来——同一份名单下反复点选学生都命中缓存。
+  double _resolveCardWidth(List<Student> students, double availableWidth) {
+    if (_cachedCardWidth != null &&
+        identical(_cachedCardWidthStudents, students) &&
+        _cachedCardWidthAvailable == availableWidth) {
+      return _cachedCardWidth!;
+    }
+
+    const textStyle = TextStyle(fontSize: 12);
+    double maxCardWidth = 0;
+    for (final s in students) {
+      final textPainter = TextPainter(
+        text: StudentDisplay.span(
+          name: s.name,
+          studentNumber: s.studentNumber,
+          nameStyle: textStyle,
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      // 卡片内容宽度 = 图标(16) + 间距(6) + 文本宽度 + 水平内边距(16)
+      final cardWidth = 16.0 + 6.0 + textPainter.width + 16.0;
+      if (cardWidth > maxCardWidth) maxCardWidth = cardWidth;
+    }
+
+    final maxAllowedWidth = (availableWidth - 8.0) * 0.45;
+    if (maxCardWidth > maxAllowedWidth) maxCardWidth = maxAllowedWidth;
+
+    _cachedCardWidth = maxCardWidth;
+    _cachedCardWidthStudents = students;
+    _cachedCardWidthAvailable = availableWidth;
+    return maxCardWidth;
   }
 
   Future<void> _switchToNextPeriod() async {
@@ -627,31 +679,14 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                 // 根据容器宽度动态计算每行显示的学生数量
                 LayoutBuilder(
                   builder: (ctx, constraints) {
-                    // 预计算所有卡片内容的最大宽度，实现统一宽度对齐
-                    final textStyle = const TextStyle(fontSize: 12);
-                    double maxCardWidth = 0;
-                    for (final s in filteredStudents) {
-                      // 与卡片渲染共用「姓名#学号」的富文本构造，保证测量宽度一致
-                      final textPainter = TextPainter(
-                        text: StudentDisplay.span(
-                          name: s.name,
-                          studentNumber: s.studentNumber,
-                          nameStyle: textStyle,
-                        ),
-                        textDirection: TextDirection.ltr,
-                      )..layout();
-                      // 卡片内容宽度 = 图标(16) + 间距(6) + 文本宽度 + 水平内边距(16)
-                      final cardWidth = 16.0 + 6.0 + textPainter.width + 16.0;
-                      if (cardWidth > maxCardWidth) {
-                        maxCardWidth = cardWidth;
-                      }
-                    }
-                    // 限制最大宽度不超过可用宽度的 45%（保留 spacing 余量）
-                    final maxAllowedWidth = (constraints.maxWidth - 8.0) * 0.45;
-                    if (maxCardWidth > maxAllowedWidth) {
-                      maxCardWidth = maxAllowedWidth;
-                    }
+                    // 卡片统一宽度：结果按「名单 + 可用宽度」缓存，点选学生
+                    // （每次都会 setState 重建）不再重排全班文字。
+                    final maxCardWidth = _resolveCardWidth(
+                      filteredStudents,
+                      constraints.maxWidth,
+                    );
 
+                    const textStyle = TextStyle(fontSize: 12);
                     return Wrap(
                       spacing: 8.0,
                       runSpacing: 8.0,

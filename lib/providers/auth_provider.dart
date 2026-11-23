@@ -1,7 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
+import 'package:win32/win32.dart';
+
 import '../database/database_helper.dart';
 import '../models/schedule_adjustment.dart';
 
@@ -559,47 +563,81 @@ class AuthProvider extends ChangeNotifier {
     return false;
   }
 
+  /// 列出「可能插着密钥」的驱动器根路径。
+  ///
+  /// 原来的实现是「把 A 到 Z 全试一遍，对每个盘符做一次
+  /// `Directory(path).exists()`」——26 次真实文件系统探测，而 USB 扫描每 5 秒
+  /// 跑一次、且跑在主 isolate 上：低配一体机的机械硬盘 / 慢速 U 盘控制器上，
+  /// 一次探测就可能阻塞几十毫秒，滚动和动画会周期性地顿一下。
+  ///
+  /// 改用 Win32 的两个纯内存调用：[GetLogicalDrives] 返回一个位掩码（哪些盘符
+  /// 存在），[GetDriveType] 直接告诉我们盘符类型。两者都不碰文件系统，耗时以
+  /// 微秒计。非 Windows（测试环境）退回原来的探测方式。
+  ///
+  /// **扫描范围必须与旧实现逐一对齐**：旧代码接受「除 C 盘外所有存在的盘符」，
+  /// 也就是固定盘（D: 数据盘 / 第二个分区）同样会被搜索。只认 U 盘
+  /// （`DRIVE_REMOVABLE`）会让「密钥放在固定 D 盘」的用户在升级后突然解不开锁
+  /// ——对老师来说就是「更新完之后 U 盘钥匙失效了」。因此这里按驱动器类型
+  /// 白名单匹配旧语义，而不是收紧成可移动盘。
   Future<List<String>> _getRemovableDrives() async {
-    final drives = <String>[];
-    try {
-      for (final drive in [
-        'A',
-        'B',
-        'C',
-        'D',
-        'E',
-        'F',
-        'G',
-        'H',
-        'I',
-        'J',
-        'K',
-        'L',
-        'M',
-        'N',
-        'O',
-        'P',
-        'Q',
-        'R',
-        'S',
-        'T',
-        'U',
-        'V',
-        'W',
-        'X',
-        'Y',
-        'Z',
-      ]) {
-        final path = '$drive:\\';
-        try {
-          if (await Directory(path).exists()) {
-            if (drive != 'C') {
-              drives.add(path);
-            }
-          }
-        } catch (_) {}
+    if (Platform.isWindows) {
+      try {
+        return _candidateDrivesFromWin32();
+      } catch (_) {
+        // FFI 不可用（极少数裁剪过的运行环境）时退回通用实现。
       }
-    } catch (_) {}
+    }
+    return _probeCandidateDrives();
+  }
+
+  /// 可以承载密钥的驱动器类型（与旧 `Directory.exists()` 的判定等价）。
+  ///
+  /// - FIXED：固定盘（D:、E: 等）——旧实现会搜索，这里必须保留。
+  /// - REMOVABLE：U 盘，主要场景。
+  /// - REMOTE / RAMDISK：映射盘 / 内存盘，`exists()` 同样返回 true。
+  ///
+  /// 刻意排除 CDROM（空光驱上 `exists()` 为 false，且拖慢扫描）、
+  /// DRIVE_NO_ROOT_DIR 与 UNKNOWN（盘符不存在）。
+  static const List<int> _keyDriveTypes = [
+    DRIVE_FIXED,
+    DRIVE_REMOVABLE,
+    DRIVE_REMOTE,
+    DRIVE_RAMDISK,
+  ];
+
+  /// Win32 快路径：位掩码 + 驱动器类型，零文件系统访问。
+  static List<String> _candidateDrivesFromWin32() {
+    final drives = <String>[];
+    final mask = GetLogicalDrives();
+    if (mask == 0) return drives;
+    for (var i = 0; i < 26; i++) {
+      if (mask & (1 << i) == 0) continue;
+      // 跳过 A/B（软驱盘符）与 C（系统盘）：与旧实现的排除规则保持一致。
+      final letter = String.fromCharCode(0x41 + i);
+      if (letter == 'A' || letter == 'B' || letter == 'C') continue;
+      final root = '$letter:\\'.toNativeUtf16();
+      try {
+        if (_keyDriveTypes.contains(GetDriveType(root))) {
+          drives.add('$letter:\\');
+        }
+      } finally {
+        calloc.free(root);
+      }
+    }
+    return drives;
+  }
+
+  /// 通用兜底：逐个盘符探测（非 Windows / FFI 不可用时使用）。
+  Future<List<String>> _probeCandidateDrives() async {
+    final drives = <String>[];
+    for (var i = 0; i < 26; i++) {
+      final letter = String.fromCharCode(0x41 + i);
+      if (letter == 'A' || letter == 'B' || letter == 'C') continue;
+      final path = '$letter:\\';
+      try {
+        if (await Directory(path).exists()) drives.add(path);
+      } catch (_) {}
+    }
     return drives;
   }
 

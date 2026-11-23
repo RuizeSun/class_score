@@ -135,3 +135,116 @@ class AppSizeTransition extends StatelessWidget {
     );
   }
 }
+
+/// 只在**绘制阶段**推进的进度条（替代 `AnimatedFractionallySizedBox`）。
+///
+/// 为什么不用 `AnimatedFractionallySizedBox`：它把宽度写进了布局约束，因而
+/// 每一帧都要走过完整的 layout → paint → composite 三段，且长度变化会沿子树
+/// 向上冒泡触发父级 re-layout。桌面课表的进度条**每秒**推进一次、跨度整条
+/// 胶囊，于是整条课表（含其中的文字排版）每秒被重新布局一遍——独立引擎 +
+/// 分层窗口 + 每秒重排，在核显机器上就是肉眼可见的卡顿来源。
+///
+/// 这个实现把「进度」交给 [CustomPaint]：布局只做一次，之后每帧只重画那一
+/// 条细横线。几何形状、颜色、圆角与原实现一致。
+class PaintProgressBar extends StatelessWidget {
+  const PaintProgressBar({
+    super.key,
+    required this.value,
+    required this.color,
+    this.duration,
+    this.curve = Curves.linear,
+    this.trackBorderRadius,
+  });
+
+  /// 目标进度（0~1）。变化时按 [duration] / [curve] 补间。
+  final double value;
+
+  final Color color;
+
+  /// 补间时长；为空表示瞬时（不补间）。
+  final Duration? duration;
+
+  final Curve curve;
+
+  /// 轨道圆角（胶囊形进度条用）。
+  ///
+  /// 与原来的 `ClipRRect → 按比例填充` 一致：裁剪作用在**整条轨道**上，
+  /// 填充块本身不带圆角，因此进度很小时不会出现「右边也被磨圆」的缺口。
+  final BorderRadius? trackBorderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final target = value.clamp(0.0, 1.0);
+    final resolved = duration == null
+        ? null
+        : AppMotion.resolve(context, duration!);
+
+    Widget painter(double v) => CustomPaint(
+      painter: _ProgressBarPainter(
+        value: v,
+        color: color,
+        trackBorderRadius: trackBorderRadius,
+      ),
+      // 进度条只画不占位：尺寸完全由父级给的约束决定。
+      size: Size.infinite,
+      willChange: true,
+    );
+
+    if (resolved == null || resolved == Duration.zero) {
+      return painter(target);
+    }
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: target),
+      duration: resolved,
+      curve: curve,
+      builder: (context, v, _) => painter(v.clamp(0.0, 1.0)),
+    );
+  }
+}
+
+class _ProgressBarPainter extends CustomPainter {
+  const _ProgressBarPainter({
+    required this.value,
+    required this.color,
+    required this.trackBorderRadius,
+  });
+
+  final double value;
+  final Color color;
+  final BorderRadius? trackBorderRadius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (value <= 0 || size.width <= 0 || size.height <= 0) return;
+    final radius = trackBorderRadius;
+    if (radius != null) {
+      // 只裁「整条轨道」，填充块本身保持直角——与 ClipRRect 包住
+      // AnimatedFractionallySizedBox 的原实现完全等价。
+      canvas.save();
+      canvas.clipRRect(RRect.fromRectAndCorners(
+        Offset.zero & size,
+        topLeft: radius.topLeft,
+        topRight: radius.topRight,
+        bottomLeft: radius.bottomLeft,
+        bottomRight: radius.bottomRight,
+      ));
+      canvas.drawRect(
+        Offset.zero & Size(size.width * value, size.height),
+        Paint()..color = color,
+      );
+      canvas.restore();
+      return;
+    }
+    canvas.drawRect(
+      Offset.zero & Size(size.width * value, size.height),
+      Paint()..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ProgressBarPainter oldDelegate) =>
+      oldDelegate.value != value ||
+      oldDelegate.color != color ||
+      oldDelegate.trackBorderRadius != trackBorderRadius;
+}
+

@@ -72,6 +72,38 @@ class PersonalizationView extends StatelessWidget {
           title: '界面质感',
           subtitle: '玻璃效果的渲染档位；如果启动时转圈时间过长或界面卡顿，可降到均衡 / 高性能',
         ),
+        // 低配机器（内存 ≤ 4GB）首次启动会自动落在「高性能」档，
+        // 这里把原因说清楚，免得老师以为是自己设错了。
+        if (personalization.isLowSpecDevice) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.tertiaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.speed_outlined,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.onTertiaryContainer,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '检测到本机内存较小，已自动选用「高性能」档以保证帧率。'
+                    '仍可手动改回更华丽的档位（会更吃显卡）。',
+                    style: TextStyle(
+                      fontSize: SettingsLayout.hintFontSize,
+                      color: Theme.of(context).colorScheme.onTertiaryContainer,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 8),
         Column(
           children: [

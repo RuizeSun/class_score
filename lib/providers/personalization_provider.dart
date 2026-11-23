@@ -1,8 +1,11 @@
+import 'dart:ffi';
 import 'dart:io' show Platform;
 
+import 'package:ffi/ffi.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show GlassQuality;
+import 'package:win32/win32.dart';
 
 import '../database/database_helper.dart';
 
@@ -74,6 +77,26 @@ class PersonalizationProvider extends ChangeNotifier {
       ? GlassQuality.standard
       : quality;
 
+  // ---- 低配机器自动降档 ----
+  //
+  // 教室一体机这类机器常见 i3 + 4GB 内存 + 核显：玻璃的片元着色器全部跑在
+  // 核显上，4GB 的机器还要和系统、浏览器抢内存，standard 档很容易掉到 30fps
+  // 以下。这里在启动时读一次物理内存，低于阈值就把默认档位直接给到「高性能」
+  // ——用户仍可在设置里改回去（用户显式选择永远优先于这里的自动判断）。
+  //
+  // 只影响**没有显式设置过档位**的机器：一旦用户点过任何一档，DB 里就有值，
+  // 这里的自动降档不再生效。
+
+  /// 触发自动降档的物理内存上限（GB）。
+  ///
+  /// 4GB 及以下的机器按「低配」处理；8GB 起不做干预（教室一体机 8GB + 核显
+  /// 在 standard 档下实测可以维持 60fps）。
+  static const double lowSpecMemoryGb = 5.0;
+
+  /// 当前机器是否被判为低配（决定默认档位与设置页的提示）。
+  bool get isLowSpecDevice => _lowSpecDevice;
+  bool _lowSpecDevice = false;
+
   GlassQuality _glassQuality = defaultGlassQuality;
   GlassQuality get glassQuality => _glassQuality;
 
@@ -135,14 +158,48 @@ class PersonalizationProvider extends ChangeNotifier {
 
     // 玻璃档位：老用户没有这个 key 按默认档；历史数据里存过 Windows 上
     // 不支持的 premium 时一并降级，否则启动仍会被多趟 shader 卡住。
+    _lowSpecDevice = _detectLowSpecDevice();
+    final storedQuality = await DatabaseHelper.instance.getSetting(
+      _keyGlassQuality,
+    );
+
+    // 从没选过档位、且本机是低配（如 i3 + 4GB 的教室一体机）时直接给
+    // 「高性能」档：这类机器上玻璃着色器就是帧率的主要瓶颈，默认给均衡档
+    // 相当于把每个新装机的老师都推进卡顿里。用户一旦在设置里点过任何一档，
+    // 库里就有值，这里的自动降档不再生效。
+    final useLowSpecDefault =
+        (storedQuality == null || storedQuality.isEmpty) && _lowSpecDevice;
+
     _glassQuality = _supportedQuality(
-      _parseGlassQuality(
-        await DatabaseHelper.instance.getSetting(_keyGlassQuality),
-      ),
+      useLowSpecDefault
+          ? GlassQuality.minimal
+          : _parseGlassQuality(storedQuality),
     );
 
     _isInitialized = true;
     notifyListeners();
+  }
+
+  /// 读一次物理内存判断是否低配机器。
+  ///
+  /// 用 [GlobalMemoryStatusEx]（纯内存调用，几微秒），而不是 Process / WMI
+  /// （要拉起子进程，启动路径上会卡住转圈）。任何异常都按「不是低配」处理：
+  /// 降档是优化，不能因为它让启动失败。
+  static bool _detectLowSpecDevice() {
+    if (!Platform.isWindows) return false;
+    try {
+      final status = calloc<MEMORYSTATUSEX>();
+      try {
+        status.ref.dwLength = sizeOf<MEMORYSTATUSEX>();
+        if (GlobalMemoryStatusEx(status) == 0) return false;
+        final totalGb = status.ref.ullTotalPhys / (1024 * 1024 * 1024);
+        return totalGb.toDouble() <= lowSpecMemoryGb;
+      } finally {
+        calloc.free(status);
+      }
+    } catch (_) {
+      return false;
+    }
   }
 
   static GlassQuality _parseGlassQuality(String? stored) {

@@ -263,16 +263,14 @@ class _ActiveChip extends StatelessWidget {
             right: 0,
             bottom: 0,
             height: DesktopBarMetrics.progressThickness * scale,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(
+            // 用 CustomPaint 而不是 AnimatedFractionallySizedBox：后者把进度写进
+            // 布局约束，每秒都要重新布局整条课表（见 [PaintProgressBar]）。
+            child: PaintProgressBar(
+              value: progress,
+              color: DesktopBarPalette.accent,
+              duration: duration,
+              trackBorderRadius: BorderRadius.circular(
                 DesktopBarMetrics.progressThickness,
-              ),
-              child: AnimatedFractionallySizedBox(
-                duration: duration,
-                curve: Curves.linear,
-                alignment: Alignment.centerLeft,
-                widthFactor: progress.clamp(0.0, 1.0),
-                child: const ColoredBox(color: DesktopBarPalette.accent),
               ),
             ),
           ),

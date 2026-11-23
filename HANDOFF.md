@@ -4,7 +4,9 @@
 
 - 生成时间：2026-09-26（2026-09-30：P0 性能修复）
 - commit：HEAD 08a3afc（P0 三轮，未 push）；1.5.1 = 04e18ba
-- last_verified：2026-11-23 稳定性修复后（`fvm flutter test` 210 全过、`fvm flutter analyze` 43 条既有 info、无新增；Release 实机 10/10 次启动存活）
+- last_verified：2026-11-23 1.5.4 低配帧率优化后（`fvm flutter test` 210 全过、
+  `fvm flutter analyze` 43 条既有 info、无新增；`fvm flutter build windows --release` 通过；
+  驱动器枚举已用「新旧实现结果逐一对齐」的临时测试验证等价）
 - Flutter SDK：**fvm 3.47.9**（见下方「稳定性和数据安全红线」）
 - 仅支持 Windows（用户明确；android/ios/macos/linux/web 目录为脚手架残留）
 
@@ -47,6 +49,17 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
 - 桌面条 `_recompute`：按渲染指纹去重（内容没变不 notify，倒计时仍逐秒）；**新增渲染字段必须加进 `_renderSignature`**，否则界面不刷新。
 - 仪表盘：`getScoreRecords` 支持 `startDate/endDate/limit` + 单次 `setState` + `_loadGeneration` 防并发（勿整周期读进内存）。
 - main.dart：浮窗探测 10s 限频、球显隐看门狗 15s；AuthProvider 仅解锁状态变化才 notify。
+- **玻璃 `blur` 只给「底下真有东西」的面**（2026-11-23，低配机 30→60fps）：
+  页面都是纯色底，纯色模糊看不出差别，但 `blur > 0` 就推一层全窗口
+  `BackdropFilterLayer`（`blurSigma > 0` 才 pushLayer），一屏几十个玻璃控件 =
+  一帧几十次全窗拷贝。成排控件（`GlassActionButton`/`GlassIconAction`/
+  `GlassCheckbox`/`GlassChipControl`/`GlassDropdownField`/底部导航条）统一用
+  `denseGlassButtonSettings`（`blur: 0`，其余视觉参数不变）；只有状态栏胶囊、
+  下拉浮层、解锁卡片用完整 blur。**勿**改回 `blur: 10/14`。
+- **课表进度条用 `PaintProgressBar`**，不要 `AnimatedFractionallySizedBox`：
+  后者把进度写进布局约束，每秒重排整条课表（独立引擎+分层窗口，必卡）。
+- **U 盘枚举走 Win32**（`GetLogicalDrives`+`GetDriveType`），不要改回逐个
+  `Directory.exists()` 探 26 个盘符（每 5 秒在主 isolate 跑，慢盘上卡渲染）。
 
 ## 稳定性和数据安全红线（2026-11-23 修，勿回退）
 

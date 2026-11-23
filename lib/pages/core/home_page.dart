@@ -221,20 +221,27 @@ class _HomePageState extends State<HomePage>
                   horizontal: 4,
                   vertical: 4,
                 ),
+                // 底部导航条压在纯色页面上：这里的背景模糊（blur）与片元
+                // 着色器（thickness / 色散 / 边缘高光）在纯色底上画不出可辨
+                // 差异，但它是全应用最贵的一个玻璃面——每条 Tab 切换都要重画
+                // 轨道 + 指示块两层，且每层各推一次全窗口 BackdropFilter。
+                // 保留玻璃的透明底色与高光，只把 blur 归零。
                 settings: LiquidGlassSettings(
                   glassColor: Colors.grey.shade400.withValues(alpha: 0.20),
                   thickness: 22,
-                  blur: 14,
+                  blur: 0,
                   chromaticAberration: 0.05,
                   rimShade: 0.6,
                   rimLight: 1.0,
                   glowIntensity: 0.8,
                 ),
                 indicatorColor: Colors.white.withValues(alpha: 0.10),
+                // 指示块（选中 Tab 下的那颗白色胶囊）同理：它每秒都跟着
+                // 弹簧动画移动，模糊层一开，移动期间每帧都要重新采样整窗背景。
                 indicatorSettings: LiquidGlassSettings(
                   glassColor: Colors.white.withValues(alpha: 0.12),
                   thickness: 12,
-                  blur: 8,
+                  blur: 0,
                   chromaticAberration: 0.08,
                   rimShade: 0.7,
                   edgeAbsorption: 0.3,

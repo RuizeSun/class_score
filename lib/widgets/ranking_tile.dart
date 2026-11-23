@@ -77,15 +77,20 @@ class RankingGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(RankingMetrics.groupRadius),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          vertical: RankingMetrics.groupPadding,
+    // 榜单铺在 SingleChildScrollView + Column 里（不是懒加载列表），整块内容
+    // 每帧都要重画。给每个名次块单独封一层 [RepaintBoundary]：滚动时只需重新
+    // 合成已缓存的光栅，不必把块内的玻璃按钮（每个学生行一颗）重新画一遍。
+    return RepaintBoundary(
+      child: Material(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(RankingMetrics.groupRadius),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            vertical: RankingMetrics.groupPadding,
+          ),
+          child: Column(mainAxisSize: MainAxisSize.min, children: children),
         ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: children),
       ),
     );
   }

@@ -14,6 +14,35 @@ const LiquidGlassSettings glassButtonSettings = LiquidGlassSettings(
   glowIntensity: 0.8,
 );
 
+/// 高密度控件（列表行 / 表格行 / 工具栏里的图标按钮、勾选框）用的「轻玻璃」。
+///
+/// 与 [glassButtonSettings] 的**颜色、厚度、边缘高光、投影全部一致**，只把
+/// `blur`（背景模糊）归零——在本应用里这一项一个像素都不会变，代价却极大：
+///
+/// - 所有页面都是纯色 Material 底色，没有背景图。对一块纯色做高斯模糊，
+///   结果还是同一块纯色，肉眼分辨不出。
+/// - 但只要 `blur > 0`，每个玻璃面都会推开一层**全窗口的
+///   `BackdropFilterLayer`**（见 liquid_glass_widgets 的
+///   `LightweightLiquidGlass.paint`：`blurSigma > 0` 才 pushLayer）。
+///   合成器要为每个这样的控件把整块 1280×800 的画面拷贝一遍。
+/// - 一条评分记录带 3 颗图标按钮、一屏十几条、课表表格每行两个下拉框……
+///   一帧几十次全窗口拷贝，正是低配一体机（核显 + i3）掉到 30fps 以下的主因。
+///   blur 归零后这些控件不再产生任何合成层，着色器照常画圆角、厚度与高光。
+///
+/// 需要真正「透出底下内容」的大面积玻璃（状态栏胶囊、底部导航条、下拉菜单
+/// 浮层、解锁卡片）仍用 [glassButtonSettings]。
+const LiquidGlassSettings denseGlassButtonSettings = LiquidGlassSettings(
+  glassColor: Color(0x24FFFFFF),
+  thickness: 18,
+  blur: 0,
+  frost: 0,
+  frostOpacity: 0.32,
+  chromaticAberration: 0.06,
+  rimShade: 0.5,
+  rimLight: 1.1,
+  glowIntensity: 0.8,
+);
+
 /// 液态玻璃动作按钮的两种外观档位。
 enum GlassActionVariant {
   /// 中性磨砂玻璃：用于次要操作（原 TextButton / OutlinedButton）。
@@ -43,6 +72,7 @@ class GlassActionButton extends StatelessWidget {
     this.fontWeight,
     this.tooltip,
     this.shape,
+    this.dense = true,
   });
 
   /// 带图标的按钮（对应 `TextButton.icon` / `FilledButton.icon` 等）。
@@ -60,6 +90,7 @@ class GlassActionButton extends StatelessWidget {
     FontWeight? fontWeight,
     String? tooltip,
     LiquidShape? shape,
+    bool dense = true,
   }) {
     return GlassActionButton(
       key: key,
@@ -73,6 +104,7 @@ class GlassActionButton extends StatelessWidget {
       fontWeight: fontWeight,
       tooltip: tooltip,
       shape: shape,
+      dense: dense,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [icon, const SizedBox(width: 8), label],
@@ -91,6 +123,13 @@ class GlassActionButton extends StatelessWidget {
   final FontWeight? fontWeight;
   final String? tooltip;
   final LiquidShape? shape;
+
+  /// 是否使用「轻玻璃」档（见 [denseGlassButtonSettings]）。
+  ///
+  /// 默认开启：按钮几乎都落在纯色页面 / 卡片上，背景模糊在这里画不出任何
+  /// 可见差异，却要为每个按钮付一次整窗画面拷贝。少数压在真实内容（图片、
+  /// 另一层玻璃、可滚动正文）之上的按钮可传 false 换回完整磨砂。
+  final bool dense;
 
   @override
   Widget build(BuildContext context) {
@@ -114,7 +153,7 @@ class GlassActionButton extends StatelessWidget {
       height: height,
       shape: shape ?? LiquidRoundedSuperellipse(borderRadius: height / 2),
       style: buttonStyle,
-      settings: glassButtonSettings,
+      settings: dense ? denseGlassButtonSettings : glassButtonSettings,
       tintColor: tint,
       glowColor: foreground.withValues(alpha: 0.16),
       child: Padding(
@@ -150,6 +189,7 @@ class GlassIconAction extends StatelessWidget {
     this.foregroundColor,
     this.tintColor,
     this.variant = GlassActionVariant.filled,
+    this.dense = true,
   });
 
   final Widget icon;
@@ -160,6 +200,12 @@ class GlassIconAction extends StatelessWidget {
   final Color? foregroundColor;
   final Color? tintColor;
   final GlassActionVariant variant;
+
+  /// 是否使用「轻玻璃」档（见 [denseGlassButtonSettings]）。
+  ///
+  /// 图标按钮几乎都成排落在列表行 / 工具栏里，是背景模糊最贵、收益最低的
+  /// 一类控件，因此默认开启；压在真实内容之上时传 false。
+  final bool dense;
 
   @override
   Widget build(BuildContext context) {
@@ -179,7 +225,7 @@ class GlassIconAction extends StatelessWidget {
       iconSize: iconSize ?? size * 0.5,
       iconColor: foreground,
       shape: GlassIconButtonShape.circle,
-      settings: glassButtonSettings,
+      settings: dense ? denseGlassButtonSettings : glassButtonSettings,
       tintColor: tint,
       style: isProminent ? GlassButtonStyle.prominent : GlassButtonStyle.filled,
       glowColor: foreground.withValues(alpha: 0.16),
@@ -196,16 +242,24 @@ class GlassIconAction extends StatelessWidget {
 ///
 /// 外壳只负责背景，不参与命中测试，点击仍由内部控件处理。
 class GlassIconFrame extends StatelessWidget {
-  const GlassIconFrame({super.key, required this.child, this.size = 40});
+  const GlassIconFrame({
+    super.key,
+    required this.child,
+    this.size = 40,
+    this.dense = true,
+  });
 
   final Widget child;
   final double size;
+
+  /// 是否使用「轻玻璃」档（见 [denseGlassButtonSettings]）。
+  final bool dense;
 
   @override
   Widget build(BuildContext context) {
     return AdaptiveGlass(
       shape: const LiquidOval(),
-      settings: glassButtonSettings,
+      settings: dense ? denseGlassButtonSettings : glassButtonSettings,
       quality:
           GlassThemeData.of(context).qualityFor(context) ??
           GlassQuality.standard,
