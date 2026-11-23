@@ -7,7 +7,12 @@ class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._();
   DatabaseHelper._();
 
-  Database? _database;
+  /// 缓存的是「打开数据库」这个 Future，而不是打开后的 Database。
+  ///
+  /// 多个 Provider 在首帧后会同时首次访问数据库；如果只缓存结果，第一个
+  /// openDatabase 还没返回时其他调用会各自再开一次同一个文件，造成锁竞争和
+  /// 重复迁移，直接把 UI isolate 卡住。缓存 Future 后所有调用共享同一次打开。
+  Future<Database>? _databaseFuture;
 
   /// 数据库目录覆盖（测试用）。
   ///
@@ -16,6 +21,19 @@ class DatabaseHelper {
   /// Flutter SDK 目录里，因此留出这个注入点。
   @visibleForTesting
   static String? dbDirOverride;
+
+  static bool _ffiInitialized = false;
+
+  /// 在主 isolate 上提前加载 sqlite3.dll。
+  ///
+  /// Windows 版 sqfliteFfiInit() 会同步 `sqlite3.openInMemory()`（包里注明
+  /// 必须留在主 isolate，放到后台 isolate 会坏），这一步会卡住当前 isolate。
+  /// 由 main() 在 runApp 之前调用，加载页就不会被 DLL 初始化拖住。
+  static void initializeFfi() {
+    if (_ffiInitialized) return;
+    sqfliteFfiInit();
+    _ffiInitialized = true;
+  }
 
   String get dbDir {
     final override = dbDirOverride;
@@ -27,10 +45,16 @@ class DatabaseHelper {
 
   String get dbPath => p.join(dbDir, 'score.db');
 
-  Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDatabase();
-    return _database!;
+  Future<Database> get database {
+    final existing = _databaseFuture;
+    if (existing != null) return existing;
+    final opening = _initDatabase();
+    _databaseFuture = opening;
+    // 打开失败时允许下次重试，不要把失败的 Future 永久缓存下去。
+    return opening.catchError((Object error, StackTrace stack) {
+      if (identical(_databaseFuture, opening)) _databaseFuture = null;
+      return Future<Database>.error(error, stack);
+    });
   }
 
   Future<Database> _initDatabase() async {
@@ -39,7 +63,7 @@ class DatabaseHelper {
       await dir.create(recursive: true);
     }
 
-    sqfliteFfiInit();
+    initializeFfi();
     final db = await databaseFactoryFfi.openDatabase(
       dbPath,
       options: OpenDatabaseOptions(
@@ -287,10 +311,11 @@ class DatabaseHelper {
   }
 
   Future<void> closeDatabase() async {
-    if (_database != null) {
-      await _database!.close();
-      _database = null;
-    }
+    final opening = _databaseFuture;
+    if (opening == null) return;
+    _databaseFuture = null;
+    final db = await opening;
+    await db.close();
   }
 
   /// Reload all data after restore/reset - triggers lazy re-initialization
@@ -324,13 +349,12 @@ class DatabaseHelper {
   // ---- Score Config ----
   /// 读取计分规则全局设置（学生初始分、小组初始分、小组总分计算方式）
   Future<({double studentInitial, double groupInitial, String mode})>
-      _getScoreConfig() async {
+  _getScoreConfig() async {
     final studentInitial =
         double.tryParse((await getSetting('student_initial_score')) ?? '') ??
         0.0;
     final groupInitial =
-        double.tryParse((await getSetting('group_initial_score')) ?? '') ??
-        0.0;
+        double.tryParse((await getSetting('group_initial_score')) ?? '') ?? 0.0;
     final mode = await getSetting('group_score_mode') ?? 'sum';
     return (
       studentInitial: studentInitial,
@@ -344,8 +368,7 @@ class DatabaseHelper {
   /// m.scoring_member_count：参与小组总分统计的人数（总分与人均只按这部分人算）；
   /// m.score_sum：参与统计的成员当期积分变动总和。
   String _groupTotalExpr({
-    required ({double studentInitial, double groupInitial, String mode})
-        config,
+    required ({double studentInitial, double groupInitial, String mode}) config,
   }) {
     final si = config.studentInitial;
     final gi = config.groupInitial;
@@ -428,7 +451,9 @@ class DatabaseHelper {
 
   /// Replace the whole course schedule table with [rows] in one transaction.
   /// Used by the table editor and the "overwrite" import mode.
-  Future<void> replaceAllCourseSchedules(List<Map<String, dynamic>> rows) async {
+  Future<void> replaceAllCourseSchedules(
+    List<Map<String, dynamic>> rows,
+  ) async {
     final db = await database;
     await db.transaction((txn) async {
       await txn.delete('course_schedule');
@@ -710,7 +735,10 @@ class DatabaseHelper {
   }
 
   /// 通用更新 score_records 指定字段（用于补充/修改变动原因时绑定预设项/分值等）
-  Future<int> updateScoreRecordFields(int id, Map<String, dynamic> values) async {
+  Future<int> updateScoreRecordFields(
+    int id,
+    Map<String, dynamic> values,
+  ) async {
     if (values.isEmpty) return 0;
     final db = await database;
     return db.update('score_records', values, where: 'id = ?', whereArgs: [id]);
@@ -838,23 +866,21 @@ class DatabaseHelper {
       // 校验目标对象是否仍存在，避免恢复成“未知”对象
       bool targetExists;
       if (targetType == 'student') {
-        targetExists =
-            (await txn.query(
-              'students',
-              columns: ['id'],
-              where: 'id = ?',
-              whereArgs: [targetId],
-              limit: 1,
-            )).isNotEmpty;
+        targetExists = (await txn.query(
+          'students',
+          columns: ['id'],
+          where: 'id = ?',
+          whereArgs: [targetId],
+          limit: 1,
+        )).isNotEmpty;
       } else if (targetType == 'group') {
-        targetExists =
-            (await txn.query(
-              'groups',
-              columns: ['id'],
-              where: 'id = ?',
-              whereArgs: [targetId],
-              limit: 1,
-            )).isNotEmpty;
+        targetExists = (await txn.query(
+          'groups',
+          columns: ['id'],
+          where: 'id = ?',
+          whereArgs: [targetId],
+          limit: 1,
+        )).isNotEmpty;
       } else {
         targetExists = true;
       }
@@ -1319,7 +1345,8 @@ class DatabaseHelper {
     final db = await database;
     final config = await _getScoreConfig();
     final groupExpr = _groupTotalExpr(config: config);
-    final query = '''
+    final query =
+        '''
       SELECT groups.id, groups.name,
              $groupExpr as total_score,
              COALESCE(m.member_count, 0) as member_count
@@ -1354,7 +1381,8 @@ class DatabaseHelper {
     }
     final db = await database;
     final config = await _getScoreConfig();
-    String query = '''
+    String query =
+        '''
       SELECT students.id, students.name, students.student_number, students.group_id, groups.name as group_name,
              COALESCE(SUM(score_records.score), 0) + ${config.studentInitial} as total_score
       FROM students
@@ -1411,7 +1439,8 @@ class DatabaseHelper {
     final periodOn = period != null ? 'AND sr.period = $period' : '';
     // 根据计算方式生成小组总分表达式
     final groupExpr = _groupTotalExpr(config: config);
-    final query = '''
+    final query =
+        '''
       SELECT groups.id, groups.name,
              $groupExpr as total_score,
              COALESCE(m.member_count, 0) as member_count
@@ -1439,7 +1468,8 @@ class DatabaseHelper {
   }) async {
     final db = await database;
     final config = await _getScoreConfig();
-    String query = '''
+    String query =
+        '''
       SELECT students.id, students.name, students.student_number, students.group_id, groups.name as group_name,
              COALESCE(SUM(score_records.score), 0) + ${config.studentInitial} as total_score
       FROM students

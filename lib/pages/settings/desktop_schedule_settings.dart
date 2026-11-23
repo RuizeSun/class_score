@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../../models/desktop_bar_style.dart';
 import '../../models/weather_snapshot.dart';
 import '../../providers/desktop_schedule_provider.dart';
+import '../../widgets/glass_buttons.dart';
+import '../../widgets/glass_controls.dart';
 import '../../services/weather_service.dart';
 import '../../widgets/desktop_schedule/desktop_schedule_common.dart';
 import '../../widgets/desktop_schedule/desktop_schedule_widget.dart';
@@ -24,7 +26,7 @@ class DesktopScheduleSettingsView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // ---- 总开关 ----
-        SwitchListTile(
+        GlassSwitchTile(
           contentPadding: EdgeInsets.zero,
           secondary: const Icon(Icons.desktop_windows),
           title: const Text('在桌面上显示课表胶囊'),
@@ -43,7 +45,7 @@ class DesktopScheduleSettingsView extends StatelessWidget {
           subtitle: '桌面常驻的小圆球入口；与上面的课表开关相互独立，课表关掉时球依然在',
         ),
         const SizedBox(height: 8),
-        SwitchListTile(
+        GlassSwitchTile(
           contentPadding: EdgeInsets.zero,
           secondary: const Icon(Icons.circle_outlined),
           title: const Text('在桌面显示悬浮球'),
@@ -75,8 +77,11 @@ class DesktopScheduleSettingsView extends StatelessWidget {
                   : '已拖动调整（偏移 ${provider.ballOffsetX.round()}，'
                         '${provider.ballOffsetY.round()}）；显示课表胶囊时球会贴回胶囊右侧',
             ),
-            trailing: TextButton(
+            trailing: GlassActionButton(
               onPressed: provider.resetBallOffset,
+              height: 32,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              fontSize: 13,
               child: const Text('重置位置'),
             ),
           ),
@@ -121,13 +126,11 @@ class DesktopScheduleSettingsView extends StatelessWidget {
           labelOf: (value) => value.label,
           onChanged: provider.setLayer,
         ),
-        SwitchListTile(
+        GlassSwitchTile(
           contentPadding: EdgeInsets.zero,
           secondary: const Icon(Icons.mouse),
           title: const Text('鼠标穿透'),
-          subtitle: const Text(
-            '开启后胶囊本身不响应鼠标点击；胶囊之外始终不响应，桌面图标照常可用',
-          ),
+          subtitle: const Text('开启后胶囊本身不响应鼠标点击；胶囊之外始终不响应，桌面图标照常可用'),
           value: provider.clickThrough,
           onChanged: provider.setClickThrough,
         ),
@@ -159,17 +162,14 @@ class DesktopScheduleSettingsView extends StatelessWidget {
         // ---- 外观（前台态：有程序在前台时）----
         const SettingsSectionTitle(
           title: '外观（有程序在前台时）',
-          subtitle:
-              '开启后，检测到有程序窗口在前台（不含桌面与任务栏）时自动换用另一套位置、大小等样式；回到桌面再换回来',
+          subtitle: '开启后，检测到有程序窗口在前台（不含桌面与任务栏）时自动换用另一套位置、大小等样式；回到桌面再换回来',
         ),
         const SizedBox(height: 8),
-        SwitchListTile(
+        GlassSwitchTile(
           contentPadding: EdgeInsets.zero,
           secondary: const Icon(Icons.picture_in_picture_alt_outlined),
           title: const Text('有程序在前台时使用另一套外观'),
-          subtitle: const Text(
-            '关闭时（默认）任何时刻都用上面的桌面态外观；开启后才按前台状态自动切换',
-          ),
+          subtitle: const Text('关闭时（默认）任何时刻都用上面的桌面态外观；开启后才按前台状态自动切换'),
           value: provider.foregroundEnabled,
           onChanged: provider.setForegroundEnabled,
         ),
@@ -193,7 +193,7 @@ class DesktopScheduleSettingsView extends StatelessWidget {
             labelOf: (value) => value.label,
             onChanged: provider.setForegroundLayer,
           ),
-          SwitchListTile(
+          GlassSwitchTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.mouse),
             title: const Text('前台鼠标穿透'),
@@ -294,7 +294,7 @@ class DesktopScheduleSettingsView extends StatelessWidget {
           subtitle: '数据来自 Open-Meteo（免费、无需 API Key），只按城市取当前气温',
         ),
         const SizedBox(height: 8),
-        SwitchListTile(
+        GlassSwitchTile(
           contentPadding: EdgeInsets.zero,
           secondary: const Icon(Icons.cloud_outlined),
           title: const Text('显示天气'),
@@ -496,10 +496,7 @@ class SliderTile extends StatelessWidget {
                 onChanged: onChanged,
               ),
             ),
-            SizedBox(
-              width: 48,
-              child: Text(label, textAlign: TextAlign.end),
-            ),
+            SizedBox(width: 48, child: Text(label, textAlign: TextAlign.end)),
           ],
         ),
       ),
@@ -594,8 +591,9 @@ Future<void> showWeatherCityDialog(BuildContext context) async {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    FilledButton(
+                    GlassActionButton(
                       onPressed: searching ? null : search,
+                      variant: GlassActionVariant.prominent,
                       child: const Text('搜索'),
                     ),
                   ],
@@ -644,7 +642,7 @@ Future<void> showWeatherCityDialog(BuildContext context) async {
             ),
           ),
           actions: [
-            TextButton(
+            GlassActionButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('取消'),
             ),

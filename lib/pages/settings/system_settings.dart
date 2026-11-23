@@ -10,6 +10,8 @@ import '../../providers/group_provider.dart';
 import '../../providers/student_provider.dart';
 import '../../providers/score_item_provider.dart';
 import '../../services/backup_service.dart';
+import '../../widgets/glass_buttons.dart';
+import '../../widgets/glass_controls.dart';
 import 'pin_dialogs.dart';
 import 'settings_common.dart';
 
@@ -98,7 +100,7 @@ class _SystemSettingsViewState extends State<SystemSettingsView> {
         // ---- 解锁与安全 ----
         const SettingsSectionTitle(title: '解锁与安全'),
         const SizedBox(height: 8),
-        SwitchListTile(
+        GlassSwitchTile(
           contentPadding: EdgeInsets.zero,
           secondary: const Icon(Icons.password),
           title: const Text('启用长密码解锁'),
@@ -299,12 +301,15 @@ Future<void> clearAllScores(BuildContext context) async {
       title: const Text('确认清除'),
       content: const Text('确定要清除所有评分记录吗？此操作不可恢复。'),
       actions: [
-        TextButton(
+        GlassActionButton(
           onPressed: () => Navigator.pop(ctx, false),
           child: const Text('取消'),
         ),
-        TextButton(
+        GlassActionButton(
           onPressed: () => Navigator.pop(ctx, true),
+          variant: GlassActionVariant.prominent,
+          tintColor: Colors.red.withValues(alpha: 0.55),
+          foregroundColor: Colors.white,
           child: const Text('清除'),
         ),
       ],

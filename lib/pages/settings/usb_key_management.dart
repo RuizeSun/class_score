@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/glass_buttons.dart';
+import '../../widgets/glass_controls.dart';
 import 'settings_common.dart';
 
 /// Show dialog to write a USB key.
@@ -21,7 +23,7 @@ void showWriteKeyDialog(BuildContext context) {
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  DropdownButtonFormField<String>(
+                  GlassDropdownField<String>(
                     initialValue: selectedDrive,
                     decoration: const InputDecoration(
                       labelText: '选择 U 盘驱动器',
@@ -54,11 +56,12 @@ void showWriteKeyDialog(BuildContext context) {
                 ],
               ),
               actions: [
-                TextButton(
+                GlassActionButton(
                   onPressed: () => Navigator.pop(ctx),
                   child: const Text('取消'),
                 ),
-                TextButton(
+                GlassActionButton(
+                  variant: GlassActionVariant.prominent,
                   onPressed: selectedDrive == null
                       ? null
                       : () async {
@@ -109,11 +112,12 @@ void showRenameKeyDialog(BuildContext context, int id, String currentLabel) {
         autofocus: true,
       ),
       actions: [
-        TextButton(
+        GlassActionButton(
           onPressed: () => Navigator.pop(ctx),
           child: const Text('取消'),
         ),
-        TextButton(
+        GlassActionButton(
+          variant: GlassActionVariant.prominent,
           onPressed: () {
             final newLabel = controller.text.trim();
             if (newLabel.isNotEmpty) {
@@ -136,11 +140,14 @@ void confirmDeleteKey(BuildContext context, int id) {
       title: const Text('确认删除'),
       content: const Text('确定删除此密钥记录吗？'),
       actions: [
-        TextButton(
+        GlassActionButton(
           onPressed: () => Navigator.pop(ctx),
           child: const Text('取消'),
         ),
-        TextButton(
+        GlassActionButton(
+          variant: GlassActionVariant.prominent,
+          tintColor: Colors.red.withValues(alpha: 0.55),
+          foregroundColor: Colors.white,
           onPressed: () {
             context.read<AuthProvider>().deleteUsbKey(id);
             Navigator.pop(ctx);
@@ -187,7 +194,7 @@ class UsbKeyManagementView extends StatelessWidget {
       children: [
         SettingsToolbar(
           children: [
-            FilledButton.icon(
+            GlassActionButton.icon(
               onPressed: () async {
                 if (needsPin && onVerifyPinForUsbActions != null) {
                   final verified = await onVerifyPinForUsbActions!();
@@ -197,6 +204,7 @@ class UsbKeyManagementView extends StatelessWidget {
               },
               icon: const Icon(Icons.add),
               label: const Text('写入密钥'),
+              variant: GlassActionVariant.prominent,
             ),
           ],
         ),
@@ -221,9 +229,10 @@ class UsbKeyManagementView extends StatelessWidget {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          IconButton(
+                          GlassIconAction(
                             icon: const Icon(Icons.edit),
                             tooltip: '重命名',
+                            size: 36,
                             onPressed: () async {
                               if (needsPin &&
                                   onVerifyPinForUsbActions != null) {
@@ -237,9 +246,10 @@ class UsbKeyManagementView extends StatelessWidget {
                               );
                             },
                           ),
-                          IconButton(
+                          GlassIconAction(
                             icon: const Icon(Icons.delete),
                             tooltip: '删除密钥',
+                            size: 36,
                             onPressed: () async {
                               if (needsPin &&
                                   onVerifyPinForUsbActions != null) {

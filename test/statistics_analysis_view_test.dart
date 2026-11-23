@@ -8,6 +8,7 @@ import 'package:class_score/providers/personalization_provider.dart';
 import 'package:class_score/providers/score_item_provider.dart';
 import 'package:class_score/providers/score_provider.dart';
 import 'package:class_score/providers/student_provider.dart';
+import 'package:class_score/widgets/glass_controls.dart';
 import 'package:class_score/widgets/pane_header.dart';
 import 'package:class_score/widgets/motion.dart';
 import 'package:class_score/widgets/ranking_tile.dart';
@@ -235,7 +236,7 @@ void main() {
 
     // 同一行：按钮文字中心与切换按钮中心垂直对齐
     final segmentCenter = tester
-        .getCenter(find.byType(SegmentedButton<bool>))
+        .getCenter(find.byType(GlassSegmentedChoice<bool>))
         .dy;
     expect(
       (tester.getCenter(find.text('高级查询')).dy - segmentCenter).abs(),

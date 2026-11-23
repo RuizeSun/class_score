@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/score_provider.dart';
+import '../../widgets/glass_buttons.dart';
+import '../../widgets/glass_controls.dart';
 import 'settings_common.dart';
 
 /// 计分规则设置分项（无卡片，可嵌入 SettingsHubPage）：
@@ -150,10 +152,11 @@ class _ScoringRulesViewState extends State<ScoringRulesView> {
         const SizedBox(height: 12),
         Align(
           alignment: Alignment.centerLeft,
-          child: ElevatedButton.icon(
+          child: GlassActionButton.icon(
             onPressed: _saveInitialScores,
             icon: const Icon(Icons.save_outlined, size: 18),
             label: const Text('保存初始分'),
+            variant: GlassActionVariant.prominent,
           ),
         ),
 
@@ -166,29 +169,28 @@ class _ScoringRulesViewState extends State<ScoringRulesView> {
         const SizedBox(height: 12),
         SizedBox(
           width: double.infinity,
-          child: SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(
+          child: GlassSegmentedChoice<String>(
+            expand: true,
+            selected: mode,
+            onChanged: (value) =>
+                context.read<ScoreProvider>().setGroupScoreMode(value),
+            options: const [
+              GlassSegmentedOption(
                 value: 'sum',
-                label: Text('学生得分总和'),
-                icon: Icon(Icons.groups),
+                label: '学生得分总和',
+                icon: Icons.groups,
               ),
-              ButtonSegment(
+              GlassSegmentedOption(
                 value: 'group_init',
-                label: Text('小组自定初始分'),
-                icon: Icon(Icons.flag),
+                label: '小组自定初始分',
+                icon: Icons.flag,
               ),
-              ButtonSegment(
+              GlassSegmentedOption(
                 value: 'avg',
-                label: Text('人均得分'),
-                icon: Icon(Icons.equalizer),
+                label: '人均得分',
+                icon: Icons.equalizer,
               ),
             ],
-            selected: {mode},
-            showSelectedIcon: false,
-            onSelectionChanged: (selection) {
-              context.read<ScoreProvider>().setGroupScoreMode(selection.first);
-            },
           ),
         ),
         const SizedBox(height: 16),
@@ -223,34 +225,33 @@ class _ScoringRulesViewState extends State<ScoringRulesView> {
         const SizedBox(height: 12),
         SizedBox(
           width: double.infinity,
-          child: SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(
+          child: GlassSegmentedChoice<String>(
+            expand: true,
+            selected: rangeMode,
+            onChanged: (value) =>
+                context.read<ScoreProvider>().setScoreRangeMode(value),
+            options: const [
+              GlassSegmentedOption(
                 value: 'only_add',
-                label: Text('仅加分'),
-                icon: Icon(Icons.add),
+                label: '仅加分',
+                icon: Icons.add,
               ),
-              ButtonSegment(
+              GlassSegmentedOption(
                 value: 'only_deduct',
-                label: Text('仅扣分'),
-                icon: Icon(Icons.remove),
+                label: '仅扣分',
+                icon: Icons.remove,
               ),
-              ButtonSegment(
+              GlassSegmentedOption(
                 value: 'unlimited',
-                label: Text('无限制'),
-                icon: Icon(Icons.all_inclusive),
+                label: '无限制',
+                icon: Icons.all_inclusive,
               ),
-              ButtonSegment(
+              GlassSegmentedOption(
                 value: 'custom',
-                label: Text('自定义范围'),
-                icon: Icon(Icons.tune),
+                label: '自定义范围',
+                icon: Icons.tune,
               ),
             ],
-            selected: {rangeMode},
-            showSelectedIcon: false,
-            onSelectionChanged: (selection) {
-              context.read<ScoreProvider>().setScoreRangeMode(selection.first);
-            },
           ),
         ),
         if (rangeMode == 'custom') ...[
@@ -299,10 +300,11 @@ class _ScoringRulesViewState extends State<ScoringRulesView> {
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
-            child: ElevatedButton.icon(
+            child: GlassActionButton.icon(
               onPressed: _saveScoreRange,
               icon: const Icon(Icons.save_outlined, size: 18),
               label: const Text('保存分值范围'),
+              variant: GlassActionVariant.prominent,
             ),
           ),
         ],
@@ -314,7 +316,7 @@ class _ScoringRulesViewState extends State<ScoringRulesView> {
         const SizedBox(height: SettingsLayout.sectionSpacing),
         const SettingsSectionTitle(title: '快速评分'),
         const SizedBox(height: 8),
-        SwitchListTile(
+        GlassSwitchTile(
           secondary: Icon(
             Icons.bolt,
             color: p.defaultQuickScoring
@@ -337,7 +339,7 @@ class _ScoringRulesViewState extends State<ScoringRulesView> {
           subtitle: '控制统计报表中学生榜与小组榜的名次显示方式。',
         ),
         const SizedBox(height: 8),
-        SwitchListTile(
+        GlassSwitchTile(
           secondary: Icon(
             Icons.merge_type,
             color: p.mergeSameRank
@@ -355,7 +357,7 @@ class _ScoringRulesViewState extends State<ScoringRulesView> {
               context.read<ScoreProvider>().setMergeSameRank(value),
           contentPadding: EdgeInsets.zero,
         ),
-        SwitchListTile(
+        GlassSwitchTile(
           secondary: Icon(
             Icons.format_list_numbered,
             color: p.competitionRanking

@@ -1,4 +1,9 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show GlassQuality;
+
 import '../database/database_helper.dart';
 
 /// Provider for personalization settings: theme color, window behavior when locked.
@@ -32,6 +37,45 @@ class PersonalizationProvider extends ChangeNotifier {
   static const double defaultAnalysisSplitRatio = 0.5;
   static const double minAnalysisSplitRatio = 0.2;
   static const double maxAnalysisSplitRatio = 0.8;
+
+  // ---- 玻璃质感档位 ----
+  static const String _keyGlassQuality = 'glass_quality';
+  static const GlassQuality defaultGlassQuality = GlassQuality.standard;
+
+  /// Windows 上禁用 [GlassQuality.premium]。
+  ///
+  /// premium 走的是 Impeller 的多趟 shader + 同步纹理回读；在 Windows 上首次
+  /// 渲染会卡住 UI isolate 十几秒（启动转圈因此完全不动），连桌面课表浮窗
+  /// 引擎的创建都被拖慢。standard 用轻量 shader，本机实测首帧约 0.6s。
+  static bool get _premiumSupported => !Platform.isWindows;
+
+  /// 设置页展示顺序：高质感 → 均衡 → 高性能（Windows 上不展示高质感）。
+  static List<GlassQuality> get availableGlassQualities => [
+    if (_premiumSupported) GlassQuality.premium,
+    GlassQuality.standard,
+    GlassQuality.minimal,
+  ];
+
+  static const Map<GlassQuality, String> glassQualityLabels = {
+    GlassQuality.premium: '高质感',
+    GlassQuality.standard: '均衡（默认）',
+    GlassQuality.minimal: '高性能',
+  };
+
+  static const Map<GlassQuality, String> glassQualityDescriptions = {
+    GlassQuality.premium: '完整玻璃效果，观感最好；需要较强的显卡',
+    GlassQuality.standard: '轻量着色器，保留玻璃观感且负担更小',
+    GlassQuality.minimal: '无自定义 shader，只用背景模糊，最流畅',
+  };
+
+  /// 把不支持的档位降级：Windows 上 premium → standard。
+  static GlassQuality _supportedQuality(GlassQuality quality) =>
+      !_premiumSupported && quality == GlassQuality.premium
+      ? GlassQuality.standard
+      : quality;
+
+  GlassQuality _glassQuality = defaultGlassQuality;
+  GlassQuality get glassQuality => _glassQuality;
 
   /// Available Material 3 seed colors for user selection.
   static const List<Map<String, dynamic>> availableColors = [
@@ -89,7 +133,31 @@ class PersonalizationProvider extends ChangeNotifier {
       );
     }
 
+    // 玻璃档位：老用户没有这个 key 按默认档；历史数据里存过 Windows 上
+    // 不支持的 premium 时一并降级，否则启动仍会被多趟 shader 卡住。
+    _glassQuality = _supportedQuality(
+      _parseGlassQuality(
+        await DatabaseHelper.instance.getSetting(_keyGlassQuality),
+      ),
+    );
+
     _isInitialized = true;
+    notifyListeners();
+  }
+
+  static GlassQuality _parseGlassQuality(String? stored) {
+    for (final quality in GlassQuality.values) {
+      if (quality.name == stored) return quality;
+    }
+    return defaultGlassQuality;
+  }
+
+  /// 切换玻璃档位后立即可见（相关控件都 watch 本 Provider）。
+  Future<void> setGlassQuality(GlassQuality quality) async {
+    final supported = _supportedQuality(quality);
+    if (_glassQuality == supported) return;
+    _glassQuality = supported;
+    await DatabaseHelper.instance.setSetting(_keyGlassQuality, supported.name);
     notifyListeners();
   }
 
@@ -139,10 +207,7 @@ class PersonalizationProvider extends ChangeNotifier {
   Future<void> setCloseToTray(bool value) async {
     if (_closeToTray == value) return;
     _closeToTray = value;
-    await DatabaseHelper.instance.setSetting(
-      'close_to_tray',
-      value.toString(),
-    );
+    await DatabaseHelper.instance.setSetting('close_to_tray', value.toString());
     notifyListeners();
   }
 }

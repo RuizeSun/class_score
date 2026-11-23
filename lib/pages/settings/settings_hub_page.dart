@@ -16,6 +16,7 @@ import 'personalization_view.dart';
 import 'scoring_rules_view.dart';
 import 'ai_provider_settings.dart';
 import 'settings_common.dart';
+import '../../widgets/glass_buttons.dart';
 import '../../widgets/motion.dart';
 import '../../models/group.dart';
 import '../../models/student.dart';
@@ -71,8 +72,10 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
             leading: isWide
                 ? null
                 : Builder(
-                    builder: (ctx) => IconButton(
+                    builder: (ctx) => GlassIconAction(
                       icon: const Icon(Icons.menu),
+                      tooltip: '打开设置菜单',
+                      size: 40,
                       onPressed: () => Scaffold.of(ctx).openDrawer(),
                     ),
                   ),
@@ -116,11 +119,7 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
           item(Icons.list_alt, '预设评分项', SettingsSection.scoreItems),
           item(Icons.rule, '计分规则', SettingsSection.scoringRules),
           item(Icons.calendar_month, '课程表管理', SettingsSection.courseSchedule),
-          item(
-            Icons.desktop_windows,
-            '桌面课表',
-            SettingsSection.desktopSchedule,
-          ),
+          item(Icons.desktop_windows, '桌面课表', SettingsSection.desktopSchedule),
           item(Icons.calendar_today, '评分周期', SettingsSection.period),
           item(Icons.usb, '物理密钥管理', SettingsSection.usbKey),
           item(Icons.smart_toy_outlined, 'AI 服务商', SettingsSection.aiProvider),
@@ -171,7 +170,7 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
   String _subtitleOf(SettingsSection section) {
     switch (section) {
       case SettingsSection.personalization:
-        return '选择主题色，并控制锁定状态下的窗口行为。';
+        return '选择主题色、玻璃质感档位，并控制锁定状态下的窗口行为。';
       case SettingsSection.group:
         return '维护小组，支持查看成员与批量调整分组。';
       case SettingsSection.student:

@@ -1,7 +1,7 @@
 name: class_score
 description: "class_score"
 publish_to: "none"
-version: 1.5.1+17
+version: 1.5.2+18
 
 environment:
     sdk: ^3.11.5
@@ -26,6 +26,7 @@ dependencies:
     camera: ^0.12.2
     image: ^4.3.0
     camera_windows: ^0.3.0+1
+    liquid_glass_widgets: ^1.19.0
 
 dev_dependencies:
     flutter_test:

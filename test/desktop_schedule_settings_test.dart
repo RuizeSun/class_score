@@ -1,6 +1,7 @@
 import 'package:class_score/models/desktop_bar_style.dart';
 import 'package:class_score/pages/settings/desktop_schedule_settings.dart';
 import 'package:class_score/providers/desktop_schedule_provider.dart';
+import 'package:class_score/widgets/glass_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -53,12 +54,9 @@ void main() {
   testWidgets('双外观开关默认关闭：前台组控件收起，桌面态分组照常显示', (tester) async {
     await _pumpSettings(tester);
 
-    final switchTile = find.widgetWithText(
-      SwitchListTile,
-      '有程序在前台时使用另一套外观',
-    );
+    final switchTile = find.widgetWithText(GlassSwitchTile, '有程序在前台时使用另一套外观');
     expect(switchTile, findsOneWidget);
-    expect(tester.widget<SwitchListTile>(switchTile).value, isFalse);
+    expect(tester.widget<GlassSwitchTile>(switchTile).value, isFalse);
 
     expect(find.text('外观（桌面态）'), findsOneWidget);
     expect(find.text('外观（有程序在前台时）'), findsOneWidget);
@@ -75,33 +73,31 @@ void main() {
   testWidgets('开启双外观：前台组出现（位置/层级/穿透/透明度/缩放），层级默认置顶', (tester) async {
     final provider = await _pumpSettings(tester);
 
-    final switchTile = find.widgetWithText(
-      SwitchListTile,
-      '有程序在前台时使用另一套外观',
-    );
+    final switchTile = find.widgetWithText(GlassSwitchTile, '有程序在前台时使用另一套外观');
     await tester.ensureVisible(switchTile);
     await tester.pumpAndSettle();
     await tester.tap(switchTile);
     await tester.pumpAndSettle();
 
     expect(provider.foregroundEnabled, isTrue);
-    expect(tester.widget<SwitchListTile>(switchTile).value, isTrue);
+    expect(tester.widget<GlassSwitchTile>(switchTile).value, isTrue);
 
     final fgPosition = find.widgetWithText(
       ChoiceTile<DesktopBarPosition>,
       '前台显示位置',
     );
-    final fgLayer = find.widgetWithText(
-      ChoiceTile<DesktopBarLayer>,
-      '前台窗口层级',
-    );
+    final fgLayer = find.widgetWithText(ChoiceTile<DesktopBarLayer>, '前台窗口层级');
     expect(fgPosition, findsOneWidget);
     expect(fgLayer, findsOneWidget);
-    expect(tester.widget<ChoiceTile<DesktopBarPosition>>(fgPosition).value,
-        DesktopBarPosition.top);
+    expect(
+      tester.widget<ChoiceTile<DesktopBarPosition>>(fgPosition).value,
+      DesktopBarPosition.top,
+    );
     // 前台态默认置顶：避免被程序窗口挡住
-    expect(tester.widget<ChoiceTile<DesktopBarLayer>>(fgLayer).value,
-        DesktopBarLayer.topMost);
+    expect(
+      tester.widget<ChoiceTile<DesktopBarLayer>>(fgLayer).value,
+      DesktopBarLayer.topMost,
+    );
     expect(find.text('前台鼠标穿透'), findsOneWidget);
     expect(find.text('前台不透明度'), findsOneWidget);
     expect(find.text('前台整体缩放'), findsOneWidget);

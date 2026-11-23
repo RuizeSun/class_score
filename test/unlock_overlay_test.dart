@@ -1,9 +1,12 @@
 import 'package:class_score/pages/core/status_bar_layout.dart';
 import 'package:class_score/pages/core/unlock_page.dart';
 import 'package:class_score/providers/auth_provider.dart';
+import 'package:class_score/providers/personalization_provider.dart';
+import 'package:class_score/widgets/glass_buttons.dart';
 import 'package:class_score/widgets/pin_pad.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' show LiquidOval;
 import 'package:provider/provider.dart';
 
 /// 测试用的正确 PIN。
@@ -37,8 +40,13 @@ class _FakeAuthProvider extends AuthProvider {
 
 /// 宿主页：一个按钮打开解锁面板，返回值收集到 [results]。
 Widget _buildHost(AuthProvider auth, List<Future<bool?>> results) {
-  return ChangeNotifierProvider<AuthProvider>.value(
-    value: auth,
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<AuthProvider>.value(value: auth),
+      ChangeNotifierProvider<PersonalizationProvider>(
+        create: (_) => PersonalizationProvider(),
+      ),
+    ],
     child: MaterialApp(
       home: Scaffold(
         body: Builder(
@@ -69,14 +77,13 @@ Future<void> _openPanel(WidgetTester tester) async {
 /// 逐位点按数字键盘：第 6 位输入完成后键盘会自动确认。
 Future<void> _enterPin(WidgetTester tester, String pin) async {
   for (final digit in pin.split('')) {
-    await tester.tap(find.widgetWithText(TextButton, digit));
+    await tester.tap(find.widgetWithText(GlassActionButton, digit));
     await tester.pump();
   }
   await tester.pumpAndSettle();
 }
 
-/// 读取模糊层暗化色的不透明度：它与模糊强度同步渐变，
-/// 用它验证背景是「由清晰渐变到模糊」而不是瞬间以全强度出现。
+/// 读取模糊层暗化色的不透明度：它随进场进度渐入，用来验证暗化不是硬切。
 double _dimAlpha(WidgetTester tester, Finder blurClip) => tester
     .widget<ColoredBox>(
       find.descendant(of: blurClip, matching: find.byType(ColoredBox)),
@@ -152,6 +159,7 @@ void main() {
     expect(finalRight, 1280 - StatusBarMetrics.inset);
     expect(tester.takeException(), isNull);
   });
+
   testWidgets('背景在原地渐变模糊：不跟着卡片平移，暗化程度随进度增长', (tester) async {
     _useDesktopViewport(tester);
     await tester.pumpWidget(_buildHost(_FakeAuthProvider(), []));
@@ -181,9 +189,35 @@ void main() {
     // 模糊强度（用同步渐变的暗化程度代表）由浅入深 → 背景是渐变进入的
     expect(midAlpha, greaterThan(0));
     expect(midAlpha, lessThan(settledAlpha));
-    expect(settledAlpha, closeTo(0.10, 0.001));
+    expect(settledAlpha, closeTo(unlockDimOpacity, 0.001));
     // 同一时刻卡片仍在右侧（进场的位移只作用于卡片）
     expect(midCardRight, greaterThan(1280 - StatusBarMetrics.inset));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('卡片之上不套透明度层：否则玻璃取不到背景，滑入期间就不糊了', (tester) async {
+    _useDesktopViewport(tester);
+    await tester.pumpWidget(_buildHost(_FakeAuthProvider(), []));
+
+    await tester.tap(find.widgetWithText(ElevatedButton, '打开解锁面板'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+
+    // 卡片仍在向最终位置滑入的途中
+    final midCardRight = tester.getTopRight(find.byType(UnlockPage)).dx;
+    expect(midCardRight, greaterThan(1280 - StatusBarMetrics.inset));
+
+    // 卡片是玻璃容器，它的 BackdropFilter 取的是「已经画在下面的内容」。
+    // 祖先一旦有透明度层（Opacity/FadeTransition 会 push 一层临时缓冲），
+    // 玻璃取到的 backdrop 就只剩这层空缓冲：卡片滑入期间背景是清晰的，
+    // 等淡入结束、透明度层消失才突然变糊。
+    for (final type in <Type>[FadeTransition, Opacity, AnimatedOpacity]) {
+      expect(
+        find.ancestor(of: find.byType(UnlockPage), matching: find.byType(type)),
+        findsNothing,
+        reason: '卡片上方不应出现 $type',
+      );
+    }
     expect(tester.takeException(), isNull);
   });
 
@@ -197,7 +231,7 @@ void main() {
     expect(find.text('PIN 码错误'), findsOneWidget);
     expect(find.byType(UnlockPage), findsOneWidget);
     // 重新输入（清空）时错误提示自动消失
-    await tester.tap(find.widgetWithText(TextButton, '清空'));
+    await tester.tap(find.widgetWithText(GlassActionButton, '清空'));
     await tester.pump();
     expect(find.text('PIN 码错误'), findsNothing);
 
@@ -228,7 +262,7 @@ void main() {
     await tester.pumpWidget(_buildHost(_FakeAuthProvider(), results));
     await _openPanel(tester);
 
-    // 卡片空白处（左侧留白）不会误关面板：Material 本身吸收点击
+    // 卡片空白处（左侧留白）不会误关面板：卡片自身吸收点击
     final cardTopLeft = tester.getTopLeft(find.byType(UnlockPage));
     await tester.tapAt(cardTopLeft + const Offset(4, 8));
     await tester.pumpAndSettle();
@@ -249,19 +283,39 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('数字键盘按键为圆形：宽高相等且形状为 CircleBorder', (tester) async {
+  testWidgets('卡片内文字不继承 MaterialApp 的兜底样式（双层黄色下划线）', (tester) async {
     _useDesktopViewport(tester);
     await tester.pumpWidget(_buildHost(_FakeAuthProvider(), []));
     await _openPanel(tester);
 
-    final key = find.widgetWithText(TextButton, '5');
+    // GlassContainer 不是 Material：若不显式提供 DefaultTextStyle，卡片里的
+    // Text 会继承 _errorTextStyle（红色 monospace + 双层黄色下划线）。
+    for (final label in ['解锁', '输入 6 位 PIN 码']) {
+      final richText = tester.widget<RichText>(
+        find.descendant(of: find.text(label), matching: find.byType(RichText)),
+      );
+      expect(
+        (richText.text as TextSpan).style?.decoration ?? TextDecoration.none,
+        TextDecoration.none,
+        reason: '「$label」不应带下划线',
+      );
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('数字键盘按键为圆形：宽高相等且形状为液态玻璃圆', (tester) async {
+    _useDesktopViewport(tester);
+    await tester.pumpWidget(_buildHost(_FakeAuthProvider(), []));
+    await _openPanel(tester);
+
+    final key = find.widgetWithText(GlassActionButton, '5');
     expect(key, findsOneWidget);
 
     final size = tester.getSize(key);
     expect(size.width, size.height);
 
-    final style = tester.widget<TextButton>(key).style!;
-    expect(style.shape!.resolve(const <WidgetState>{}), isA<CircleBorder>());
+    final shape = tester.widget<GlassActionButton>(key).shape;
+    expect(shape, isA<LiquidOval>());
     expect(tester.takeException(), isNull);
   });
 }

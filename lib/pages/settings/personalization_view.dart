@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/personalization_provider.dart';
+import '../../widgets/glass_controls.dart';
 import 'settings_common.dart';
 
 /// 个性化设置分项（无卡片，可嵌入 SettingsHubPage）。
@@ -65,6 +66,33 @@ class PersonalizationView extends StatelessWidget {
         const SizedBox(height: SettingsLayout.sectionSpacing),
         const Divider(height: 1),
 
+        // ---- 玻璃质感档位 ----
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+        const SettingsSectionTitle(
+          title: '界面质感',
+          subtitle: '玻璃效果的渲染档位；如果启动时转圈时间过长或界面卡顿，可降到均衡 / 高性能',
+        ),
+        const SizedBox(height: 8),
+        Column(
+          children: [
+            for (final quality
+                in PersonalizationProvider.availableGlassQualities)
+              GlassRadioTile(
+                selected: personalization.glassQuality == quality,
+                onTap: () => personalization.setGlassQuality(quality),
+                title: Text(
+                  PersonalizationProvider.glassQualityLabels[quality]!,
+                ),
+                subtitle: Text(
+                  PersonalizationProvider.glassQualityDescriptions[quality]!,
+                ),
+                contentPadding: EdgeInsets.zero,
+              ),
+          ],
+        ),
+
+        const Divider(height: 1),
+
         // ---- 窗口行为开关 ----
         const SizedBox(height: SettingsLayout.sectionSpacing),
         const SettingsSectionTitle(
@@ -72,7 +100,7 @@ class PersonalizationView extends StatelessWidget {
           subtitle: '控制应用在锁定状态下的窗口操作行为',
         ),
         const SizedBox(height: 8),
-        SwitchListTile(
+        GlassSwitchTile(
           secondary: const Icon(Icons.minimize),
           title: const Text('未解锁时允许最小化窗口'),
           subtitle: const Text('开启后，即使应用处于锁定状态也可以最小化窗口'),
@@ -81,7 +109,7 @@ class PersonalizationView extends StatelessWidget {
               personalization.setAllowMinimizeWhenLocked(value),
           contentPadding: EdgeInsets.zero,
         ),
-        SwitchListTile(
+        GlassSwitchTile(
           secondary: const Icon(Icons.close),
           title: const Text('未解锁时允许关闭窗口'),
           subtitle: const Text('开启后，即使应用处于锁定状态也可以直接关闭窗口'),
@@ -99,7 +127,7 @@ class PersonalizationView extends StatelessWidget {
           subtitle: '点击窗口右上角的关闭按钮时，是收进系统托盘还是直接退出程序',
         ),
         const SizedBox(height: 8),
-        SwitchListTile(
+        GlassSwitchTile(
           secondary: const Icon(Icons.notifications_active_outlined),
           title: const Text('关闭窗口时最小化到托盘'),
           subtitle: const Text(

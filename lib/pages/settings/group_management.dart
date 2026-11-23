@@ -5,6 +5,8 @@ import '../../providers/group_provider.dart';
 import '../../providers/student_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../database/database_helper.dart';
+import '../../widgets/glass_buttons.dart';
+import '../../widgets/glass_controls.dart';
 import '../../widgets/student_name_text.dart';
 import 'settings_common.dart';
 
@@ -21,11 +23,12 @@ void showGroupDialog(BuildContext context, {Group? group}) {
         autofocus: true,
       ),
       actions: [
-        TextButton(
+        GlassActionButton(
           onPressed: () => Navigator.pop(ctx),
           child: const Text('取消'),
         ),
-        TextButton(
+        GlassActionButton(
+          variant: GlassActionVariant.prominent,
           onPressed: () {
             final name = controller.text.trim();
             if (name.isNotEmpty) {
@@ -96,7 +99,7 @@ Future<void> showGroupMembers(BuildContext context, Group group) async {
               ),
       ),
       actions: [
-        TextButton(
+        GlassActionButton(
           onPressed: () => Navigator.pop(ctx),
           child: const Text('关闭'),
         ),
@@ -217,8 +220,11 @@ class _GroupMembersDialogState extends State<_GroupMembersDialog> {
           Text('${widget.group.name} - 成员列表'),
           if (widget.students.isNotEmpty) const Spacer(),
           if (widget.students.isNotEmpty)
-            TextButton(
+            GlassActionButton(
               onPressed: _isSelectionMode ? _clearSelection : _selectAll,
+              height: 32,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              fontSize: 13,
               child: Text(_isSelectionMode ? '取消选择' : '全选'),
             ),
         ],
@@ -259,15 +265,10 @@ class _GroupMembersDialogState extends State<_GroupMembersDialog> {
                     Row(
                       children: [
                         Expanded(
-                          child: RadioListTile<int?>(
+                          child: GlassRadioTile(
                             title: const Text('未分组'),
-                            value: null,
-                            groupValue: _targetGroupId,
-                            onChanged: (v) {
-                              setState(() {
-                                _targetGroupId = v;
-                              });
-                            },
+                            selected: _targetGroupId == null,
+                            onTap: () => setState(() => _targetGroupId = null),
                             dense: true,
                           ),
                         ),
@@ -279,15 +280,12 @@ class _GroupMembersDialogState extends State<_GroupMembersDialog> {
                           (g) => Row(
                             children: [
                               Expanded(
-                                child: RadioListTile<int?>(
+                                child: GlassRadioTile(
                                   title: Text(g['name'] as String),
-                                  value: g['id'] as int?,
-                                  groupValue: _targetGroupId,
-                                  onChanged: (v) {
-                                    setState(() {
-                                      _targetGroupId = v;
-                                    });
-                                  },
+                                  selected: _targetGroupId == (g['id'] as int?),
+                                  onTap: () => setState(
+                                    () => _targetGroupId = g['id'] as int?,
+                                  ),
                                   dense: true,
                                 ),
                               ),
@@ -298,15 +296,15 @@ class _GroupMembersDialogState extends State<_GroupMembersDialog> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        FilledButton.icon(
+                        GlassActionButton.icon(
                           onPressed: _targetGroupId != null
                               ? _batchMoveStudents
                               : null,
                           icon: const Icon(Icons.group_add),
                           label: const Text('移动到所选小组'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: Colors.green,
-                          ),
+                          variant: GlassActionVariant.prominent,
+                          tintColor: Colors.green.withValues(alpha: 0.6),
+                          foregroundColor: Colors.white,
                         ),
                       ],
                     ),
@@ -327,7 +325,7 @@ class _GroupMembersDialogState extends State<_GroupMembersDialog> {
                       final isSelected = _selectedStudentIds.contains(
                         studentId,
                       );
-                      return CheckboxListTile(
+                      return GlassCheckboxTile(
                         dense: true,
                         value: isSelected,
                         onChanged: (_) => _toggleSelection(studentId),
@@ -343,7 +341,7 @@ class _GroupMembersDialogState extends State<_GroupMembersDialog> {
         ),
       ),
       actions: [
-        TextButton(
+        GlassActionButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('关闭'),
         ),
@@ -372,10 +370,11 @@ class GroupManagementView extends StatelessWidget {
       children: [
         SettingsToolbar(
           children: [
-            FilledButton.icon(
+            GlassActionButton.icon(
               onPressed: () => onShowGroupDialog(),
               icon: const Icon(Icons.add),
               label: const Text('添加小组'),
+              variant: GlassActionVariant.prominent,
             ),
           ],
         ),
@@ -397,17 +396,20 @@ class GroupManagementView extends StatelessWidget {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          IconButton(
+                          GlassIconAction(
                             icon: const Icon(Icons.group),
                             tooltip: '查看成员',
+                            size: 36,
                             onPressed: () => onShowGroupMembers(group),
                           ),
-                          IconButton(
+                          GlassIconAction(
                             icon: const Icon(Icons.edit),
+                            size: 36,
                             onPressed: () => onShowGroupDialog(group: group),
                           ),
-                          IconButton(
+                          GlassIconAction(
                             icon: const Icon(Icons.delete),
+                            size: 36,
                             onPressed: () {
                               if (group.name == '未分组') {
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -424,11 +426,16 @@ class GroupManagementView extends StatelessWidget {
                                   title: const Text('确认删除'),
                                   content: Text('确定删除"${group.name}"及其所有学生吗？'),
                                   actions: [
-                                    TextButton(
+                                    GlassActionButton(
                                       onPressed: () => Navigator.pop(ctx),
                                       child: const Text('取消'),
                                     ),
-                                    TextButton(
+                                    GlassActionButton(
+                                      variant: GlassActionVariant.prominent,
+                                      tintColor: Colors.red.withValues(
+                                        alpha: 0.55,
+                                      ),
+                                      foregroundColor: Colors.white,
                                       onPressed: () {
                                         context
                                             .read<GroupProvider>()

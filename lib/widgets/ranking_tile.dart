@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'glass_buttons.dart';
 import 'student_name_text.dart';
 
 /// 「统计报表」排名榜单的布局常量。
@@ -304,14 +305,16 @@ class RankingTile extends StatelessWidget {
                   ),
                 ),
                 // 行尾：打开该学生/小组的图表分析
-                if (onOpenAnalysis != null)
-                  IconButton(
+                if (onOpenAnalysis != null) ...[
+                  const SizedBox(width: 8),
+                  GlassIconAction(
                     tooltip: '图表分析',
                     onPressed: onOpenAnalysis,
                     icon: const Icon(Icons.insights_outlined, size: 20),
-                    color: Colors.blueGrey,
-                    visualDensity: VisualDensity.compact,
+                    size: 34,
+                    foregroundColor: Colors.blueGrey,
                   ),
+                ],
               ],
             ),
           ),

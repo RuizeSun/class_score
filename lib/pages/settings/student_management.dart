@@ -5,6 +5,8 @@ import '../../models/group.dart';
 import '../../providers/student_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/glass_buttons.dart';
+import '../../widgets/glass_controls.dart';
 import '../../widgets/student_name_text.dart';
 import 'settings_common.dart';
 
@@ -61,7 +63,7 @@ void showStudentDialog(BuildContext context, {Student? student}) {
               ),
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<int?>(
+            GlassDropdownField<int?>(
               initialValue: selectedGroupId,
               decoration: const InputDecoration(labelText: '所属小组'),
               items: [
@@ -79,7 +81,7 @@ void showStudentDialog(BuildContext context, {Student? student}) {
               },
             ),
             const SizedBox(height: 8),
-            SwitchListTile(
+            GlassSwitchTile(
               contentPadding: EdgeInsets.zero,
               value: includeInGroupTotal,
               onChanged: (v) {
@@ -93,11 +95,12 @@ void showStudentDialog(BuildContext context, {Student? student}) {
           ],
         ),
         actions: [
-          TextButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('取消'),
           ),
-          TextButton(
+          GlassActionButton(
+            variant: GlassActionVariant.prominent,
             onPressed: () async {
               final name = nameController.text.trim();
               final studentNumber = studentNumberController.text.trim();
@@ -198,11 +201,14 @@ class _StudentManagementViewState extends State<StudentManagementView> {
         title: const Text('确认批量删除'),
         content: Text('确定删除选中的 ${_selectedStudentIds.length} 名学生吗？'),
         actions: [
-          TextButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('取消'),
           ),
-          TextButton(
+          GlassActionButton(
+            variant: GlassActionVariant.prominent,
+            tintColor: Colors.red.withValues(alpha: 0.55),
+            foregroundColor: Colors.white,
             onPressed: () async {
               Navigator.pop(ctx);
               final provider = context.read<StudentProvider>();
@@ -239,7 +245,7 @@ class _StudentManagementViewState extends State<StudentManagementView> {
             // Filter by group dropdown
             SizedBox(
               width: 240,
-              child: DropdownButtonFormField<int?>(
+              child: GlassDropdownField<int?>(
                 initialValue: filterGroupId,
                 decoration: const InputDecoration(
                   labelText: '筛选小组',
@@ -263,63 +269,69 @@ class _StudentManagementViewState extends State<StudentManagementView> {
             ),
             // Batch operation button
             if (_isSelectionMode)
-              FilledButton.icon(
+              GlassActionButton.icon(
                 onPressed: _showBatchAddToGroupDialog,
                 icon: const Icon(Icons.group_add),
                 label: const Text('添加到小组'),
+                variant: GlassActionVariant.prominent,
               ),
             if (_isSelectionMode)
-              FilledButton.icon(
+              GlassActionButton.icon(
                 onPressed: _batchDeleteStudents,
                 icon: const Icon(Icons.delete),
                 label: const Text('删除'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.redAccent,
-                ),
+                variant: GlassActionVariant.prominent,
+                tintColor: Colors.red.withValues(alpha: 0.55),
+                foregroundColor: Colors.white,
               ),
             if (_isSelectionMode)
-              TextButton.icon(
+              GlassActionButton.icon(
                 onPressed: _clearSelection,
                 icon: const Icon(Icons.close),
                 label: const Text('取消选择'),
               ),
             // Import students from CSV / Excel
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.file_download),
-              tooltip: '导入学生',
-              itemBuilder: (ctx) => [
-                const PopupMenuItem(
-                  value: 'csv',
-                  child: Row(
-                    children: [
-                      Icon(Icons.file_download_outlined),
-                      SizedBox(width: 8),
-                      Text('从 CSV 导入'),
-                    ],
+            GlassIconFrame(
+              size: 40,
+              child: PopupMenuButton<String>(
+                padding: EdgeInsets.zero,
+                tooltip: '导入学生',
+                itemBuilder: (ctx) => [
+                  const PopupMenuItem(
+                    value: 'csv',
+                    child: Row(
+                      children: [
+                        Icon(Icons.file_download_outlined),
+                        SizedBox(width: 8),
+                        Text('从 CSV 导入'),
+                      ],
+                    ),
                   ),
-                ),
-                const PopupMenuItem(
-                  value: 'excel',
-                  child: Row(
-                    children: [
-                      Icon(Icons.file_download_outlined),
-                      SizedBox(width: 8),
-                      Text('从 Excel 导入'),
-                    ],
+                  const PopupMenuItem(
+                    value: 'excel',
+                    child: Row(
+                      children: [
+                        Icon(Icons.file_download_outlined),
+                        SizedBox(width: 8),
+                        Text('从 Excel 导入'),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-              onSelected: (value) async {
-                if (value == 'csv' || value == 'excel') {
-                  await StudentProvider.showImportDialog(context);
-                }
-              },
+                ],
+                onSelected: (value) async {
+                  if (value == 'csv' || value == 'excel') {
+                    await StudentProvider.showImportDialog(context);
+                  }
+                },
+                child: const Icon(Icons.file_download),
+              ),
             ),
             // Add student
-            FilledButton.icon(
+            GlassActionButton.icon(
               onPressed: () => widget.onShowStudentDialog(),
               icon: const Icon(Icons.add),
               label: const Text('添加学生'),
+              variant: GlassActionVariant.prominent,
             ),
           ],
         ),
@@ -340,8 +352,11 @@ class _StudentManagementViewState extends State<StudentManagementView> {
                   ),
                 ),
                 const Spacer(),
-                TextButton(
+                GlassActionButton(
                   onPressed: () => _selectAll(students),
+                  height: 32,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  fontSize: 13,
                   child: _selectedStudentIds.length == students.length
                       ? const Text('取消全选')
                       : const Text('全选'),
@@ -365,7 +380,7 @@ class _StudentManagementViewState extends State<StudentManagementView> {
                     final studentId = s['id'] as int;
                     final isSelected = _selectedStudentIds.contains(studentId);
                     return ListTile(
-                      leading: Checkbox(
+                      leading: GlassCheckbox(
                         value: isSelected,
                         onChanged: (_) => _toggleSelection(studentId),
                       ),
@@ -393,8 +408,9 @@ class _StudentManagementViewState extends State<StudentManagementView> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (!_isSelectionMode)
-                            IconButton(
+                            GlassIconAction(
                               icon: const Icon(Icons.edit),
+                              size: 36,
                               onPressed: () {
                                 widget.onShowStudentDialog(
                                   student: Student(
@@ -413,8 +429,9 @@ class _StudentManagementViewState extends State<StudentManagementView> {
                               },
                             ),
                           if (!_isSelectionMode)
-                            IconButton(
+                            GlassIconAction(
                               icon: const Icon(Icons.delete),
+                              size: 36,
                               onPressed: () {
                                 showDialog(
                                   context: context,
@@ -422,11 +439,16 @@ class _StudentManagementViewState extends State<StudentManagementView> {
                                     title: const Text('确认删除'),
                                     content: Text('确定删除学生"${s['name']}"吗？'),
                                     actions: [
-                                      TextButton(
+                                      GlassActionButton(
                                         onPressed: () => Navigator.pop(ctx),
                                         child: const Text('取消'),
                                       ),
-                                      TextButton(
+                                      GlassActionButton(
+                                        variant: GlassActionVariant.prominent,
+                                        tintColor: Colors.red.withValues(
+                                          alpha: 0.55,
+                                        ),
+                                        foregroundColor: Colors.white,
                                         onPressed: () {
                                           context
                                               .read<StudentProvider>()

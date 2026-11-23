@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 
 import '../../../models/student.dart';
+import '../../../widgets/glass_buttons.dart';
+import '../../../widgets/glass_controls.dart';
 import 'ai_roster_process_page.dart';
 
 /// 花名册取景 / 选图 / 裁剪页。
@@ -167,14 +169,22 @@ class _AiRosterCapturePageState extends State<AiRosterCapturePage> {
         _showMsg('图片解析失败，请换一张图片');
         return;
       }
-      final x = (_cropRect.left * size.width).round().clamp(0, size.width.toInt() - 1);
-      final y = (_cropRect.top * size.height).round().clamp(0, size.height.toInt() - 1);
-      final w = (_cropRect.width * size.width)
-          .round()
-          .clamp(1, size.width.toInt() - x);
-      final h = (_cropRect.height * size.height)
-          .round()
-          .clamp(1, size.height.toInt() - y);
+      final x = (_cropRect.left * size.width).round().clamp(
+        0,
+        size.width.toInt() - 1,
+      );
+      final y = (_cropRect.top * size.height).round().clamp(
+        0,
+        size.height.toInt() - 1,
+      );
+      final w = (_cropRect.width * size.width).round().clamp(
+        1,
+        size.width.toInt() - x,
+      );
+      final h = (_cropRect.height * size.height).round().clamp(
+        1,
+        size.height.toInt() - y,
+      );
       final cropped = await compute(
         _cropAndCompress,
         _CropRequest(src, x, y, w, h),
@@ -220,8 +230,9 @@ class _AiRosterCapturePageState extends State<AiRosterCapturePage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(showingCrop ? '裁剪花名册区域' : '拍摄或选择花名册'),
-        leading: IconButton(
+        leading: GlassIconAction(
           icon: const Icon(Icons.arrow_back),
+          size: 40,
           onPressed: () {
             if (showingCrop) {
               setState(() => _sourceBytes = null);
@@ -240,28 +251,27 @@ class _AiRosterCapturePageState extends State<AiRosterCapturePage> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: SegmentedButton<_Source>(
-            segments: const [
-              ButtonSegment(
+          child: GlassSegmentedChoice<_Source>(
+            selected: _source,
+            onChanged: (value) => setState(() => _source = value),
+            options: const [
+              GlassSegmentedOption(
                 value: _Source.camera,
-                icon: Icon(Icons.photo_camera_outlined),
-                label: Text('摄像头'),
+                icon: Icons.photo_camera_outlined,
+                label: '摄像头',
               ),
-              ButtonSegment(
+              GlassSegmentedOption(
                 value: _Source.image,
-                icon: Icon(Icons.image_outlined),
-                label: Text('选择图片'),
+                icon: Icons.image_outlined,
+                label: '选择图片',
               ),
             ],
-            selected: {_source},
-            onSelectionChanged: (v) {
-              if (v.isEmpty) return;
-              setState(() => _source = v.first);
-            },
           ),
         ),
         Expanded(
-          child: _source == _Source.camera ? _buildCameraPane() : _buildImagePane(),
+          child: _source == _Source.camera
+              ? _buildCameraPane()
+              : _buildImagePane(),
         ),
       ],
     );
@@ -294,9 +304,10 @@ class _AiRosterCapturePageState extends State<AiRosterCapturePage> {
               SizedBox(
                 width: 48,
                 child: _cameras.length > 1
-                    ? IconButton(
+                    ? GlassIconAction(
                         tooltip: '切换摄像头',
                         icon: const Icon(Icons.cameraswitch_outlined),
+                        size: 40,
                         onPressed: () =>
                             _startCamera((_cameraIndex + 1) % _cameras.length),
                       )
@@ -306,13 +317,12 @@ class _AiRosterCapturePageState extends State<AiRosterCapturePage> {
               SizedBox(
                 width: 72,
                 height: 72,
-                child: ElevatedButton(
+                child: GlassIconAction(
+                  size: 72,
+                  iconSize: 28,
+                  variant: GlassActionVariant.prominent,
                   onPressed: _busy ? null : _capture,
-                  style: ElevatedButton.styleFrom(
-                    shape: const CircleBorder(),
-                    padding: EdgeInsets.zero,
-                  ),
-                  child: _busy
+                  icon: _busy
                       ? const SizedBox(
                           width: 22,
                           height: 22,
@@ -339,10 +349,11 @@ class _AiRosterCapturePageState extends State<AiRosterCapturePage> {
           const SizedBox(height: 12),
           const Text('选择已拍好的花名册照片'),
           const SizedBox(height: 16),
-          FilledButton.icon(
+          GlassActionButton.icon(
             onPressed: _pickImage,
             icon: const Icon(Icons.folder_open),
             label: const Text('选择图片'),
+            variant: GlassActionVariant.prominent,
           ),
           const SizedBox(height: 8),
           Text(
@@ -361,22 +372,27 @@ class _AiRosterCapturePageState extends State<AiRosterCapturePage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.videocam_off_outlined, size: 64, color: Colors.grey.shade400),
+            Icon(
+              Icons.videocam_off_outlined,
+              size: 64,
+              color: Colors.grey.shade400,
+            ),
             const SizedBox(height: 12),
             Text(msg, textAlign: TextAlign.center),
             const SizedBox(height: 16),
             Wrap(
               spacing: 12,
               children: [
-                OutlinedButton.icon(
+                GlassActionButton.icon(
                   onPressed: _initCameras,
                   icon: const Icon(Icons.refresh),
                   label: const Text('重试'),
                 ),
-                FilledButton.icon(
+                GlassActionButton.icon(
                   onPressed: () => setState(() => _source = _Source.image),
                   icon: const Icon(Icons.folder_open),
                   label: const Text('改用图片'),
+                  variant: GlassActionVariant.prominent,
                 ),
               ],
             ),
@@ -404,19 +420,24 @@ class _AiRosterCapturePageState extends State<AiRosterCapturePage> {
           child: Row(
             children: [
               Expanded(
-                child: OutlinedButton(
+                child: GlassActionButton(
                   onPressed: _busy
                       ? null
                       : () => setState(() {
                           _sourceBytes = null;
-                          _cropRect = const Rect.fromLTRB(0.06, 0.10, 0.94, 0.90);
+                          _cropRect = const Rect.fromLTRB(
+                            0.06,
+                            0.10,
+                            0.94,
+                            0.90,
+                          );
                         }),
                   child: const Text('重新拍摄/选择'),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: FilledButton.icon(
+                child: GlassActionButton.icon(
                   onPressed: _busy ? null : _confirmCrop,
                   icon: _busy
                       ? const SizedBox(
@@ -426,6 +447,7 @@ class _AiRosterCapturePageState extends State<AiRosterCapturePage> {
                         )
                       : const Icon(Icons.crop),
                   label: const Text('确认裁剪'),
+                  variant: GlassActionVariant.prominent,
                 ),
               ),
             ],
@@ -539,7 +561,9 @@ class _CropSurfaceState extends State<_CropSurface> {
         onPanUpdate: (d) {
           final dx = d.delta.dx / fit.width;
           final dy = d.delta.dy / fit.height;
-          widget.onRectChanged(_clampToImage(widget.rect.shift(Offset(dx, dy))));
+          widget.onRectChanged(
+            _clampToImage(widget.rect.shift(Offset(dx, dy))),
+          );
         },
         child: const SizedBox.expand(),
       ),

@@ -9,6 +9,8 @@ import 'package:class_score/providers/personalization_provider.dart';
 import 'package:class_score/providers/score_item_provider.dart';
 import 'package:class_score/providers/score_provider.dart';
 import 'package:class_score/providers/student_provider.dart';
+import 'package:class_score/widgets/glass_buttons.dart';
+import 'package:class_score/widgets/glass_controls.dart';
 import 'package:class_score/widgets/motion.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -219,7 +221,7 @@ void main() {
       final toolbar = find.byType(SettingsToolbar);
       expect(toolbar, findsOneWidget, reason: '${entry.key} 应有统一工具栏');
 
-      final button = find.widgetWithText(FilledButton, entry.value);
+      final button = find.widgetWithText(GlassActionButton, entry.value);
       expect(
         button,
         findsOneWidget,
@@ -274,13 +276,13 @@ void main() {
 
     await _openSection(tester, '计分规则');
 
-    final mergeTile = find.widgetWithText(SwitchListTile, '同名次合并显示');
-    final skipTile = find.widgetWithText(SwitchListTile, '并列名次按实际位置跳号');
+    final mergeTile = find.widgetWithText(GlassSwitchTile, '同名次合并显示');
+    final skipTile = find.widgetWithText(GlassSwitchTile, '并列名次按实际位置跳号');
     expect(mergeTile, findsOneWidget);
     expect(skipTile, findsOneWidget);
     // 默认两项都开启：并列名次按实际位置跳号（100、99、99、98 → 第1、第2、第2、第4名）
-    expect(tester.widget<SwitchListTile>(mergeTile).value, isTrue);
-    expect(tester.widget<SwitchListTile>(skipTile).value, isTrue);
+    expect(tester.widget<GlassSwitchTile>(mergeTile).value, isTrue);
+    expect(tester.widget<GlassSwitchTile>(skipTile).value, isTrue);
     // 两种编号写法都写在说明里，便于按需求切换
     expect(find.textContaining('第1、第2、第2、第4名'), findsOneWidget);
     expect(find.textContaining('第1、第2、第2、第3名'), findsOneWidget);

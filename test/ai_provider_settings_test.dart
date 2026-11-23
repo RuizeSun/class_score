@@ -1,4 +1,5 @@
 import 'package:class_score/pages/settings/ai_provider_settings.dart';
+import 'package:class_score/widgets/glass_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -24,7 +25,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.tap(find.byType(GlassDropdownField<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Ollama（本地）').last);
     await tester.pumpAndSettle();

@@ -7,6 +7,7 @@ import '../../providers/student_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../providers/score_item_provider.dart';
 import '../../providers/score_provider.dart';
+import '../../widgets/glass_controls.dart';
 import '../../widgets/motion.dart';
 import '../../widgets/score_record_tile.dart';
 import '../../widgets/student_name_text.dart';
@@ -190,23 +191,11 @@ class _AnalysisViewState extends State<AnalysisView> {
               // 目标类型切换与筛选（单个目标详情页隐藏）
               if (widget.showTargetSelector) ...[
                 Center(
-                  child: SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(
-                        value: 'student',
-                        label: Text('学生'),
-                        icon: Icon(Icons.person),
-                      ),
-                      ButtonSegment(
-                        value: 'group',
-                        label: Text('小组'),
-                        icon: Icon(Icons.groups),
-                      ),
-                    ],
-                    selected: {_targetType},
-                    onSelectionChanged: (v) {
+                  child: GlassSegmentedChoice<String>(
+                    selected: _targetType,
+                    onChanged: (value) {
                       setState(() {
-                        _targetType = v.first;
+                        _targetType = value;
                         // 切换时重置筛选
                         if (_targetType == 'student') {
                           _filterStudentId = null;
@@ -216,15 +205,24 @@ class _AnalysisViewState extends State<AnalysisView> {
                       });
                       _loadData();
                     },
-                    style: const ButtonStyle(
-                      iconSize: WidgetStatePropertyAll(18),
-                    ),
+                    options: const [
+                      GlassSegmentedOption(
+                        value: 'student',
+                        label: '学生',
+                        icon: Icons.person,
+                      ),
+                      GlassSegmentedOption(
+                        value: 'group',
+                        label: '小组',
+                        icon: Icons.groups,
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 8),
                 // 根据目标类型显示不同的筛选下拉框
                 if (_targetType == 'student')
-                  DropdownButtonFormField<int?>(
+                  GlassDropdownField<int?>(
                     decoration: const InputDecoration(
                       labelText: '筛选学生',
                       border: OutlineInputBorder(),
@@ -236,10 +234,7 @@ class _AnalysisViewState extends State<AnalysisView> {
                     ),
                     initialValue: _filterStudentId,
                     items: [
-                      const DropdownMenuItem(
-                        value: null,
-                        child: Text('全部学生'),
-                      ),
+                      const DropdownMenuItem(value: null, child: Text('全部学生')),
                       ...students.map(
                         (s) => DropdownMenuItem(
                           value: s.id,
@@ -257,7 +252,7 @@ class _AnalysisViewState extends State<AnalysisView> {
                     },
                   )
                 else
-                  DropdownButtonFormField<int?>(
+                  GlassDropdownField<int?>(
                     decoration: const InputDecoration(
                       labelText: '筛选小组',
                       border: OutlineInputBorder(),
@@ -269,10 +264,7 @@ class _AnalysisViewState extends State<AnalysisView> {
                     ),
                     initialValue: _filterGroupId,
                     items: [
-                      const DropdownMenuItem(
-                        value: null,
-                        child: Text('全部小组'),
-                      ),
+                      const DropdownMenuItem(value: null, child: Text('全部小组')),
                       ...groups.map(
                         (g) =>
                             DropdownMenuItem(value: g.id, child: Text(g.name)),
@@ -286,7 +278,7 @@ class _AnalysisViewState extends State<AnalysisView> {
                 // 「全部小组」视图下可选择图表汇总统计是否排除未参加小组评分的学生
                 if (_targetType == 'group' && _filterGroupId == null) ...[
                   const SizedBox(height: 8),
-                  SwitchListTile(
+                  GlassSwitchTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     value: _excludeNotInGroupTotal,
@@ -310,17 +302,17 @@ class _AnalysisViewState extends State<AnalysisView> {
                 children: [
                   const Text('时间范围：'),
                   const SizedBox(width: 8),
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(value: 'all', label: Text('全部')),
-                      ButtonSegment(value: '7d', label: Text('最近 7 天')),
-                      ButtonSegment(value: '30d', label: Text('最近 30 天')),
-                    ],
-                    selected: {_timeRange},
-                    onSelectionChanged: (v) {
-                      _timeRange = v.first;
+                  GlassSegmentedChoice<String>(
+                    selected: _timeRange,
+                    onChanged: (value) {
+                      _timeRange = value;
                       _loadData();
                     },
+                    options: const [
+                      GlassSegmentedOption(value: 'all', label: '全部'),
+                      GlassSegmentedOption(value: '7d', label: '最近 7 天'),
+                      GlassSegmentedOption(value: '30d', label: '最近 30 天'),
+                    ],
                   ),
                 ],
               ),
@@ -370,9 +362,7 @@ class _AnalysisViewState extends State<AnalysisView> {
                                     SizedBox(
                                       height: 200,
                                       child: _getPositiveDistribution().isEmpty
-                                          ? const Center(
-                                              child: Text('暂无加分项'),
-                                            )
+                                          ? const Center(child: Text('暂无加分项'))
                                           : PieChart(
                                               PieChartData(
                                                 sections:
@@ -411,9 +401,7 @@ class _AnalysisViewState extends State<AnalysisView> {
                                     SizedBox(
                                       height: 200,
                                       child: _getNegativeDistribution().isEmpty
-                                          ? const Center(
-                                              child: Text('暂无扣分项'),
-                                            )
+                                          ? const Center(child: Text('暂无扣分项'))
                                           : PieChart(
                                               PieChartData(
                                                 sections:
@@ -466,7 +454,8 @@ class _AnalysisViewState extends State<AnalysisView> {
                                     child: Column(
                                       children: [
                                         Text(
-                                          ((_dailyAverages['total_positive'] as num?)
+                                          ((_dailyAverages['total_positive']
+                                                          as num?)
                                                       ?.toDouble() ??
                                                   0.0)
                                               .toStringAsFixed(1),
@@ -485,7 +474,8 @@ class _AnalysisViewState extends State<AnalysisView> {
                                     child: Column(
                                       children: [
                                         Text(
-                                          ((_dailyAverages['total_negative'] as num?)
+                                          ((_dailyAverages['total_negative']
+                                                          as num?)
                                                       ?.toDouble() ??
                                                   0.0)
                                               .toStringAsFixed(1),
@@ -524,7 +514,8 @@ class _AnalysisViewState extends State<AnalysisView> {
                                     child: Column(
                                       children: [
                                         Text(
-                                          ((_dailyAverages['avg_positive'] as num?)
+                                          ((_dailyAverages['avg_positive']
+                                                          as num?)
                                                       ?.toDouble() ??
                                                   0.0)
                                               .toStringAsFixed(1),
@@ -543,7 +534,8 @@ class _AnalysisViewState extends State<AnalysisView> {
                                     child: Column(
                                       children: [
                                         Text(
-                                          ((_dailyAverages['avg_negative'] as num?)
+                                          ((_dailyAverages['avg_negative']
+                                                          as num?)
                                                       ?.toDouble() ??
                                                   0.0)
                                               .toStringAsFixed(1),
@@ -602,13 +594,15 @@ class _AnalysisViewState extends State<AnalysisView> {
                   )
                 else
                   // 条目样式与操作逻辑复用「记录管理」的 ScoreRecordTile
-                  ...(_records.take(100).map(
-                    (r) => ScoreRecordTile(
-                      record: r,
-                      isUnlocked: context.watch<AuthProvider>().isUnlocked,
-                      onMutated: _loadData,
-                    ),
-                  )),
+                  ...(_records
+                      .take(100)
+                      .map(
+                        (r) => ScoreRecordTile(
+                          record: r,
+                          isUnlocked: context.watch<AuthProvider>().isUnlocked,
+                          onMutated: _loadData,
+                        ),
+                      )),
               ],
             ),
           ),
@@ -645,7 +639,8 @@ class _AnalysisViewState extends State<AnalysisView> {
   double _negativeTotal() {
     return _getNegativeDistribution().fold<double>(
       0,
-      (sum, item) => sum + ((item['total_score'] as num?)?.toDouble() ?? 0).abs(),
+      (sum, item) =>
+          sum + ((item['total_score'] as num?)?.toDouble() ?? 0).abs(),
     );
   }
 

@@ -1,9 +1,12 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/personalization_provider.dart';
+import '../../widgets/glass_buttons.dart';
 import '../../widgets/motion.dart';
 import '../../widgets/pin_pad.dart';
 import 'status_bar_layout.dart';
@@ -12,10 +15,10 @@ import 'status_bar_layout.dart';
 const double unlockCardGap = 12;
 
 /// 背景模糊的最大强度（sigma）。进场时由 0 渐变到该值，退场时反向回收。
-const double _maxBlurSigma = 10;
+const double unlockBlurSigma = 3;
 
 /// 背景暗化程度（0~1）。与模糊强度同步渐变，避免背景突然变暗。
-const double _dimOpacity = 0.10;
+const double unlockDimOpacity = 0.12;
 
 /// 以「整窗渐变模糊 + 状态栏胶囊保持清晰 + 卡片从右缘滑入」的形式显示解锁面板。
 ///
@@ -37,10 +40,11 @@ Future<bool?> showUnlockOverlay(BuildContext context) {
     transitionDuration: AppMotion.resolve(context, AppMotion.medium),
     // 过渡全部由 [_UnlockOverlay] 自己驱动，这里原样透传 child。
     //
-    // 不能让路由默认的 FadeTransition 包住整棵子树：BackdropFilter 的模糊
-    // 不受祖先透明度影响，包一层透明度过渡的结果是「模糊瞬间以全强度出现」，
-    // 再叠上位移就会看到模糊区域跟着卡片从右侧滑进来。改为把模糊强度与卡片
-    // 位移分别绑定到进场进度后，背景才是原地逐渐变糊。
+    // 不能让路由默认的 FadeTransition 包住整棵子树：卡片是玻璃容器，它的
+    // BackdropFilter 只有在「下面已经画好了真实内容」时才取得对。祖先一旦
+    // 有透明度层（FadeTransition / Opacity 会 push 一层临时缓冲），玻璃取到
+    // 的 backdrop 就只剩这层空缓冲，于是卡片滑入期间一点不糊、淡入结束才
+    // 突然变糊；再叠上位移还会看到模糊区域跟着卡片从右侧滑进来。
     transitionBuilder: (_, _, _, child) => child,
     pageBuilder: (_, animation, _) => _UnlockOverlay(animation: animation),
   );
@@ -75,8 +79,16 @@ class _UnlockOverlayState extends State<_UnlockOverlay> {
     reverseCurve: Curves.easeInCubic,
   );
 
+  /// 背景模糊 / 压暗用的进度：进场前 35% 就到位，卡片滑入期间背景已经是虚化的。
+  late final CurvedAnimation _blurProgress = CurvedAnimation(
+    parent: widget.animation,
+    curve: const Interval(0, 0.35, curve: Curves.easeOut),
+    reverseCurve: Curves.easeIn,
+  );
+
   @override
   void dispose() {
+    _blurProgress.dispose();
     _progress.dispose();
     super.dispose();
   }
@@ -104,9 +116,9 @@ class _UnlockOverlayState extends State<_UnlockOverlay> {
         // 投影，模糊背景与状态栏之间也就没有突兀的硬边了。
         Positioned.fill(
           child: AnimatedBuilder(
-            animation: _progress,
+            animation: _blurProgress,
             builder: (context, _) {
-              final progress = _progress.value;
+              final progress = _blurProgress.value;
               return ClipPath(
                 key: const ValueKey<String>('unlock-blur-clip'),
                 clipper: const _StatusBarCutOutClipper(),
@@ -120,12 +132,12 @@ class _UnlockOverlayState extends State<_UnlockOverlay> {
                   onTap: _dismiss,
                   child: BackdropFilter(
                     filter: ImageFilter.blur(
-                      sigmaX: _maxBlurSigma * progress,
-                      sigmaY: _maxBlurSigma * progress,
+                      sigmaX: unlockBlurSigma * progress,
+                      sigmaY: unlockBlurSigma * progress,
                     ),
                     child: ColoredBox(
                       color: Colors.black.withValues(
-                        alpha: _dimOpacity * progress,
+                        alpha: unlockDimOpacity * progress,
                       ),
                     ),
                   ),
@@ -135,8 +147,15 @@ class _UnlockOverlayState extends State<_UnlockOverlay> {
           ),
         ),
         // 解锁卡片停在状态栏右下方，右缘与状态栏胶囊右缘对齐；
-        // 只有卡片自身平移 + 淡入，背景层不参与。
+        // 只有卡片自身平移，背景层不参与。
         // （Windows 桌面窗口已置于工作区内，无需 SafeArea。）
+        //
+        // 这里刻意不给卡片套 FadeTransition：卡片是玻璃容器，它的
+        // BackdropFilter 取的是「已经画在下面的内容」。祖先一旦有透明度层
+        // （Opacity/FadeTransition 会 push 一个临时 buffer / saveLayer），
+        // 玻璃的 backdrop 就只剩这个空 buffer，模糊等于没做——表现出来就是
+        // 卡片滑入时背景清晰、淡入结束后才突然变糊。卡片起点本来就在窗口
+        // 右缘之外，不需要靠淡入来遮住出场。
         Align(
           alignment: Alignment.topRight,
           child: Padding(
@@ -149,7 +168,7 @@ class _UnlockOverlayState extends State<_UnlockOverlay> {
               child: const UnlockPage(),
               builder: (context, child) => Transform.translate(
                 offset: Offset(_cardSlideDistance * (1 - _progress.value), 0),
-                child: FadeTransition(opacity: _progress, child: child),
+                child: child,
               ),
             ),
           ),
@@ -221,98 +240,135 @@ class _UnlockPageState extends State<UnlockPage> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final glassQuality = context.watch<PersonalizationProvider>().glassQuality;
     final useLongPin = auth.useLongPin;
-    final scheme = Theme.of(context).colorScheme;
 
-    return Material(
-      elevation: 18,
-      borderRadius: BorderRadius.circular(18),
-      color: scheme.surface,
-      clipBehavior: Clip.antiAlias,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: UnlockPage.maxWidth),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.lock_outline,
-                      size: 20,
-                      color: Colors.red.shade400,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          '解锁',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: UnlockPage.maxWidth),
+      child: Listener(
+        // 玻璃容器自身不参与命中测试：卡片空白处也要吞掉点击，不能穿透到
+        // 背景模糊层（那会把「点卡片」误判成「点背景关闭」）。
+        behavior: HitTestBehavior.opaque,
+        // GlassContainer 不是 Material，不会像 Material 那样给子树提供
+        // DefaultTextStyle。缺了它，卡片里的 Text 会落回 MaterialApp 的兜底
+        // 样式（红色、monospace、双层黄色下划线，见 _errorTextStyle），
+        // 文字下方就会多出两条黄线。这里显式补上 Material 正文样式。
+        child: DefaultTextStyle(
+          style: Theme.of(context).textTheme.bodyMedium!,
+          child: GlassContainer(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            shape: const LiquidRoundedSuperellipse(borderRadius: 24),
+            useOwnLayer: true,
+            quality: glassQuality,
+            glowIntensity: 0.6,
+            settings: LiquidGlassSettings(
+              glassColor: Colors.white.withValues(alpha: 0.26),
+              thickness: 24,
+              blur: 12,
+              frost: 6,
+              frostOpacity: 0.35,
+              chromaticAberration: 0.08,
+              rimShade: 0.7,
+              rimLight: 1.2,
+              glowIntensity: 0.9,
+              shadowElevation: 0.6,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade500,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.red.shade400.withValues(alpha: 0.5),
+                            blurRadius: 16,
+                            spreadRadius: 2,
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          useLongPin ? '输入包含原始 PIN 的密码' : '输入 6 位 PIN 码',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.lock_outline,
+                        size: 22,
+                        color: Colors.white,
+                      ),
                     ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '解锁',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            useLongPin ? '输入包含原始 PIN 的密码' : '输入 6 位 PIN 码',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.black54,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    GlassIconAction(
+                      tooltip: '关闭',
+                      size: 34,
+                      iconSize: 20,
+                      onPressed: _close,
+                      foregroundColor: Colors.black54,
+                      icon: const Icon(Icons.close, size: 20),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                if (useLongPin)
+                  LongPinPad(
+                    currentPin: _pin,
+                    onPinChanged: _onPinChanged,
+                    onConfirm: _attemptUnlock,
+                    glassKeys: true,
+                  )
+                else
+                  PinPad(
+                    currentPin: _pin,
+                    onPinChanged: _onPinChanged,
+                    onConfirm: _attemptUnlock,
+                    glassKeys: true,
                   ),
-                  IconButton(
-                    tooltip: '关闭',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: _close,
-                    icon: const Icon(Icons.close, size: 20),
+                if (auth.errorMessage != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    auth.errorMessage!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 13,
+                    ),
                   ),
                 ],
-              ),
-              const SizedBox(height: 18),
-              if (useLongPin)
-                LongPinPad(
-                  currentPin: _pin,
-                  onPinChanged: _onPinChanged,
-                  onConfirm: _attemptUnlock,
-                )
-              else
-                PinPad(
-                  currentPin: _pin,
-                  onPinChanged: _onPinChanged,
-                  onConfirm: _attemptUnlock,
-                ),
-              if (auth.errorMessage != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  auth.errorMessage!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.red, fontSize: 13),
-                ),
+                if (useLongPin) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '也可以直接插入已绑定的 U 盘自动解锁',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                ],
               ],
-              if (useLongPin) ...[
-                const SizedBox(height: 8),
-                Text(
-                  '也可以直接插入已绑定的 U 盘自动解锁',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                ),
-              ],
-            ],
+            ),
           ),
         ),
       ),

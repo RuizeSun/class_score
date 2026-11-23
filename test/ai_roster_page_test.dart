@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:class_score/models/student.dart';
 import 'package:class_score/pages/score/ai_roster/ai_roster_process_page.dart';
+import 'package:class_score/widgets/glass_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
@@ -41,8 +42,8 @@ void main() {
     // 识别范围提示
     expect(find.textContaining('3 名学生'), findsOneWidget);
 
-    final checkChip = tester.widget<FilterChip>(
-      find.widgetWithText(FilterChip, '打勾 ✓'),
+    final checkChip = tester.widget<GlassChipControl>(
+      find.widgetWithText(GlassChipControl, '打勾 ✓'),
     );
     expect(checkChip.selected, isTrue);
   });
@@ -55,13 +56,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(FilterChip, '有手写内容'));
+    await tester.tap(find.widgetWithText(GlassChipControl, '有手写内容'));
     await tester.pumpAndSettle();
-    FilterChip chip(String label) =>
-        tester.widget<FilterChip>(find.widgetWithText(FilterChip, label));
+    GlassChipControl chip(String label) => tester.widget<GlassChipControl>(
+      find.widgetWithText(GlassChipControl, label),
+    );
     expect(chip('有手写内容').selected, isTrue);
 
-    await tester.tap(find.widgetWithText(FilterChip, '空白（无标记）'));
+    await tester.tap(find.widgetWithText(GlassChipControl, '空白（无标记）'));
     await tester.pumpAndSettle();
     expect(chip('空白（无标记）').selected, isTrue);
     expect(chip('有手写内容').selected, isFalse);
@@ -76,7 +78,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 取消默认的打勾
-    await tester.tap(find.widgetWithText(FilterChip, '打勾 ✓'));
+    await tester.tap(find.widgetWithText(GlassChipControl, '打勾 ✓'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('开始识别'));

@@ -1,5 +1,6 @@
 import 'package:class_score/pages/settings/course_schedule_management.dart';
 import 'package:class_score/providers/auth_provider.dart';
+import 'package:class_score/widgets/glass_buttons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -90,7 +91,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('未保存'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, '保存'), findsOneWidget);
+    expect(find.widgetWithText(GlassActionButton, '保存'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/score_provider.dart';
+import '../../widgets/glass_buttons.dart';
 import 'settings_common.dart';
 
 class PeriodManagementView extends StatelessWidget {
@@ -15,12 +16,13 @@ class PeriodManagementView extends StatelessWidget {
           '即将切换到下一评分周期，当前周期的评分记录将保留，但下一周期的评分记录将被清空。\n\n确认切换吗？',
         ),
         actions: [
-          TextButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('取消'),
           ),
-          ElevatedButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx, true),
+            variant: GlassActionVariant.prominent,
             child: const Text('确认切换'),
           ),
         ],
@@ -46,12 +48,13 @@ class PeriodManagementView extends StatelessWidget {
         title: const Text('切换到上一周期'),
         content: const Text('即将切换到上一评分周期，可以查看上一周期的评分记录。\n\n确认切换吗？'),
         actions: [
-          TextButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('取消'),
           ),
-          ElevatedButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx, true),
+            variant: GlassActionVariant.prominent,
             child: const Text('确认切换'),
           ),
         ],
@@ -84,12 +87,14 @@ class PeriodManagementView extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // 切换到上一周期按钮
-            IconButton.filled(
+            GlassIconAction(
               onPressed: canGoPrevious
                   ? () => _switchToPreviousPeriod(context)
                   : null,
               icon: const Icon(Icons.arrow_back),
               tooltip: '切换到上一周期',
+              size: 44,
+              variant: GlassActionVariant.prominent,
             ),
             const SizedBox(width: 16),
             // 当前周期显示
@@ -110,10 +115,12 @@ class PeriodManagementView extends StatelessWidget {
             ),
             const SizedBox(width: 16),
             // 切换到下一周期按钮
-            IconButton.filled(
+            GlassIconAction(
               onPressed: () => _switchToNextPeriod(context),
               icon: const Icon(Icons.arrow_forward),
               tooltip: '切换到下一周期',
+              size: 44,
+              variant: GlassActionVariant.prominent,
             ),
           ],
         ),

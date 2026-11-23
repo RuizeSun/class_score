@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../providers/score_item_provider.dart';
 import '../providers/score_provider.dart';
+import 'glass_buttons.dart';
+import 'glass_controls.dart';
 import 'student_name_text.dart';
 
 /// 评分记录条目（列表样式 + 操作逻辑的唯一实现）。
@@ -138,7 +140,8 @@ class ScoreRecordTile extends StatelessWidget {
 
     // 快速评分记录：标识来源，未填写原因时提示
     if (isQuick) {
-      displayReason = '快速评分 · '
+      displayReason =
+          '快速评分 · '
           '${displayReason?.isNotEmpty == true ? displayReason : '未填写原因'}';
     }
 
@@ -154,7 +157,7 @@ class ScoreRecordTile extends StatelessWidget {
 
     return ListTile(
       leading: batchMode
-          ? Checkbox(
+          ? GlassCheckbox(
               value: selected,
               onChanged: (_) => onToggleSelect?.call(),
             )
@@ -201,51 +204,60 @@ class ScoreRecordTile extends StatelessWidget {
               color: isPositive ? Colors.green : Colors.red,
             ),
           ),
-          // 窄栏：操作收进溢出菜单，优先保证姓名与分数可读
-          if (showActions && compact)
-            PopupMenuButton<String>(
-              tooltip: '更多操作',
-              icon: const Icon(Icons.more_vert, size: 20),
-              onSelected: (value) => switch (value) {
-                'history' => _handleShowHistory(context),
-                'delete' => _handleDelete(context),
-                _ => _handleEdit(context),
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'edit', child: Text('编辑记录')),
-                PopupMenuItem(value: 'history', child: Text('查看修改记录')),
-                PopupMenuItem(value: 'delete', child: Text('删除')),
-              ],
-            ),
-          // 宽栏：维持行内按钮
-          // 编辑记录（修改分值/变动原因/评分项关联；所有记录可用）
-          if (showActions && !compact)
-            IconButton(
-              tooltip: '编辑记录',
-              icon: const Icon(Icons.edit, size: 20),
-              color: Colors.blueGrey,
-              onPressed: () => _handleEdit(context),
-            ),
-          // 查看该记录的修改记录
-          if (showActions && !compact)
-            IconButton(
-              tooltip: '查看修改记录',
-              icon: const Icon(Icons.history, size: 20),
-              color: Colors.blueGrey,
-              onPressed: () => _handleShowHistory(context),
-            ),
-          // 单条删除（移入回收站；批量模式下交由批量删除处理）
-          if (showActions && !compact)
-            IconButton(
-              icon: const Icon(Icons.delete, size: 20),
-              onPressed: () => _handleDelete(context),
-            ),
+          if (showActions) ...[
+            const SizedBox(width: 8),
+            // 窄栏：操作收进溢出菜单，优先保证姓名与分数可读
+            if (compact)
+              GlassIconFrame(
+                size: 36,
+                child: PopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  tooltip: '更多操作',
+                  onSelected: (value) => switch (value) {
+                    'history' => _handleShowHistory(context),
+                    'delete' => _handleDelete(context),
+                    _ => _handleEdit(context),
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'edit', child: Text('编辑记录')),
+                    PopupMenuItem(value: 'history', child: Text('查看修改记录')),
+                    PopupMenuItem(value: 'delete', child: Text('删除')),
+                  ],
+                  child: const Icon(Icons.more_vert, size: 20),
+                ),
+              )
+            else ...[
+              // 编辑记录（修改分值/变动原因/评分项关联；所有记录可用）
+              GlassIconAction(
+                tooltip: '编辑记录',
+                icon: const Icon(Icons.edit, size: 20),
+                size: 34,
+                foregroundColor: Colors.blueGrey,
+                onPressed: () => _handleEdit(context),
+              ),
+              const SizedBox(width: 4),
+              // 查看该记录的修改记录
+              GlassIconAction(
+                tooltip: '查看修改记录',
+                icon: const Icon(Icons.history, size: 20),
+                size: 34,
+                foregroundColor: Colors.blueGrey,
+                onPressed: () => _handleShowHistory(context),
+              ),
+              const SizedBox(width: 4),
+              // 单条删除（移入回收站；批量模式下交由批量删除处理）
+              GlassIconAction(
+                icon: const Icon(Icons.delete, size: 20),
+                size: 34,
+                onPressed: () => _handleDelete(context),
+              ),
+            ],
+          ],
         ],
       ),
     );
   }
 }
-
 
 /// 评分记录的通用操作：编辑 / 查看修改记录 / 删除（移入回收站）。
 ///
@@ -284,9 +296,9 @@ class RecordActions {
       customName: result.customName,
     );
     if (!context.mounted) return false;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('记录已修改'), duration: Duration(seconds: 2)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('记录已修改'), duration: Duration(seconds: 2)),
+    );
     return true;
   }
 
@@ -336,12 +348,15 @@ class RecordActions {
               : '确定删除选中的 ${targets.length} 条评分记录吗？此操作不可撤销。',
         ),
         actions: [
-          TextButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('取消'),
           ),
-          TextButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx, true),
+            variant: GlassActionVariant.prominent,
+            tintColor: Colors.red.withValues(alpha: 0.55),
+            foregroundColor: Colors.white,
             child: const Text('删除'),
           ),
         ],
@@ -360,7 +375,6 @@ class RecordActions {
     return true;
   }
 }
-
 
 /// 编辑记录对话框的返回结果。
 class _EditRecordResult {
@@ -474,7 +488,7 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
               ),
             ),
             const SizedBox(height: 12),
-            DropdownButtonFormField<int?>(
+            GlassDropdownField<int?>(
               key: ValueKey('item_$_chosenItemId'),
               initialValue: _chosenItemId,
               isExpanded: true,
@@ -542,11 +556,15 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
         ),
       ),
       actions: [
-        TextButton(
+        GlassActionButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('取消'),
         ),
-        ElevatedButton(onPressed: _save, child: const Text('保存')),
+        GlassActionButton(
+          onPressed: _save,
+          variant: GlassActionVariant.prominent,
+          child: const Text('保存'),
+        ),
       ],
     );
   }
@@ -581,25 +599,28 @@ class _RecordHistoryDialog extends StatelessWidget {
                   final action = log['action_type'] as String? ?? 'update';
                   final content = log['content'] as String? ?? '';
                   final time = log['log_time'] as String? ?? '';
-                  final (IconData icon, String label, Color color) =
-                      switch (action) {
-                        'create' => (
-                          Icons.add_circle_outline,
-                          '新增记录',
-                          Colors.green.shade700,
-                        ),
-                        'supplement' => (
-                          Icons.note_add_outlined,
-                          '补充变动原因',
-                          Colors.blue.shade700,
-                        ),
-                        'delete' => (
-                          Icons.delete_outline,
-                          '删除',
-                          Colors.red.shade700,
-                        ),
-                        _ => (Icons.edit_outlined, '修改', Colors.orange.shade800),
-                      };
+                  final (
+                    IconData icon,
+                    String label,
+                    Color color,
+                  ) = switch (action) {
+                    'create' => (
+                      Icons.add_circle_outline,
+                      '新增记录',
+                      Colors.green.shade700,
+                    ),
+                    'supplement' => (
+                      Icons.note_add_outlined,
+                      '补充变动原因',
+                      Colors.blue.shade700,
+                    ),
+                    'delete' => (
+                      Icons.delete_outline,
+                      '删除',
+                      Colors.red.shade700,
+                    ),
+                    _ => (Icons.edit_outlined, '修改', Colors.orange.shade800),
+                  };
                   final subtitle = content.isNotEmpty
                       ? '$content\n${_fmtTime(time)}'
                       : _fmtTime(time);
@@ -624,7 +645,7 @@ class _RecordHistoryDialog extends StatelessWidget {
               ),
       ),
       actions: [
-        TextButton(
+        GlassActionButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('关闭'),
         ),
@@ -632,4 +653,3 @@ class _RecordHistoryDialog extends StatelessWidget {
     );
   }
 }
-

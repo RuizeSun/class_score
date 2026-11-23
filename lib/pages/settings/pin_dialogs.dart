@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/glass_buttons.dart';
 import '../../widgets/pin_pad.dart';
 
 /// Verify PIN when USB-key unlock requires PIN for sensitive actions.
@@ -29,11 +30,11 @@ Future<bool> verifyPinForUsbActions(BuildContext context) async {
             ],
           ),
           actions: [
-            TextButton(
+            GlassActionButton(
               onPressed: () => Navigator.pop(dialogContext, false),
               child: const Text('取消'),
             ),
-            TextButton(
+            GlassActionButton(
               onPressed: () async {
                 if (auth.verifyPin(pin)) {
                   Navigator.pop(dialogContext, true);
@@ -41,6 +42,7 @@ Future<bool> verifyPinForUsbActions(BuildContext context) async {
                   Navigator.pop(dialogContext, false);
                 }
               },
+              variant: GlassActionVariant.prominent,
               child: const Text('确认'),
             ),
           ],
@@ -88,15 +90,16 @@ Future<void> showPinDialog(
           // Add explicit action buttons so users can confirm even if they
           // haven't filled the full length or prefer a manual confirm.
           actions: [
-            TextButton(
+            GlassActionButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
               child: const Text('取消'),
             ),
-            TextButton(
+            GlassActionButton(
               onPressed: () async {
                 Navigator.of(dialogContext).pop();
                 await onConfirmed(pin);
               },
+              variant: GlassActionVariant.prominent,
               child: const Text('确认'),
             ),
           ],

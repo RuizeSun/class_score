@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../../models/schedule_adjustment.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/schedule_import_service.dart';
+import '../../widgets/glass_buttons.dart';
+import '../../widgets/glass_controls.dart';
 import 'settings_common.dart';
 
 /// Show dialog to add or edit a course schedule.
@@ -34,7 +36,7 @@ void showCourseScheduleDialog(
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            DropdownButtonFormField<int>(
+            GlassDropdownField<int>(
               initialValue: selectedWeekday,
               decoration: const InputDecoration(
                 labelText: '星期',
@@ -104,11 +106,12 @@ void showCourseScheduleDialog(
           ],
         ),
         actions: [
-          TextButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('取消'),
           ),
-          TextButton(
+          GlassActionButton(
+            variant: GlassActionVariant.prominent,
             onPressed: () {
               final name = nameController.text.trim();
               final start = ScheduleImportService.parseScheduleTime(
@@ -176,8 +179,9 @@ Widget _buildAdjustmentWeekNav({
 }) {
   return Row(
     children: [
-      IconButton(
+      GlassIconAction(
         tooltip: '上一周',
+        size: 36,
         onPressed: weekStart.isAfter(minWeekStart)
             ? () => onShiftWeek(-7)
             : null,
@@ -190,15 +194,22 @@ Widget _buildAdjustmentWeekNav({
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
-      IconButton(
+      GlassIconAction(
         tooltip: '下一周',
+        size: 36,
         onPressed: weekStart.isBefore(maxWeekStart)
             ? () => onShiftWeek(7)
             : null,
         icon: const Icon(Icons.chevron_right),
       ),
       if (weekStart != currentWeekStart)
-        TextButton(onPressed: onBackToThisWeek, child: const Text('回到本周')),
+        GlassActionButton(
+          onPressed: onBackToThisWeek,
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          fontSize: 13,
+          child: const Text('回到本周'),
+        ),
     ],
   );
 }
@@ -220,14 +231,13 @@ Widget _buildAdjustmentDateChips({
           final day = weekStart.add(Duration(days: i));
           final adjusted =
               ScheduleAdjustment.findFor(auth.scheduleAdjustments, day) != null;
-          return ChoiceChip(
+          return GlassChipControl(
             key: ValueKey('adjustment-date-${ScheduleAdjustment.dateKey(day)}'),
             selected: ScheduleAdjustment.dateKey(day) == selectedKey,
-            label: Text(
-              '${ScheduleAdjustment.weekdayName(day.weekday)} '
-              '${day.month}/${day.day}${adjusted ? ' · 调休' : ''}',
-            ),
-            onSelected: (_) => onSelect(day),
+            label:
+                '${ScheduleAdjustment.weekdayName(day.weekday)} '
+                '${day.month}/${day.day}${adjusted ? ' · 调休' : ''}',
+            onTap: () => onSelect(day),
           );
         }(),
     ],
@@ -241,7 +251,7 @@ Widget _buildAdjustmentWeekdayField({
   required int selectedValue,
   required ValueChanged<int> onChanged,
 }) {
-  return DropdownButtonFormField<int>(
+  return GlassDropdownField<int>(
     key: ValueKey(
       'adjustment-weekday-${ScheduleAdjustment.dateKey(selectedDate)}',
     ),
@@ -435,7 +445,7 @@ void showScheduleAdjustmentDialog(BuildContext context, {DateTime? date}) {
           ),
           actions: [
             if (selectedAdjustment != null)
-              TextButton(
+              GlassActionButton(
                 onPressed: () async {
                   final target = selectedDate;
                   await auth.removeScheduleAdjustment(target);
@@ -447,12 +457,13 @@ void showScheduleAdjustmentDialog(BuildContext context, {DateTime? date}) {
                 },
                 child: const Text('清除该日调休'),
               ),
-            TextButton(
+            GlassActionButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('取消'),
             ),
-            TextButton(
+            GlassActionButton(
               onPressed: () => submit(setDialogState),
+              variant: GlassActionVariant.prominent,
               child: const Text('确定'),
             ),
           ],
@@ -701,21 +712,23 @@ class _CourseScheduleManagementViewState
                   Text('... 还有 ${imported.length - 10} 条'),
                 if (errorLogs.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  TextButton.icon(
+                  GlassActionButton.icon(
                     onPressed: () => _showErrorsDialog(errorLogs),
                     icon: const Icon(Icons.error_outline, size: 18),
                     label: Text('查看跳过的 ${errorLogs.length} 条记录'),
+                    height: 34,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    fontSize: 13,
                   ),
                 ],
-                CheckboxListTile(
+                GlassCheckboxTile(
                   title: const Text('覆盖导入（清空现有课程表后导入）'),
                   subtitle: const Text(
                     '警告：将删除当前所有课程安排',
                     style: TextStyle(color: Colors.red),
                   ),
                   value: overwrite,
-                  onChanged: (v) =>
-                      setDialogState(() => overwrite = v ?? false),
+                  onChanged: (v) => setDialogState(() => overwrite = v),
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -723,12 +736,13 @@ class _CourseScheduleManagementViewState
             ),
           ),
           actions: [
-            TextButton(
+            GlassActionButton(
               onPressed: () => Navigator.pop(ctx, 0),
               child: const Text('取消'),
             ),
-            TextButton(
+            GlassActionButton(
               onPressed: () => Navigator.pop(ctx, overwrite ? -1 : 1),
+              variant: GlassActionVariant.prominent,
               child: Text(overwrite ? '确认覆盖导入' : '确认追加导入'),
             ),
           ],
@@ -757,7 +771,7 @@ class _CourseScheduleManagementViewState
           ),
         ),
         actions: [
-          TextButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('关闭'),
           ),
@@ -794,51 +808,54 @@ class _CourseScheduleManagementViewState
 
     return SettingsToolbar(
       children: [
-        SegmentedButton<CourseScheduleViewMode>(
-          segments: const [
-            ButtonSegment(
+        GlassSegmentedChoice<CourseScheduleViewMode>(
+          selected: _mode,
+          onChanged: _switchMode,
+          options: const [
+            GlassSegmentedOption(
               value: CourseScheduleViewMode.grid,
-              icon: Icon(Icons.grid_on),
-              label: Text('网格'),
+              label: '网格',
+              icon: Icons.grid_on,
             ),
-            ButtonSegment(
+            GlassSegmentedOption(
               value: CourseScheduleViewMode.table,
-              icon: Icon(Icons.table_rows),
-              label: Text('表格'),
+              label: '表格',
+              icon: Icons.table_rows,
             ),
           ],
-          selected: {_mode},
-          onSelectionChanged: (selection) => _switchMode(selection.first),
-          showSelectedIcon: false,
         ),
-        OutlinedButton.icon(
+        GlassActionButton.icon(
           onPressed: _importSchedules,
           icon: const Icon(Icons.file_upload_outlined),
           label: const Text('导入'),
         ),
-        FilledButton.tonalIcon(
+        GlassActionButton.icon(
           onPressed: () => widget.onShowCourseDialog(),
           icon: const Icon(Icons.add),
           label: const Text('添加课程'),
         ),
-        OutlinedButton.icon(
+        GlassActionButton.icon(
           onPressed: () => widget.onShowAdjustmentDialog(),
           icon: const Icon(Icons.event_repeat),
           label: const Text('设置调休'),
         ),
         if (hasExpired)
-          TextButton.icon(
+          GlassActionButton.icon(
             onPressed: _clearExpiredAdjustments,
             icon: const Icon(Icons.cleaning_services_outlined),
             label: const Text('清理过期调休'),
           ),
         if (_mode == CourseScheduleViewMode.table && _dirty) ...[
-          FilledButton.icon(
+          GlassActionButton.icon(
             onPressed: _saveRows,
             icon: const Icon(Icons.save_outlined),
             label: const Text('保存'),
+            variant: GlassActionVariant.prominent,
           ),
-          TextButton(onPressed: _discardChanges, child: const Text('取消')),
+          GlassActionButton(
+            onPressed: _discardChanges,
+            child: const Text('取消'),
+          ),
         ],
       ],
     );
@@ -905,20 +922,17 @@ class _CourseScheduleManagementViewState
               ],
             ),
             for (final entry in entries)
-              InputChip(
+              GlassChipControl(
                 key: ValueKey(
                   'week-adjustment-${ScheduleAdjustment.dateKey(entry.date)}',
                 ),
                 tooltip: '点击修改，✕ 清除',
-                label: Text(
-                  '${ScheduleAdjustment.formatMonthDay(entry.date)}'
-                  '（${ScheduleAdjustment.weekdayName(entry.date.weekday)}）'
-                  '${ScheduleAdjustment.describeWeekday(entry.weekday)}',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                deleteIcon: const Icon(Icons.close, size: 16),
-                onPressed: () =>
-                    widget.onShowAdjustmentDialog(date: entry.date),
+                label:
+                    '${ScheduleAdjustment.formatMonthDay(entry.date)}'
+                    '（${ScheduleAdjustment.weekdayName(entry.date.weekday)}）'
+                    '${ScheduleAdjustment.describeWeekday(entry.weekday)}',
+                fontSize: 12,
+                onTap: () => widget.onShowAdjustmentDialog(date: entry.date),
                 onDeleted: () => _removeAdjustment(entry.date),
               ),
           ],
@@ -1256,7 +1270,7 @@ class _CourseScheduleManagementViewState
           alignment: Alignment.centerLeft,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
-            child: TextButton.icon(
+            child: GlassActionButton.icon(
               onPressed: _addRow,
               icon: const Icon(Icons.add),
               label: const Text('添加一行'),
@@ -1292,27 +1306,26 @@ class _CourseScheduleManagementViewState
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<int>(
-              value: row.weekday,
-              isExpanded: true,
-              isDense: true,
-              items: [1, 2, 3, 4, 5, 6, 7]
-                  .map(
-                    (d) => DropdownMenuItem(
-                      value: d,
-                      child: Text(AuthProvider.weekdayNames[d] ?? '周$d'),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (v) {
-                if (v == null) return;
-                setState(() {
-                  row.weekday = v;
-                  _dirty = true;
-                });
-              },
-            ),
+          child: GlassDropdownField<int>(
+            key: ObjectKey(row),
+            initialValue: row.weekday,
+            isExpanded: true,
+            height: 36,
+            menuWidth: 140,
+            items: [
+              for (int d = 1; d <= 7; d++)
+                DropdownMenuItem(
+                  value: d,
+                  child: Text(AuthProvider.weekdayNames[d] ?? '周$d'),
+                ),
+            ],
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() {
+                row.weekday = v;
+                _dirty = true;
+              });
+            },
           ),
         ),
         _buildTableCell(
@@ -1329,9 +1342,10 @@ class _CourseScheduleManagementViewState
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
-          child: IconButton(
+          child: GlassIconAction(
             tooltip: '删除此行',
             icon: const Icon(Icons.delete_outline),
+            size: 34,
             onPressed: () => _removeRow(index),
           ),
         ),
@@ -1411,16 +1425,16 @@ class _CourseScheduleManagementViewState
         title: Text(title),
         content: Text(content),
         actions: [
-          TextButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('取消'),
           ),
-          TextButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              confirmText,
-              style: destructive ? const TextStyle(color: Colors.red) : null,
-            ),
+            variant: GlassActionVariant.prominent,
+            tintColor: destructive ? Colors.red.withValues(alpha: 0.55) : null,
+            foregroundColor: destructive ? Colors.white : null,
+            child: Text(confirmText),
           ),
         ],
       ),

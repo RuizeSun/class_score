@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' show LiquidOval;
+
+import 'glass_buttons.dart';
 
 /// 圆形数字键的直径（宽高相同，保证按键是正圆）。
 const double _keyDiameter = 60;
@@ -22,6 +25,7 @@ class _NumpadKeys extends StatelessWidget {
     required this.onPinChanged,
     required this.maxLength,
     this.onConfirm,
+    this.glassKeys = false,
   });
 
   /// 已输入的 PIN。
@@ -35,6 +39,9 @@ class _NumpadKeys extends StatelessWidget {
 
   /// 输入满 [maxLength] 位后的自动确认回调，为 null 时只做长度限制。
   final VoidCallback? onConfirm;
+
+  /// 是否为深色玻璃面板使用半透明按键外观。
+  final bool glassKeys;
 
   @override
   Widget build(BuildContext context) {
@@ -92,15 +99,14 @@ class _NumpadKeys extends StatelessWidget {
       child: SizedBox(
         width: _keyDiameter,
         height: _keyDiameter,
-        child: TextButton(
-          // 圆形按键若不裁剪，按压水波会溢出圆外。
-          clipBehavior: Clip.antiAlias,
-          style: TextButton.styleFrom(
-            backgroundColor: Colors.grey.shade100,
-            foregroundColor: Colors.black87,
-            padding: EdgeInsets.zero,
-            shape: CircleBorder(side: BorderSide(color: Colors.grey.shade300)),
-          ),
+        child: GlassActionButton(
+          height: _keyDiameter,
+          padding: EdgeInsets.zero,
+          shape: const LiquidOval(),
+          foregroundColor: Colors.black87,
+          tintColor: glassKeys
+              ? Colors.white.withValues(alpha: 0.42)
+              : Colors.grey.withValues(alpha: 0.16),
           onPressed: () => _handleKey(label),
           // 「清空」是两个字，用数字键的字号放进圆内会溢出，单独缩小。
           child: Text(
@@ -121,6 +127,7 @@ class LongPinPad extends StatelessWidget {
   final String currentPin;
   final ValueChanged<String> onPinChanged;
   final VoidCallback? onConfirm;
+  final bool glassKeys;
 
   const LongPinPad({
     super.key,
@@ -128,6 +135,7 @@ class LongPinPad extends StatelessWidget {
     required this.currentPin,
     required this.onPinChanged,
     this.onConfirm,
+    this.glassKeys = false,
   });
 
   @override
@@ -138,7 +146,10 @@ class LongPinPad extends StatelessWidget {
         // Length indicator
         Text(
           '${currentPin.length} / $maxLength',
-          style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+          style: TextStyle(
+            fontSize: 14,
+            color: glassKeys ? Colors.black54 : Colors.grey.shade600,
+          ),
         ),
         const SizedBox(height: 16),
         // Number pad
@@ -147,27 +158,25 @@ class LongPinPad extends StatelessWidget {
           onPinChanged: onPinChanged,
           maxLength: maxLength,
           onConfirm: onConfirm,
+          glassKeys: glassKeys,
         ),
         const SizedBox(height: 8),
         // Confirm button
         SizedBox(
           width: 200,
           height: 44,
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.indigo,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
+          child: GlassActionButton(
+            height: 44,
+            padding: EdgeInsets.zero,
+            variant: GlassActionVariant.prominent,
+            tintColor: Colors.indigo.withValues(alpha: 0.62),
+            foregroundColor: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
             onPressed: currentPin.length >= 6 && onConfirm != null
                 ? onConfirm
                 : null,
-            child: const Text(
-              '确认',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
+            child: const Text('确认'),
           ),
         ),
       ],
@@ -180,6 +189,7 @@ class PinPad extends StatelessWidget {
   final String currentPin;
   final ValueChanged<String> onPinChanged;
   final VoidCallback? onConfirm;
+  final bool glassKeys;
 
   const PinPad({
     super.key,
@@ -187,6 +197,7 @@ class PinPad extends StatelessWidget {
     required this.currentPin,
     required this.onPinChanged,
     this.onConfirm,
+    this.glassKeys = false,
   });
 
   @override
@@ -206,7 +217,11 @@ class PinPad extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: filled ? Colors.indigo : Colors.grey.shade300,
-                border: Border.all(color: Colors.grey.shade400),
+                border: Border.all(
+                  color: glassKeys
+                      ? Colors.white.withValues(alpha: 0.8)
+                      : Colors.grey.shade400,
+                ),
               ),
             );
           }),
@@ -218,6 +233,7 @@ class PinPad extends StatelessWidget {
           onPinChanged: onPinChanged,
           maxLength: pinLength,
           onConfirm: onConfirm,
+          glassKeys: glassKeys,
         ),
       ],
     );

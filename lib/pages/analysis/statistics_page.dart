@@ -8,6 +8,8 @@ import '../../providers/student_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/personalization_provider.dart';
 import '../../utils/ranking.dart';
+import '../../widgets/glass_buttons.dart';
+import '../../widgets/glass_controls.dart';
 import '../../widgets/motion.dart';
 import '../../widgets/pane_header.dart';
 import '../../widgets/ranking_tile.dart';
@@ -165,32 +167,27 @@ class _StatisticsViewState extends State<StatisticsView> {
                 runSpacing: 12,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  SegmentedButton<bool>(
-                    segments: const [
-                      ButtonSegment(
+                  GlassSegmentedChoice<bool>(
+                    selected: _showGroup,
+                    onChanged: (value) => setState(() => _showGroup = value),
+                    options: const [
+                      GlassSegmentedOption(
                         value: false,
-                        label: Text('学生'),
-                        icon: Icon(Icons.person),
+                        label: '学生',
+                        icon: Icons.person,
                       ),
-                      ButtonSegment(
+                      GlassSegmentedOption(
                         value: true,
-                        label: Text('小组'),
-                        icon: Icon(Icons.groups),
+                        label: '小组',
+                        icon: Icons.groups,
                       ),
                     ],
-                    selected: {_showGroup},
-                    onSelectionChanged: (v) {
-                      setState(() => _showGroup = v.first);
-                    },
-                    style: const ButtonStyle(
-                      iconSize: WidgetStatePropertyAll(18),
-                    ),
                   ),
                   // 学生模式下可按小组筛选榜单
                   if (!_showGroup)
                     SizedBox(
                       width: 220,
-                      child: DropdownButtonFormField<int?>(
+                      child: GlassDropdownField<int?>(
                         initialValue: scoreProvider.filterGroupId,
                         isExpanded: true,
                         decoration: const InputDecoration(
@@ -222,7 +219,7 @@ class _StatisticsViewState extends State<StatisticsView> {
                         },
                       ),
                     ),
-                  OutlinedButton.icon(
+                  GlassActionButton.icon(
                     onPressed: () {
                       Navigator.push(
                         context,
@@ -233,15 +230,9 @@ class _StatisticsViewState extends State<StatisticsView> {
                     },
                     icon: const Icon(Icons.filter_list, size: 18),
                     label: const Text('高级查询'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 12,
-                      ),
-                    ),
                   ),
                   if (showClassAnalysis)
-                    FilledButton.tonalIcon(
+                    GlassActionButton.icon(
                       onPressed: () => widget.onOpenAnalysis?.call(
                         _showGroup ? 'group' : 'student',
                         null,
@@ -249,12 +240,7 @@ class _StatisticsViewState extends State<StatisticsView> {
                       ),
                       icon: const Icon(Icons.bar_chart, size: 18),
                       label: const Text('班级图表分析'),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 12,
-                        ),
-                      ),
+                      variant: GlassActionVariant.prominent,
                     ),
                 ],
               ),
@@ -550,7 +536,7 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                   ),
                   const SizedBox(height: 12),
                   // 预设评分项 / 自定义 选择
-                  DropdownButtonFormField<int?>(
+                  GlassDropdownField<int?>(
                     key: ValueKey('item_$chosenItemId'),
                     initialValue: chosenItemId,
                     isExpanded: true,
@@ -615,11 +601,11 @@ class _RecordManagementViewState extends State<RecordManagementView> {
               ),
             ),
             actions: [
-              TextButton(
+              GlassActionButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('取消'),
               ),
-              ElevatedButton(
+              GlassActionButton(
                 onPressed: () => Navigator.pop(
                   ctx,
                   _SupplementResult(
@@ -631,6 +617,7 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                     reason: reasonController.text,
                   ),
                 ),
+                variant: GlassActionVariant.prominent,
                 child: const Text('保存'),
               ),
             ],
@@ -673,16 +660,17 @@ class _RecordManagementViewState extends State<RecordManagementView> {
         title: const Text('分值不一致'),
         content: Text(content),
         actions: [
-          TextButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('取消'),
           ),
-          TextButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('保留原分值'),
           ),
-          FilledButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx, true),
+            variant: GlassActionVariant.prominent,
             child: const Text('应用预设分值'),
           ),
         ],
@@ -785,17 +773,21 @@ class _RecordManagementViewState extends State<RecordManagementView> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            TextButton.icon(
-              onPressed: _openRecycleBin,
+            GlassIconAction(
+              tooltip: '回收站',
               icon: const Icon(Icons.delete_outline, size: 18),
-              label: const Text('回收站'),
+              size: 34,
+              onPressed: _openRecycleBin,
             ),
-            if (records.isNotEmpty)
-              TextButton.icon(
-                onPressed: _enterBatchMode,
+            if (records.isNotEmpty) ...[
+              const SizedBox(width: 6),
+              GlassIconAction(
+                tooltip: '批量操作',
                 icon: const Icon(Icons.checklist, size: 18),
-                label: const Text('批量操作'),
+                size: 34,
+                onPressed: _enterBatchMode,
               ),
+            ],
           ],
         ),
       );
@@ -815,17 +807,23 @@ class _RecordManagementViewState extends State<RecordManagementView> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          TextButton(
+          GlassActionButton(
             onPressed: () => _toggleSelectAll(records),
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            fontSize: 13,
             child: Text(_allSelected(records) ? '取消全选' : '全选'),
           ),
-          TextButton(
+          GlassActionButton(
             onPressed: selected.isNotEmpty
                 ? () => _runSupplementFlow(selected)
                 : null,
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            fontSize: 13,
             child: const Text('补充原因'),
           ),
-          TextButton(
+          GlassActionButton(
             onPressed: selected.isNotEmpty
                 ? () => RecordActions.deleteRecords(
                     context,
@@ -834,12 +832,17 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                         setState(() => _selectedRecordIds.removeAll(ids)),
                   )
                 : null,
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            fontSize: 13,
+            foregroundColor: Colors.red,
+            tintColor: Colors.red.withValues(alpha: 0.16),
             child: const Text('删除'),
           ),
-          IconButton(
+          GlassIconAction(
             tooltip: '完成',
             icon: const Icon(Icons.close),
+            size: 34,
             onPressed: _exitBatchMode,
           ),
         ],
@@ -880,17 +883,15 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                     padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: InputChip(
-                        avatar: Icon(
+                      child: GlassChipControl(
+                        label: '已按「${widget.externalFilter!.name}」筛选',
+                        icon: Icon(
                           widget.externalFilter!.type == 'group'
                               ? Icons.groups
                               : Icons.person,
                           size: 16,
                         ),
-                        label: Text('已按「${widget.externalFilter!.name}」筛选'),
-                        deleteIcon: const Icon(Icons.close, size: 16),
                         onDeleted: widget.onClearExternalFilter,
-                        visualDensity: VisualDensity.compact,
                       ),
                     ),
                   ),
@@ -905,7 +906,7 @@ class _RecordManagementViewState extends State<RecordManagementView> {
             children: [
               SizedBox(
                 width: 180,
-                child: DropdownButtonFormField<int?>(
+                child: GlassDropdownField<int?>(
                   key: ValueKey('group_$_filterGroupId'),
                   initialValue: _filterGroupId,
                   decoration: const InputDecoration(
@@ -943,7 +944,7 @@ class _RecordManagementViewState extends State<RecordManagementView> {
               ),
               SizedBox(
                 width: 180,
-                child: DropdownButtonFormField<int?>(
+                child: GlassDropdownField<int?>(
                   key: ValueKey('student_$_filterStudentId'),
                   initialValue: _filterStudentId,
                   decoration: const InputDecoration(
@@ -1118,13 +1119,15 @@ class _RecycleBinDialogState extends State<RecycleBinDialog> {
         title: const Text('永久删除'),
         content: const Text('该记录将被永久删除，其修改记录也将一并清除，且不可恢复。确定继续吗？'),
         actions: [
-          TextButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('取消'),
           ),
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx, true),
+            variant: GlassActionVariant.prominent,
+            tintColor: Colors.red.withValues(alpha: 0.55),
+            foregroundColor: Colors.white,
             child: const Text('永久删除'),
           ),
         ],
@@ -1222,18 +1225,21 @@ class _RecycleBinDialogState extends State<RecycleBinDialog> {
                                   color: Colors.grey.shade600,
                                 ),
                               ),
-                              IconButton(
+                              GlassIconAction(
                                 tooltip: '恢复',
                                 icon: const Icon(Icons.restore, size: 20),
+                                size: 34,
                                 onPressed: () => _restore(it),
                               ),
-                              IconButton(
+                              GlassIconAction(
                                 tooltip: '永久删除',
                                 icon: const Icon(
                                   Icons.delete_forever,
                                   size: 20,
                                 ),
-                                color: Colors.red,
+                                size: 34,
+                                foregroundColor: Colors.red,
+                                tintColor: Colors.red.withValues(alpha: 0.16),
                                 onPressed: () => _permanentlyDelete(it),
                               ),
                             ],
@@ -1246,7 +1252,7 @@ class _RecycleBinDialogState extends State<RecycleBinDialog> {
               ),
       ),
       actions: [
-        TextButton(
+        GlassActionButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('关闭'),
         ),

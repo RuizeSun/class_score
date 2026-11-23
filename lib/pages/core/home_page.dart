@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import '../../models/window_close_action.dart';
@@ -158,6 +159,7 @@ class _HomePageState extends State<HomePage>
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final glassQuality = context.watch<PersonalizationProvider>().glassQuality;
     final currentCourse = auth.currentCourseName;
 
     // 如果未解锁且当前在设置tab，自动跳转到主页
@@ -170,18 +172,17 @@ class _HomePageState extends State<HomePage>
     }
 
     // 动态构建导航栏：未解锁时不显示设置tab
-    final destinations = <NavigationDestination>[
-      const NavigationDestination(icon: Icon(Icons.dashboard), label: '主页'),
-      const NavigationDestination(icon: Icon(Icons.add_circle), label: '评分'),
-      const NavigationDestination(icon: Icon(Icons.bar_chart), label: '查询'),
+    final selectedTabColor = Theme.of(context).colorScheme.primary;
+    final tabs = <GlassTab>[
+      const GlassTab(icon: Icon(Icons.dashboard), label: '主页'),
+      const GlassTab(icon: Icon(Icons.add_circle), label: '评分'),
+      const GlassTab(icon: Icon(Icons.bar_chart), label: '查询'),
       if (auth.isUnlocked)
-        const NavigationDestination(icon: Icon(Icons.settings), label: '设置'),
+        const GlassTab(icon: Icon(Icons.settings), label: '设置'),
     ];
 
     // 确保 selectedIndex 在有效范围内
-    final effectiveIndex = _currentIndex >= destinations.length
-        ? 0
-        : _currentIndex;
+    final effectiveIndex = _currentIndex >= tabs.length ? 0 : _currentIndex;
 
     return Scaffold(
       body: Column(
@@ -198,10 +199,70 @@ class _HomePageState extends State<HomePage>
           Expanded(child: _buildPageContent()),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: effectiveIndex,
-        onDestinationSelected: _switchTab,
-        destinations: destinations,
+      bottomNavigationBar: SizedBox(
+        height: 96,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 16),
+            child: SizedBox(
+              width: tabs.length * 120.0,
+              child: GlassTabBar.bottom(
+                tabs: tabs,
+                selectedIndex: effectiveIndex,
+                onTabSelected: _switchTab,
+                quality: glassQuality,
+                backgroundQuality: glassQuality,
+                horizontalPadding: 16,
+                verticalPadding: 12,
+                barHeight: 64,
+                tabPadding: const EdgeInsets.symmetric(horizontal: 8),
+                indicatorExpansion: const EdgeInsets.symmetric(
+                  horizontal: 4,
+                  vertical: 4,
+                ),
+                settings: LiquidGlassSettings(
+                  glassColor: Colors.grey.shade400.withValues(alpha: 0.20),
+                  thickness: 22,
+                  blur: 14,
+                  chromaticAberration: 0.05,
+                  rimShade: 0.6,
+                  rimLight: 1.0,
+                  glowIntensity: 0.8,
+                ),
+                indicatorColor: Colors.white.withValues(alpha: 0.10),
+                indicatorSettings: LiquidGlassSettings(
+                  glassColor: Colors.white.withValues(alpha: 0.12),
+                  thickness: 12,
+                  blur: 8,
+                  chromaticAberration: 0.08,
+                  rimShade: 0.7,
+                  edgeAbsorption: 0.3,
+                  bodyShade: 0.1,
+                  rimLight: 0.8,
+                  glowIntensity: 0.3,
+                  shadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 6,
+                      spreadRadius: 0,
+                    ),
+                  ],
+                ),
+                indicatorBorderRadius: 9999,
+                glowOpacity: 0,
+                magnification: 1.0,
+                maskingQuality: glassQuality == GlassQuality.minimal
+                    ? MaskingQuality.off
+                    : MaskingQuality.high,
+                selectedIconColor: selectedTabColor,
+                selectedLabelColor: selectedTabColor,
+                unselectedIconColor: Colors.black87,
+                unselectedLabelColor: Colors.black87,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

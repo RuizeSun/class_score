@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:window_manager/window_manager.dart';
+import 'database/database_helper.dart';
 import 'models/desktop_ball_style.dart';
 import 'pages/desktop_bar/desktop_bar_window.dart';
 import 'services/app_shell_service.dart';
@@ -30,20 +32,22 @@ Future<void> main(List<String> args) async {
   // 桌面课表浮窗是 desktop_multi_window 创建的第二个引擎，需要走完全不同的
   // 启动路径（不初始化主窗口、不读数据库，只渲染主窗口推过来的状态）。
   if (await _isDesktopBarEngine(args)) {
-    await DesktopBarLog.write(
-      DesktopWindowService.barTag,
-      '浮窗引擎启动，入口参数=$args',
-    );
+    await DesktopBarLog.write(DesktopWindowService.barTag, '浮窗引擎启动，入口参数=$args');
     runApp(DesktopBarWindow(launchArguments: args));
     return;
   }
 
-  await DesktopBarLog.write(
-    DesktopWindowService.mainTag,
-    '主窗口启动，入口参数=$args',
-  );
+  await DesktopBarLog.write(DesktopWindowService.mainTag, '主窗口启动，入口参数=$args');
+  // Windows 上首次加载 sqlite3.dll 会同步卡住主 isolate，提前到首帧之前做，
+  // 这样转圈动画开始后就不会再被数据库初始化打断。
+  DatabaseHelper.initializeFfi();
   await WindowService.setup();
-  runApp(const MyApp());
+  runApp(
+    LiquidGlassWidgets.wrap(
+      child: const MyApp(),
+      brightnessResolver: Theme.maybeBrightnessOf,
+    ),
+  );
 }
 
 /// 判断本引擎是不是桌面条浮窗。
@@ -112,14 +116,22 @@ class _AppBodyState extends State<AppBody> {
   Widget build(BuildContext context) {
     final personalization = context.watch<PersonalizationProvider>();
 
-    return MaterialApp(
-      title: '班级量化评分管理',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: personalization.seedColor),
-        useMaterial3: true,
+    return GlassTheme(
+      data: GlassThemeData(
+        light: GlassThemeVariant(quality: personalization.glassQuality),
+        dark: GlassThemeVariant(quality: personalization.glassQuality),
       ),
-      home: const AppEntry(),
+      child: MaterialApp(
+        title: '班级量化评分管理',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: personalization.seedColor,
+          ),
+          useMaterial3: true,
+        ),
+        home: const AppEntry(),
+      ),
     );
   }
 }
@@ -136,6 +148,12 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
   AuthProvider? _auth;
 
   bool _barVisible = false;
+
+  /// 数据就绪标记：加载页只等 Provider 把设置读完。
+  ///
+  /// shader 预热与原生接线都放到离开加载页之后，避免它们占用 UI isolate
+  /// 让转圈动画看起来像卡死。
+  bool _dataReady = false;
 
   /// 防止「配置 + 推内容」在连续的 notify 下并发重入。
   bool _syncingBar = false;
@@ -208,46 +226,96 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
       final auth = context.read<AuthProvider>();
       final desktop = context.read<DesktopScheduleProvider>();
 
-      personalization.init();
-      auth.init();
-      context.read<ScoreProvider>().init();
-      // 首帧后按真实非客户区再校准一次窗口尺寸，确保内容区为 1280x800。
-      await WindowService.refresh();
+      // 互不依赖的初始化先一起启动，避免串行等待；sqflite 的查询本身在后台 isolate。
+      final authReady = auth.init();
+      final scoreReady = context.read<ScoreProvider>().init();
+      final desktopReady = desktop.init();
 
-      // 托盘与悬浮球的原生事件接线：两个通道都由 Windows runner 注册
-      // （见 windows/runner/flutter_window.cpp），其它平台会在服务内部
-      // 以 MissingPluginException 静默降级成日志。
-      // 菜单里的「退出程序」不在其中：由原生直接结束进程（app_quit.cpp）。
-      TrayService.attach(
-        onShow: AppShellService.showMainWindow,
-        onHide: AppShellService.hideMainWindow,
-      );
-      DesktopBallService.attach(
-        onShow: AppShellService.showMainWindow,
-        onHide: AppShellService.hideMainWindow,
-        onMoved: desktop.setBallOffset,
-      );
-      personalization.addListener(_syncTrayIcon);
-      _syncTrayIcon();
+      await personalization.init();
+      if (!mounted) return;
+      await Future.wait([authReady, scoreReady, desktopReady]);
+      if (!mounted) return;
 
-      // 桌面课表：课表数据来自 AuthProvider，状态机与配置在 DesktopScheduleProvider，
-      // 这里只做两者的接线与「把状态推给浮窗」。
       _desktop = desktop;
       _auth = auth;
-      auth.addListener(_syncSchedulesToDesktop);
-      desktop.addListener(_syncDesktopBar);
-      _syncSchedulesToDesktop();
-      await desktop.init();
-      await _syncDesktopBar();
 
-      // 兜底复查：窗口事件是主路径，但万一漏了事件（或被外部改状态），球不该一直
-      // 停在错误状态上。低频定时器只查窗口显隐，翻转了才走整条同步。
-      _ballWatchdog?.cancel();
-      _ballWatchdog = Timer.periodic(
-        _ballWatchdogInterval,
-        (_) => unawaited(_checkBallVisibility()),
-      );
+      // 数据齐了就立刻离开加载页：其余同步接线等淡入动画跑完再做。
+      setState(() => _dataReady = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(
+          _finishStartupAfterTransition(
+            personalization: personalization,
+            auth: auth,
+            desktop: desktop,
+          ),
+        );
+      });
     });
+  }
+
+  /// 主页淡入完成后再接托盘 / 浮窗 / shader，避免打断转圈与切页动画。
+  Future<void> _finishStartupAfterTransition({
+    required PersonalizationProvider personalization,
+    required AuthProvider auth,
+    required DesktopScheduleProvider desktop,
+  }) async {
+    await Future<void>.delayed(
+      AppMotion.slow + const Duration(milliseconds: 120),
+    );
+    if (!mounted) return;
+
+    // 首帧后按真实非客户区再校准一次窗口尺寸，确保内容区为 1280x800。
+    unawaited(WindowService.refresh());
+
+    // 托盘与悬浮球的原生事件接线：两个通道都由 Windows runner 注册
+    // （见 windows/runner/flutter_window.cpp），其它平台会在服务内部
+    // 以 MissingPluginException 静默降级成日志。
+    // 菜单里的「退出程序」不在其中：由原生直接结束进程（app_quit.cpp）。
+    TrayService.attach(
+      onShow: AppShellService.showMainWindow,
+      onHide: AppShellService.hideMainWindow,
+    );
+    DesktopBallService.attach(
+      onShow: AppShellService.showMainWindow,
+      onHide: AppShellService.hideMainWindow,
+      onMoved: desktop.setBallOffset,
+    );
+    personalization.addListener(_syncTrayIcon);
+
+    // 桌面课表：课表数据来自 AuthProvider，状态机与配置在 DesktopScheduleProvider，
+    // 这里只做两者的接线与「把状态推给浮窗」。
+    auth.addListener(_syncSchedulesToDesktop);
+    desktop.addListener(_syncDesktopBar);
+    _syncTrayIcon();
+    _syncSchedulesToDesktop();
+
+    // 浮窗创建要跨引擎，可能耗时较久；它不阻塞加载页切到主界面。
+    unawaited(_syncDesktopBar());
+
+    // 兜底复查：窗口事件是主路径，但万一漏了事件（或被外部改状态），球不该一直
+    // 停在错误状态上。低频定时器只查窗口显隐，翻转了才走整条同步。
+    _ballWatchdog?.cancel();
+    _ballWatchdog = Timer.periodic(
+      _ballWatchdogInterval,
+      (_) => unawaited(_checkBallVisibility()),
+    );
+
+    unawaited(_warmGlassAfterFirstFrame());
+  }
+
+  /// 主页首帧之后再预热玻璃 shader。
+  ///
+  /// 预热必须在 UI isolate 编译 shader，放在转圈阶段会让转圈看起来冻结；
+  /// 放到这里即使有短暂掉帧，用户也已经看到界面，不会被误认为卡死。
+  Future<void> _warmGlassAfterFirstFrame() async {
+    if (!mounted) return;
+    if (context.read<PersonalizationProvider>().glassQuality ==
+        GlassQuality.minimal) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+    await LiquidGlassWidgets.initialize();
   }
 
   /// 托盘图标跟着「关闭窗口时最小化到托盘」设置走：关掉设置连图标一起收掉
@@ -263,10 +331,7 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
   void _syncSchedulesToDesktop() {
     if (!mounted) return;
     final auth = context.read<AuthProvider>();
-    _desktop?.updateSchedules(
-      auth.courseSchedules,
-      auth.scheduleAdjustments,
-    );
+    _desktop?.updateSchedules(auth.courseSchedules, auth.scheduleAdjustments);
   }
 
   /// 按设置把桌面条窗口「显示 / 隐藏 / 重新配置」，并推送最新内容。
@@ -501,7 +566,7 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
     // 启动加载 → 设置 PIN → 主页之间淡入淡出（整屏切换，用较慢的时长）
     final Widget page;
     final String stage;
-    if (!auth.isInitialized || !personalization.isInitialized) {
+    if (!auth.isInitialized || !personalization.isInitialized || !_dataReady) {
       page = const Scaffold(body: Center(child: CircularProgressIndicator()));
       stage = 'loading';
     } else if (!auth.isPinSet) {

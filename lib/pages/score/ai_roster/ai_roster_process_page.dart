@@ -6,6 +6,8 @@ import '../../../models/ai_selection_rule.dart';
 import '../../../models/student.dart';
 import '../../../services/ai_roster_service.dart';
 import '../../../services/roster_matcher.dart';
+import '../../../widgets/glass_buttons.dart';
+import '../../../widgets/glass_controls.dart';
 import '../../../widgets/student_name_text.dart';
 import '../../settings/ai_provider_settings.dart';
 
@@ -31,7 +33,9 @@ class AiRosterProcessPage extends StatefulWidget {
 class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
   final Set<RosterMark> _marks = {RosterMark.check};
   ScoreThreshold _threshold = ScoreThreshold.none;
-  final TextEditingController _thresholdController = TextEditingController(text: '60');
+  final TextEditingController _thresholdController = TextEditingController(
+    text: '60',
+  );
   final TextEditingController _customController = TextEditingController();
   final TextEditingController _followUpController = TextEditingController();
 
@@ -72,7 +76,10 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
   );
 
   List<String> get _candidateLines => widget.candidates
-      .map((s) => (s.studentNumber.isEmpty ? s.name : '${s.studentNumber} ${s.name}'))
+      .map(
+        (s) =>
+            (s.studentNumber.isEmpty ? s.name : '${s.studentNumber} ${s.name}'),
+      )
       .toList();
 
   Future<void> _start({String followUp = ''}) async {
@@ -151,9 +158,10 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
       appBar: AppBar(
         title: const Text('AI 选学生'),
         actions: [
-          IconButton(
+          GlassIconAction(
             tooltip: 'AI 服务商设置',
             icon: const Icon(Icons.settings_outlined),
+            size: 40,
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const AiProviderSettingsPage()),
@@ -164,9 +172,7 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
       body: Column(
         children: [
           Expanded(
-            child: _result == null
-                ? _buildSplit()
-                : _buildResultAndSplit(),
+            child: _result == null ? _buildSplit() : _buildResultAndSplit(),
           ),
         ],
       ),
@@ -179,10 +185,7 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            flex: (_splitRatio * 100).round(),
-            child: _buildImagePane(),
-          ),
+          Expanded(flex: (_splitRatio * 100).round(), child: _buildImagePane()),
           const SizedBox(width: 12),
           Expanded(
             flex: ((1 - _splitRatio) * 100).round(),
@@ -199,10 +202,7 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            flex: (_splitRatio * 100).round(),
-            child: _buildImagePane(),
-          ),
+          Expanded(flex: (_splitRatio * 100).round(), child: _buildImagePane()),
           const SizedBox(width: 12),
           Expanded(
             flex: ((1 - _splitRatio) * 100).round(),
@@ -264,30 +264,26 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
           const SizedBox(height: 8),
           Row(
             children: [
-              SegmentedButton<ScoreThreshold>(
-                segments: const [
-                  ButtonSegment(
-                    value: ScoreThreshold.none,
-                    label: Text('不用'),
-                  ),
-                  ButtonSegment(
+              GlassSegmentedChoice<ScoreThreshold>(
+                selected: _threshold,
+                onChanged: (value) => setState(() => _threshold = value),
+                options: const [
+                  GlassSegmentedOption(value: ScoreThreshold.none, label: '不用'),
+                  GlassSegmentedOption(
                     value: ScoreThreshold.atLeast,
-                    label: Text('≥'),
+                    label: '≥',
                   ),
-                  ButtonSegment(
-                    value: ScoreThreshold.below,
-                    label: Text('<'),
-                  ),
+                  GlassSegmentedOption(value: ScoreThreshold.below, label: '<'),
                 ],
-                selected: {_threshold},
-                onSelectionChanged: (v) => setState(() => _threshold = v.first),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: TextField(
                   controller: _thresholdController,
                   enabled: _threshold != ScoreThreshold.none,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   decoration: const InputDecoration(
                     labelText: '分数',
                     border: OutlineInputBorder(),
@@ -331,7 +327,7 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
           SizedBox(
             width: double.infinity,
             height: 46,
-            child: FilledButton.icon(
+            child: GlassActionButton.icon(
               onPressed: _running ? null : () => _start(),
               icon: _running
                   ? const SizedBox(
@@ -341,6 +337,9 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
                     )
                   : const Icon(Icons.auto_awesome),
               label: Text(_running ? 'AI 正在识别…' : '开始识别'),
+              height: 46,
+              padding: EdgeInsets.zero,
+              variant: GlassActionVariant.prominent,
             ),
           ),
           const SizedBox(height: 8),
@@ -355,12 +354,12 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
 
   Widget _markChip(RosterMark mark, String label) {
     final selected = _marks.contains(mark);
-    return FilterChip(
-      label: Text(label),
+    return GlassChipControl(
+      label: label,
       selected: selected,
-      onSelected: (v) {
+      onTap: () {
         setState(() {
-          if (v) {
+          if (!selected) {
             final conflicts = AiSelectionRule.conflictsWhenSelecting(
               _marks.map((m) => 'mark:${m.name}').toSet(),
               'mark:${mark.name}',
@@ -386,7 +385,6 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
       children: [
         Row(
           children: [
-          
             const Icon(Icons.auto_awesome, size: 18),
             const SizedBox(width: 6),
             Text(
@@ -394,8 +392,11 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
             ),
             const Spacer(),
-            TextButton(
+            GlassActionButton(
               onPressed: _running ? null : () => setState(() => _result = null),
+              height: 34,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              fontSize: 13,
               child: const Text('重新设置'),
             ),
           ],
@@ -417,7 +418,9 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
             sel.isEmpty ? '没有符合条件的学生' : '将选中 ${sel.length} 名学生',
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              color: sel.isEmpty ? Colors.orange.shade800 : Colors.green.shade800,
+              color: sel.isEmpty
+                  ? Colors.orange.shade800
+                  : Colors.green.shade800,
             ),
           ),
         ),
@@ -428,17 +431,17 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (sel.isNotEmpty) ...[
-                  const Text('已选中（可取消）', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const Text(
+                    '已选中（可取消）',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 6),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: sel.map((id) {
-                      return InputChip(
-                        label: StudentNameText(
-                          name: _nameOf(id),
-                          studentNumber: _numberOf(id),
-                        ),
+                      return GlassChipControl(
+                        label: _nameOf(id),
                         selected: true,
                         onDeleted: () {
                           setState(() {
@@ -446,6 +449,10 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
                             _excluded.add(id);
                           });
                         },
+                        child: StudentNameText(
+                          name: _nameOf(id),
+                          studentNumber: _numberOf(id),
+                        ),
                       );
                     }).toList(),
                   ),
@@ -466,10 +473,13 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              [u.printedNumber, u.printedName]
-                                  .where((s) => s.isNotEmpty)
-                                  .join(' '),
-                              style: const TextStyle(fontWeight: FontWeight.w600),
+                              [
+                                u.printedNumber,
+                                u.printedName,
+                              ].where((s) => s.isNotEmpty).join(' '),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                             const SizedBox(height: 2),
                             Text(
@@ -485,19 +495,20 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
                                 spacing: 8,
                                 children: u.candidates.map((s) {
                                   final picked = _manualIds.contains(s.id);
-                                  return FilterChip(
-                                    label: StudentNameText(
-                                      name: s.name,
-                                      studentNumber: s.studentNumber,
-                                    ),
+                                  return GlassChipControl(
+                                    label: s.name,
                                     selected: picked,
-                                    onSelected: (v) => setState(() {
-                                      if (v) {
+                                    onTap: () => setState(() {
+                                      if (!picked) {
                                         _manualIds.add(s.id!);
                                       } else {
                                         _manualIds.remove(s.id);
                                       }
                                     }),
+                                    child: StudentNameText(
+                                      name: s.name,
+                                      studentNumber: s.studentNumber,
+                                    ),
                                   );
                                 }).toList(),
                               ),
@@ -516,7 +527,7 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
         Row(
           children: [
             Expanded(
-              child: OutlinedButton.icon(
+              child: GlassActionButton.icon(
                 onPressed: _running ? null : _reject,
                 icon: const Icon(Icons.close),
                 label: const Text('不采用'),
@@ -524,12 +535,13 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: FilledButton.icon(
+              child: GlassActionButton.icon(
                 onPressed: _running || sel.isEmpty
                     ? null
                     : () => Navigator.pop(context, sel),
                 icon: const Icon(Icons.check),
                 label: const Text('采用'),
+                variant: GlassActionVariant.prominent,
               ),
             ),
           ],
@@ -597,12 +609,14 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
           ),
         ),
         actions: [
-          TextButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('取消'),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, _followUpController.text.trim()),
+          GlassActionButton(
+            onPressed: () =>
+                Navigator.pop(ctx, _followUpController.text.trim()),
+            variant: GlassActionVariant.prominent,
             child: const Text('重新识别'),
           ),
         ],

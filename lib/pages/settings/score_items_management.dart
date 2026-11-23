@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../models/score_item.dart';
 import '../../providers/score_item_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/glass_buttons.dart';
 import 'settings_common.dart';
 
 /// Show dialog to add or edit a score item.
@@ -46,11 +47,12 @@ void showScoreItemDialog(BuildContext context, {ScoreItem? item}) {
         ],
       ),
       actions: [
-        TextButton(
+        GlassActionButton(
           onPressed: () => Navigator.pop(ctx),
           child: const Text('取消'),
         ),
-        TextButton(
+        GlassActionButton(
+          variant: GlassActionVariant.prominent,
           onPressed: () {
             final name = nameController.text.trim();
             final scoreText = scoreController.text.trim();
@@ -91,10 +93,11 @@ class ScoreItemsManagementView extends StatelessWidget {
       children: [
         SettingsToolbar(
           children: [
-            FilledButton.icon(
+            GlassActionButton.icon(
               onPressed: () => onShowItemDialog(),
               icon: const Icon(Icons.add),
               label: const Text('添加评分项'),
+              variant: GlassActionVariant.prominent,
             ),
           ],
         ),
@@ -120,12 +123,14 @@ class ScoreItemsManagementView extends StatelessWidget {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          IconButton(
+                          GlassIconAction(
                             icon: const Icon(Icons.edit),
+                            size: 36,
                             onPressed: () => onShowItemDialog(item: item),
                           ),
-                          IconButton(
+                          GlassIconAction(
                             icon: const Icon(Icons.delete),
+                            size: 36,
                             onPressed: () {
                               showDialog(
                                 context: context,
@@ -133,11 +138,16 @@ class ScoreItemsManagementView extends StatelessWidget {
                                   title: const Text('确认删除'),
                                   content: Text('确定删除评分项"${item.name}"吗？'),
                                   actions: [
-                                    TextButton(
+                                    GlassActionButton(
                                       onPressed: () => Navigator.pop(ctx),
                                       child: const Text('取消'),
                                     ),
-                                    TextButton(
+                                    GlassActionButton(
+                                      variant: GlassActionVariant.prominent,
+                                      tintColor: Colors.red.withValues(
+                                        alpha: 0.55,
+                                      ),
+                                      foregroundColor: Colors.white,
                                       onPressed: () {
                                         context
                                             .read<ScoreItemProvider>()

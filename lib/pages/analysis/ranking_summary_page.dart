@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/score_provider.dart';
 import '../../providers/group_provider.dart';
+import '../../widgets/glass_buttons.dart';
+import '../../widgets/glass_controls.dart';
 import '../../widgets/student_name_text.dart';
 
 class RankingSummaryPage extends StatefulWidget {
@@ -80,29 +82,26 @@ class _RankingSummaryPageState extends State<RankingSummaryPage> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    SegmentedButton<bool>(
-                      segments: const [
-                        ButtonSegment(
-                          value: false,
-                          label: Text('个人'),
-                          icon: Icon(Icons.person),
-                        ),
-                        ButtonSegment(
-                          value: true,
-                          label: Text('小组'),
-                          icon: Icon(Icons.groups),
-                        ),
-                      ],
-                      selected: {_showGroup},
-                      onSelectionChanged: (v) {
+                    GlassSegmentedChoice<bool>(
+                      selected: _showGroup,
+                      onChanged: (value) {
                         setState(() {
-                          _showGroup = v.first;
+                          _showGroup = value;
                           _filterGroupId = null;
                         });
                       },
-                      style: const ButtonStyle(
-                        iconSize: WidgetStatePropertyAll(18),
-                      ),
+                      options: const [
+                        GlassSegmentedOption(
+                          value: false,
+                          label: '个人',
+                          icon: Icons.person,
+                        ),
+                        GlassSegmentedOption(
+                          value: true,
+                          label: '小组',
+                          icon: Icons.groups,
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -126,7 +125,7 @@ class _RankingSummaryPageState extends State<RankingSummaryPage> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      DropdownButtonFormField<int?>(
+                      GlassDropdownField<int?>(
                         initialValue: _filterGroupId,
                         decoration: const InputDecoration(
                           labelText: '筛选小组',
@@ -194,7 +193,7 @@ class _RankingSummaryPageState extends State<RankingSummaryPage> {
                                 style: TextStyle(fontSize: 12),
                               ),
                               const SizedBox(height: 4),
-                              DropdownButtonFormField<int?>(
+                              GlassDropdownField<int?>(
                                 initialValue: startPeriod,
                                 decoration: const InputDecoration(
                                   border: OutlineInputBorder(),
@@ -250,7 +249,7 @@ class _RankingSummaryPageState extends State<RankingSummaryPage> {
                                 style: TextStyle(fontSize: 12),
                               ),
                               const SizedBox(height: 4),
-                              DropdownButtonFormField<int?>(
+                              GlassDropdownField<int?>(
                                 initialValue: endPeriod,
                                 decoration: const InputDecoration(
                                   border: OutlineInputBorder(),
@@ -368,7 +367,7 @@ class _RankingSummaryPageState extends State<RankingSummaryPage> {
                     // 清除按钮
                     Align(
                       alignment: Alignment.centerRight,
-                      child: OutlinedButton.icon(
+                      child: GlassActionButton.icon(
                         onPressed: results.isEmpty
                             ? null
                             : () {

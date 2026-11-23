@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show GlassSwitch;
 import 'package:provider/provider.dart';
 import '../../models/score_item.dart';
 import '../../providers/group_provider.dart';
@@ -6,6 +8,8 @@ import '../../providers/student_provider.dart';
 import '../../providers/score_provider.dart';
 import '../../providers/score_item_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/glass_buttons.dart';
+import '../../widgets/glass_controls.dart';
 import '../../widgets/student_name_text.dart';
 import 'ai_roster/ai_roster_capture_page.dart';
 
@@ -59,12 +63,13 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
           '即将切换到下一评分周期，当前周期的评分记录将保留，但下一周期的评分记录将被清空。\n\n确认切换吗？',
         ),
         actions: [
-          TextButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('取消'),
           ),
-          ElevatedButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx, true),
+            variant: GlassActionVariant.prominent,
             child: const Text('确认切换'),
           ),
         ],
@@ -130,9 +135,7 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
     final picked = await Navigator.push<Set<int>>(
       context,
       MaterialPageRoute(
-        builder: (_) => AiRosterCapturePage(
-          candidates: filtered,
-        ),
+        builder: (_) => AiRosterCapturePage(candidates: filtered),
       ),
     );
     if (!mounted || picked == null || picked.isEmpty) return;
@@ -230,12 +233,13 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
           ],
         ),
         actions: [
-          TextButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('取消'),
           ),
-          ElevatedButton(
+          GlassActionButton(
             onPressed: () => Navigator.pop(ctx, true),
+            variant: GlassActionVariant.prominent,
             child: const Text('确认提交'),
           ),
         ],
@@ -342,16 +346,17 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
               Icon(
                 _quickMode ? Icons.bolt : Icons.tune,
                 size: 20,
-                color: _quickMode ? Colors.green.shade700 : Colors.grey.shade600,
+                color: _quickMode
+                    ? Colors.green.shade700
+                    : Colors.grey.shade600,
               ),
               const SizedBox(width: 6),
-              const Text(
-                '快速评分',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              Switch(
+              const Text('快速评分', style: TextStyle(fontWeight: FontWeight.bold)),
+              GlassSwitch(
                 value: _quickMode,
                 onChanged: _setQuickMode,
+                activeColor: Colors.green.withValues(alpha: 0.55),
+                inactiveColor: Colors.black.withValues(alpha: 0.10),
               ),
             ],
           ),
@@ -365,10 +370,9 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
     final displayValue = _clampQuickScore(_quickScore);
     final isPositive = displayValue >= 0;
     final sign = isPositive ? '+' : '-';
-    final absText =
-        (displayValue.abs() % 1 == 0)
-            ? displayValue.abs().toStringAsFixed(0)
-            : displayValue.abs().toString();
+    final absText = (displayValue.abs() % 1 == 0)
+        ? displayValue.abs().toStringAsFixed(0)
+        : displayValue.abs().toString();
 
     const presetValues = [-3.0, -2.0, -1.0, 1.0, 2.0, 3.0];
 
@@ -380,19 +384,14 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
     final plusEnabled = p.isScoreAllowed(_quickScore + 1);
 
     Widget stepperButton(IconData icon, VoidCallback? onTap, Color color) {
-      final enabled = onTap != null;
-      return Material(
-        color: enabled ? color : Colors.grey.shade400,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onTap,
-          child: SizedBox(
-            width: 64,
-            height: 64,
-            child: Icon(icon, color: Colors.white, size: 40),
-          ),
-        ),
+      return GlassIconAction(
+        size: 64,
+        iconSize: 40,
+        icon: Icon(icon),
+        onPressed: onTap,
+        tintColor: color.withValues(alpha: 0.62),
+        foregroundColor: Colors.white,
+        variant: GlassActionVariant.prominent,
       );
     }
 
@@ -444,34 +443,27 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
             spacing: 12,
             runSpacing: 12,
             children: visiblePresets.map((v) {
-            final isPos = v > 0;
-            final label = isPos ? '+${v.toStringAsFixed(0)}' : v.toStringAsFixed(0);
-            final color = isPos ? Colors.green : Colors.red;
-            final isSelected = _quickScore == v;
-            return SizedBox(
-              width: 96,
-              height: 52,
-              child: OutlinedButton(
-                onPressed: () => _setQuickScore(v),
-                style: OutlinedButton.styleFrom(
+              final isPos = v > 0;
+              final label = isPos
+                  ? '+${v.toStringAsFixed(0)}'
+                  : v.toStringAsFixed(0);
+              final color = isPos ? Colors.green : Colors.red;
+              final isSelected = _quickScore == v;
+              return SizedBox(
+                width: 96,
+                height: 52,
+                child: GlassActionButton(
+                  onPressed: () => _setQuickScore(v),
+                  height: 52,
+                  padding: EdgeInsets.zero,
                   foregroundColor: color.shade700,
-                  backgroundColor: isSelected ? color.withValues(alpha: 0.15) : null,
-                  side: BorderSide(
-                    color: isSelected ? color : color.shade200,
-                    width: isSelected ? 2 : 1,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  textStyle: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  tintColor: color.withValues(alpha: isSelected ? 0.28 : 0.12),
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  child: Text(label),
                 ),
-                child: Text(label),
-              ),
-            );
-          }).toList(),
+              );
+            }).toList(),
           ),
         ),
       ],
@@ -536,7 +528,7 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                     children: [
                       // 左侧：筛选小组下拉框
                       Expanded(
-                        child: DropdownButtonFormField<int?>(
+                        child: GlassDropdownField<int?>(
                           initialValue: _selectedGroupId,
                           decoration: const InputDecoration(
                             border: OutlineInputBorder(),
@@ -588,15 +580,21 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                     ),
                     Row(
                       children: [
-                        TextButton(
+                        GlassActionButton(
                           onPressed: _selectAllStudents,
+                          height: 34,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          fontSize: 13,
                           child: const Text('全选/取消'),
                         ),
                         const SizedBox(width: 4),
-                        TextButton.icon(
+                        GlassActionButton.icon(
                           onPressed: _openAiRoster,
                           icon: const Icon(Icons.auto_awesome, size: 16),
                           label: const Text('AI 选学生'),
+                          height: 34,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          fontSize: 13,
                         ),
                         const SizedBox(width: 8),
                         Container(
@@ -727,143 +725,142 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
 
                 // ===== 标准评分模式 =====
                 if (!_quickMode) ...[
-
-                // 预设评分项
-                const Text(
-                  '预设评分项（可选）',
-                  style: TextStyle(fontWeight: FontWeight.bold, height: 1.2),
-                ),
-                const SizedBox(height: 4),
-                DropdownButtonFormField<int?>(
-                  initialValue: _selectedItemId,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    hintText: '选择预设（自动填充分值）',
+                  // 预设评分项
+                  const Text(
+                    '预设评分项（可选）',
+                    style: TextStyle(fontWeight: FontWeight.bold, height: 1.2),
                   ),
-                  isExpanded: true,
-                  items: [
-                    const DropdownMenuItem(
-                      value: null,
-                      child: SizedBox(
-                        height: 38,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text('自定义'),
-                        ),
-                      ),
+                  const SizedBox(height: 4),
+                  GlassDropdownField<int?>(
+                    initialValue: _selectedItemId,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      hintText: '选择预设（自动填充分值）',
                     ),
-                    ...scoreItems.map((item) {
-                      final score = item.defaultScore;
-                      final Color scoreColor;
-                      final String scoreLabel;
-                      if (score > 0) {
-                        scoreColor = Colors.green.shade700;
-                        scoreLabel = '+${score.toStringAsFixed(1)}';
-                      } else if (score < 0) {
-                        scoreColor = Colors.red.shade700;
-                        scoreLabel = score.toStringAsFixed(1);
-                      } else {
-                        scoreColor = Colors.grey.shade600;
-                        scoreLabel = '0.0';
-                      }
-                      return DropdownMenuItem(
-                        value: item.id,
+                    isExpanded: true,
+                    items: [
+                      const DropdownMenuItem(
+                        value: null,
                         child: SizedBox(
                           height: 38,
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  item.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: scoreColor.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  scoreLabel,
-                                  style: TextStyle(
-                                    color: scoreColor,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }),
-                  ],
-                  onChanged: (v) {
-                    final item = v == null
-                        ? null
-                        : scoreItems.firstWhere((i) => i.id == v);
-                    _onSelectPreset(item);
-                  },
-                ),
-
-                const SizedBox(height: 12),
-
-                // 评分项名称和分值输入
-                if (_selectedItemId == null)
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _customNameController,
-                          decoration: const InputDecoration(
-                            labelText: '评分项名称',
-                            border: OutlineInputBorder(),
-                            hintText: '如：考勤扣分、作业加分',
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text('自定义'),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _scoreController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                            signed: true,
+                      ...scoreItems.map((item) {
+                        final score = item.defaultScore;
+                        final Color scoreColor;
+                        final String scoreLabel;
+                        if (score > 0) {
+                          scoreColor = Colors.green.shade700;
+                          scoreLabel = '+${score.toStringAsFixed(1)}';
+                        } else if (score < 0) {
+                          scoreColor = Colors.red.shade700;
+                          scoreLabel = score.toStringAsFixed(1);
+                        } else {
+                          scoreColor = Colors.grey.shade600;
+                          scoreLabel = '0.0';
+                        }
+                        return DropdownMenuItem(
+                          value: item.id,
+                          child: SizedBox(
+                            height: 38,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    item.name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: scoreColor.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    scoreLabel,
+                                    style: TextStyle(
+                                      color: scoreColor,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                          decoration: const InputDecoration(
-                            labelText: '分值',
-                            border: OutlineInputBorder(),
-                            hintText: '请输入分值（支持小数，如 0.5 或 -1）',
-                          ),
-                        ),
-                      ),
+                        );
+                      }),
                     ],
+                    onChanged: (v) {
+                      final item = v == null
+                          ? null
+                          : scoreItems.firstWhere((i) => i.id == v);
+                      _onSelectPreset(item);
+                    },
                   ),
 
-                const SizedBox(height: 10),
+                  const SizedBox(height: 12),
 
-                // 变动原因
-                const Text(
-                  '变动原因',
-                  style: TextStyle(fontWeight: FontWeight.bold, height: 1.2),
-                ),
-                const SizedBox(height: 4),
-                TextField(
-                  controller: _reasonController,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    hintText: '请输入评分原因（可选）',
+                  // 评分项名称和分值输入
+                  if (_selectedItemId == null)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _customNameController,
+                            decoration: const InputDecoration(
+                              labelText: '评分项名称',
+                              border: OutlineInputBorder(),
+                              hintText: '如：考勤扣分、作业加分',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _scoreController,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                              signed: true,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: '分值',
+                              border: OutlineInputBorder(),
+                              hintText: '请输入分值（支持小数，如 0.5 或 -1）',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                  const SizedBox(height: 10),
+
+                  // 变动原因
+                  const Text(
+                    '变动原因',
+                    style: TextStyle(fontWeight: FontWeight.bold, height: 1.2),
                   ),
-                ),
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: _reasonController,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      hintText: '请输入评分原因（可选）',
+                    ),
+                  ),
                 ] else ...[
                   // ===== 快速评分模式 =====
                   _buildQuickScoreControls(),
@@ -880,18 +877,18 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
             child: SizedBox(
               width: double.infinity,
               height: 48,
-              child: ElevatedButton(
+              child: GlassActionButton(
                 onPressed: _loading ? null : _submit,
+                height: 48,
+                variant: GlassActionVariant.prominent,
+                fontSize: 16,
                 child: _loading
                     ? const SizedBox(
                         width: 24,
                         height: 24,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Text(
-                        '提交（$selectedCount人）',
-                        style: const TextStyle(fontSize: 16),
-                      ),
+                    : Text('提交（$selectedCount人）'),
               ),
             ),
           ),

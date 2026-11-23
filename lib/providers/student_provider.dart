@@ -6,6 +6,8 @@ import '../database/database_helper.dart';
 import '../services/backup_service.dart';
 import '../services/import_service.dart';
 import '../providers/group_provider.dart';
+import '../widgets/glass_buttons.dart';
+import '../widgets/glass_controls.dart';
 import '../widgets/student_name_text.dart';
 
 class StudentProvider extends ChangeNotifier {
@@ -241,8 +243,9 @@ class StudentProvider extends ChangeNotifier {
           title: const Text('提示'),
           content: const Text('暂无小组，请先在设置中创建小组。'),
           actions: [
-            TextButton(
+            GlassActionButton(
               onPressed: () => Navigator.pop(ctx),
+              variant: GlassActionVariant.prominent,
               child: const Text('确定'),
             ),
           ],
@@ -294,7 +297,7 @@ class StudentProvider extends ChangeNotifier {
                 const SizedBox(height: 16),
                 const Text('选择目标小组：'),
                 const SizedBox(height: 8),
-                DropdownButtonFormField<int?>(
+                GlassDropdownField<int?>(
                   initialValue: selectedGroupId,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
@@ -314,11 +317,12 @@ class StudentProvider extends ChangeNotifier {
             ),
           ),
           actions: [
-            TextButton(
+            GlassActionButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('取消'),
             ),
-            TextButton(
+            GlassActionButton(
+              variant: GlassActionVariant.prominent,
               onPressed: () {
                 final studentProvider = context.read<StudentProvider>();
                 final groupName = getGroupName(selectedGroupId);
@@ -427,7 +431,7 @@ class StudentProvider extends ChangeNotifier {
                   if (students.length > 10)
                     Text('... 还有 ${students.length - 10} 条'),
                   const SizedBox(height: 16),
-                  CheckboxListTile(
+                  GlassCheckboxTile(
                     title: const Text('覆盖导入（清空现有数据后导入）'),
                     subtitle: const Text(
                       '警告：将删除所有学生、分组和分数记录',
@@ -436,7 +440,7 @@ class StudentProvider extends ChangeNotifier {
                     value: overwriteMode,
                     onChanged: (v) {
                       setDialogState(() {
-                        overwriteMode = v ?? false;
+                        overwriteMode = v;
                       });
                     },
                     dense: true,
@@ -445,11 +449,12 @@ class StudentProvider extends ChangeNotifier {
               ),
             ),
             actions: [
-              TextButton(
+              GlassActionButton(
                 onPressed: () => Navigator.pop(ctx, 0), // 取消
                 child: const Text('取消'),
               ),
-              TextButton(
+              GlassActionButton(
+                variant: GlassActionVariant.prominent,
                 onPressed: () => Navigator.pop(ctx, overwriteMode ? -1 : 1),
                 child: Text(overwriteMode ? '确认覆盖导入' : '确认导入'),
               ),
