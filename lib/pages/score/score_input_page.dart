@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show GlassSwitch;
@@ -44,6 +45,13 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
   // 就能吃掉几毫秒，手感是「点一下顿一下」。
   //
   // 这里按「学生名单 + 可用宽度」缓存测量结果：同一份名单下点选只读缓存。
+  //
+  // 命中判定用 [listEquals] 逐项比较，而不是 identical 比较列表对象：
+  // 选了具体小组时 filteredStudents 走的是 `students.where(...).toList()`，
+  // 每次 build 都会生成**新的 List 实例**，identical 永远为 false，缓存也就
+  // 永远不命中。listEquals 比的是元素本身（Student 未重写 ==，等价于比对象
+  // 身份），所以「成员完全没变」时能正确命中；一旦学生数据被重新加载（元素
+  // 换成新对象）就自动失效，不会算出过期的宽度。
   double? _cachedCardWidth;
   List<Student>? _cachedCardWidthStudents;
   double? _cachedCardWidthAvailable;
@@ -75,9 +83,11 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
   /// 测量用的是与卡片渲染完全相同的 [StudentDisplay.span]，保证两者一致；
   /// 只是把结果缓存起来——同一份名单下反复点选学生都命中缓存。
   double _resolveCardWidth(List<Student> students, double availableWidth) {
+    final cached = _cachedCardWidthStudents;
     if (_cachedCardWidth != null &&
-        identical(_cachedCardWidthStudents, students) &&
-        _cachedCardWidthAvailable == availableWidth) {
+        cached != null &&
+        _cachedCardWidthAvailable == availableWidth &&
+        listEquals(cached, students)) {
       return _cachedCardWidth!;
     }
 
