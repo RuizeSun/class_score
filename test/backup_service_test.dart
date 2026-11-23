@@ -94,4 +94,97 @@ void main() {
       expect(files.length, 1);
     });
   });
+
+  group('BackupService.restoreBackup', () {
+    late Directory root;
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('class_score_restore');
+      DatabaseHelper.dbDirOverride = p.join(root.path, 'data');
+      BackupService.backupDirOverride = p.join(root.path, 'backups');
+    });
+
+    tearDown(() async {
+      await DatabaseHelper.instance.closeDatabase();
+      DatabaseHelper.dbDirOverride = null;
+      BackupService.backupDirOverride = null;
+      if (root.existsSync()) root.deleteSync(recursive: true);
+    });
+
+    test('恢复会把备份内容写回主库（备份先用完整性检查校验）', () async {
+      final db = await DatabaseHelper.instance.database;
+      await db.insert('groups', {'name': '备份前'});
+      final backup = await BackupService.instance.createBackup(force: true);
+      expect(backup, isNotNull);
+
+      await db.insert('groups', {'name': '备份后新增'});
+      expect((await db.query('groups')).length, 2);
+
+      expect(await BackupService.instance.restoreBackup(backup!), isTrue);
+      final reopened = await DatabaseHelper.instance.database;
+      final names = (await reopened.query('groups'))
+          .map((row) => row['name'])
+          .toList();
+      expect(names, ['备份前']);
+    });
+
+    test('备份文件不是数据库时拒绝恢复，原数据不受影响', () async {
+      final db = await DatabaseHelper.instance.database;
+      await db.insert('groups', {'name': '原数据'});
+
+      final dir = BackupService.backupDirOverride!;
+      Directory(dir).createSync(recursive: true);
+      final fake = p.join(dir, 'broken.db');
+      File(fake).writeAsStringSync('not a database at all' * 32);
+
+      expect(await BackupService.instance.restoreBackup(fake), isFalse);
+      final names = (await db.query('groups'))
+          .map((row) => row['name'])
+          .toList();
+      expect(names, ['原数据']);
+    });
+  });
+
+  group('BackupService.importFromJson', () {
+    late Directory root;
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('class_score_import');
+      DatabaseHelper.dbDirOverride = p.join(root.path, 'data');
+      BackupService.backupDirOverride = p.join(root.path, 'backups');
+    });
+
+    tearDown(() async {
+      await DatabaseHelper.instance.closeDatabase();
+      DatabaseHelper.dbDirOverride = null;
+      BackupService.backupDirOverride = null;
+      if (root.existsSync()) root.deleteSync(recursive: true);
+    });
+
+    test('导入中途失败不会把已有数据清空（整段在一个事务里）', () async {
+      final db = await DatabaseHelper.instance.database;
+      await db.insert('groups', {'name': '原有组'});
+
+      // students 缺 group_id 这类必填列：插入会失败，整个事务应当回滚。
+      const broken =
+          '{"groups": [{"name": "新组"}], "students": [{"name": "坏学生"}]}';
+      expect(await BackupService.instance.importFromJson(broken), isFalse);
+
+      final names = (await db.query('groups'))
+          .map((row) => row['name'])
+          .toList();
+      expect(names, ['原有组']);
+    });
+
+    test('合法快照能完整导入', () async {
+      const good =
+          '{"groups": [{"id": 1, "name": "导入组"}], '
+          '"students": [{"id": 1, "name": "张三", "student_number": "01", "group_id": 1}]}';
+      expect(await BackupService.instance.importFromJson(good), isTrue);
+
+      final db = await DatabaseHelper.instance.database;
+      expect((await db.query('groups')).map((r) => r['name']), ['导入组']);
+      expect((await db.query('students')).map((r) => r['name']), ['张三']);
+    });
+  });
 }

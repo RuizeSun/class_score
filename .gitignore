@@ -51,4 +51,7 @@ app.*.map.json
 .fvmrc
 
 .clinerules
+
+# AI 记忆库（本地数据库，误删不可恢复，绝不入库）
+.dsh-meow/
 /.commandcode

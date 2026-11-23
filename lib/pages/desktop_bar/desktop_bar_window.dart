@@ -86,7 +86,14 @@ class _DesktopBarWindowState extends State<DesktopBarWindow> {
           case DesktopWindowService.pingMethod:
             return true;
           case DesktopWindowService.payloadMethod:
-            await _applyPayload(asStringKeyedMap(call.arguments));
+            // 内容解析 / 应用失败绝不能抛回通道：浮窗是独立引擎，异常抛进
+            // 平台通道只会留下一片空白窗口，而且每秒重推一次会反复打断。
+            // 这里吞掉并记日志，保留下一次推送的机会。
+            try {
+              await _applyPayload(asStringKeyedMap(call.arguments));
+            } catch (error, stack) {
+              await _log('应用推送内容失败（已忽略本条）：$error\n$stack');
+            }
             return true;
           case DesktopWindowService.closeMethod:
             await DesktopBarWindowChannel.close();
@@ -376,6 +383,10 @@ class _DesktopBarWindowState extends State<DesktopBarWindow> {
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      // 浮窗里任何一颗 widget 抛异常，默认会在原地画一大块红色错误块，
+      // 而这个窗口是贴着桌面的胶囊——看起来就像「界面坏了」。降级成
+      // 与胶囊同色的空白，至少保持桌面整洁，日志里仍有完整堆栈。
+      builder: (context, child) => child ?? const SizedBox.shrink(),
       home: Scaffold(
         backgroundColor: DesktopBarPalette.barBackground,
         body: state == null

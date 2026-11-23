@@ -20,8 +20,14 @@ jobs:
                   distribution: "temurin"
                   java-version: "17"
 
+            # 版本固定（勿改回 channel: stable）：
+            # Flutter 3.50.x 的 Windows 引擎在「桌面课表浮窗」这条路径上会
+            # 访问冲突闪退（0xC0000005 in flutter_windows.dll，多引擎 +
+            # 分层窗口 + 每帧重绘时必现）。3.47.9 实测稳定，.fvmrc 与这里
+            # 必须保持一致，否则 local 构建与 Release 又是两个引擎。
             - uses: subosito/flutter-action@v2
               with:
+                  flutter-version: "3.47.9"
                   channel: "stable"
 
             - run: flutter config --enable-windows-desktop

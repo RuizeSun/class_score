@@ -4,7 +4,8 @@
 
 - 生成时间：2026-09-26（2026-09-30：P0 性能修复）
 - commit：HEAD 08a3afc（P0 三轮，未 push）；1.5.1 = 04e18ba
-- last_verified_commit：08a3afc（`fvm flutter test` 157 全过、`fvm flutter analyze` 47 条既有 info、无新增）
+- last_verified：2026-11-23 稳定性修复后（`fvm flutter test` 210 全过、`fvm flutter analyze` 43 条既有 info、无新增；Release 实机 10/10 次启动存活）
+- Flutter SDK：**fvm 3.47.9**（见下方「稳定性和数据安全红线」）
 - 仅支持 Windows（用户明确；android/ios/macos/linux/web 目录为脚手架残留）
 
 ## 项目一句话
@@ -21,7 +22,7 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
 - lib/services/ — 窗口/托盘/天气/备份/导入等服务
 - lib/widgets/ — 通用组件 + desktop_schedule/ 浮窗 UI
 - windows/runner/ — 原生 C++（desktop_bar_channel.cpp、desktop_ball_window.cpp、tray_icon.cpp、app_quit.cpp）
-- test/ — 157 个测试（含 backup_service / database_helper 的 DB 用例，用 DatabaseHelper.dbDirOverride 指到临时目录）；.github/workflows/flutter.yml — CI
+- test/ — 210 个测试（含 backup_service / database_recovery / database_helper 的 DB 用例，用 DatabaseHelper.dbDirOverride 指到临时目录）；.github/workflows/flutter.yml — CI（Flutter 版本已钉死 3.47.9）
 
 ## 核心链路
 
@@ -46,6 +47,28 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
 - 桌面条 `_recompute`：按渲染指纹去重（内容没变不 notify，倒计时仍逐秒）；**新增渲染字段必须加进 `_renderSignature`**，否则界面不刷新。
 - 仪表盘：`getScoreRecords` 支持 `startDate/endDate/limit` + 单次 `setState` + `_loadGeneration` 防并发（勿整周期读进内存）。
 - main.dart：浮窗探测 10s 限频、球显隐看门狗 15s；AuthProvider 仅解锁状态变化才 notify。
+
+## 稳定性和数据安全红线（2026-11-23 修，勿回退）
+
+- **Flutter 版本必须钉在 3.47.9**（`.fvmrc` 与 `.github/workflows/flutter.yml` 两处同步）。
+  3.50.x 的 Windows 引擎在「桌面课表浮窗」这条路径上必现访问冲突闪退
+  （`0xc0000005` in `flutter_windows.dll`，多引擎 + 分层窗口 + 每秒重绘）。
+  实测对照：3.47.0 / 3.47.9 = 8~10 次启动全活；3.50.0 / 3.50.1 = 8 次里挂 6~8 次；
+  同一份代码换 SDK 结论一致（不是业务代码回归）。CI 若改回 `channel: stable`，
+  下个 Release 会重新带病。
+- **数据库打开失败必须自愈**（`database_helper.dart` 的 `_initDatabase`）：
+  判据只认「坏库」（SQLITE_NOTADB 26 / CORRUPT 11 / malformed / disk image is corrupted），
+  命中才 留档 `score.db.broken-<时间戳>` → 最近的 `backups/*.db` 校验（integrity_check）
+  → 顶替 → 兜底建空库。**被占用 / 只读 / 无权限一律 rethrow，绝不改名换库**（那才是真丢数据）。
+  替换前后都要删 `-wal/-shm/-journal`，否则旧日志会把新库改回损坏。
+- **启动不能停在转圈页**：`main.dart` 的 `_beginStartup` 包了 try/catch，失败落到
+  `_startupError` → `_StartupErrorPage`（显示原因 + 数据目录 + 重试）。
+  新增 Provider 的 init 必须留在这一层里，不要自己 catch 掉。
+- **备份恢复先校验再覆盖**（`backup_service.dart` `restoreBackup`）：完整性检查不过直接拒绝；
+  覆盖前把当前库留档 `score.db.before-restore-<时间戳>`，失败自动回滚。
+- **JSON 导入整段在事务里**（`importFromJson`）：表顺序 `groups → students → score_records`，
+  中途任一行不合法就整体回滚。勿改回「先逐表 delete 再逐行 insert」。
+- `app_settings.value` 读出来一律 `toString()` 降级：历史库可能是 NULL，`as String` 会在启动路径上炸。
 
 ## 任务导航
 

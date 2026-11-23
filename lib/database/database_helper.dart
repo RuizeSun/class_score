@@ -57,6 +57,9 @@ class DatabaseHelper {
     });
   }
 
+  /// 最近一次打开数据库失败的原因（UI 可据此提示，而不是一直转圈）。
+  String? lastOpenError;
+
   Future<Database> _initDatabase() async {
     final dir = Directory(dbDir);
     if (!await dir.exists()) {
@@ -64,15 +67,132 @@ class DatabaseHelper {
     }
 
     initializeFfi();
-    final db = await databaseFactoryFfi.openDatabase(
-      dbPath,
-      options: OpenDatabaseOptions(
-        version: 10,
-        onCreate: _onCreate,
-        onUpgrade: _onUpgrade,
-      ),
+    final options = OpenDatabaseOptions(
+      version: 10,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
-    return db;
+    try {
+      final db = await databaseFactoryFfi.openDatabase(dbPath, options: options);
+      lastOpenError = null;
+      return db;
+    } catch (error) {
+      // 打开失败（库被占用 / 文件损坏 / 迁移中途断电）不能让 App 永久卡在
+      // 加载页：先保住原文件，再尽量从最近的备份恢复，最后才重开一个空库。
+      // 失败原因记录下来供 UI 提示，绝不静默丢数据。
+      lastOpenError = '$error';
+      final text = '$error'.toLowerCase();
+      // 只有「文件本身坏了」才允许动手换库。被占用 / 只读 / 没权限时绝不能
+      // 把一份完好、可能正被别的实例使用的库改名或覆盖——那才是真的丢数据。
+      // 坏库的判据：SQLITE_NOTADB(26)、CORRUPT(11)、malformed 之类。
+      final corrupt =
+          text.contains('sqlite_error: 26') ||
+          text.contains('sqlite_error: 11') ||
+          text.contains('file is not a database') ||
+          text.contains('malformed') ||
+          text.contains('database disk image is corrupted');
+      if (!corrupt) {
+        debugPrint('数据库打不开（非损坏，可能是被占用 / 权限），保留原文件：$error');
+        rethrow;
+      }
+      debugPrint('打开数据库失败，尝试自愈：$error');
+      final recovered = await _recoverDatabase(error, options);
+      if (recovered != null) return recovered;
+      rethrow;
+    }
+  }
+
+  /// 自愈：把坏文件留证 → 用最新可用备份顶替 → 仍不行就建空库。
+  ///
+  /// 返回 null 表示连「建空库」都失败（例如目录只读），由调用方重新抛出。
+  Future<Database?> _recoverDatabase(
+    Object cause,
+    OpenDatabaseOptions options,
+  ) async {
+    final stamp = DateTime.now()
+        .toIso8601String()
+        .replaceAll(':', '-')
+        .replaceAll('.', '-');
+
+    // 1. 保住现场：损坏 / 异常的原库改名留档，绝不覆盖删除。
+    try {
+      final file = File(dbPath);
+      if (await file.exists()) {
+        await file.rename('$dbPath.broken-$stamp');
+      }
+    } catch (error) {
+      debugPrint('留档坏库失败：$error');
+    }
+    await _deleteSidecars();
+
+    // 2. 用最新的备份顶替（逐个试，直到有一个能打开且完整性检查通过）。
+    for (final candidate in await _candidateBackups()) {
+      try {
+        final probe = await databaseFactoryFfi.openDatabase(candidate);
+        final rows = await probe.rawQuery('PRAGMA integrity_check');
+        final ok =
+            rows.isNotEmpty &&
+            '${rows.first.values.first}'.toLowerCase() == 'ok';
+        await probe.close();
+        if (!ok) continue;
+
+        await File(candidate).copy(dbPath);
+        await _deleteSidecars();
+        final db = await databaseFactoryFfi.openDatabase(
+          dbPath,
+          options: options,
+        );
+        lastOpenError = '已从备份恢复（原库已留档）';
+        debugPrint('数据库已从备份恢复：$candidate');
+        return db;
+      } catch (error) {
+        debugPrint('备份不可用：$candidate（$error）');
+      }
+    }
+
+    // 3. 没有可用备份：建一个全新的空库，至少保证 App 能启动。
+    try {
+      await _deleteSidecars();
+      final db = await databaseFactoryFfi.openDatabase(dbPath, options: options);
+      lastOpenError = '数据库损坏且没有可用备份，已新建空库（原库已留档）';
+      debugPrint('数据库损坏且无备份，已新建空库（原因：$cause）');
+      return db;
+    } catch (error) {
+      debugPrint('重建空库失败：$error');
+      return null;
+    }
+  }
+
+  /// 备份候选（新 → 旧）：数据库同级的上层 `backups/` 目录。
+  Future<List<String>> _candidateBackups() async {
+    try {
+      final dir = Directory(p.join(dbDir, '..', 'backups'));
+      if (!await dir.exists()) return const [];
+      final files = (await dir.list().toList())
+          .whereType<File>()
+          .where((file) => file.path.toLowerCase().endsWith('.db'))
+          .toList();
+      files.sort(
+        (a, b) => b.statSync().modified.compareTo(a.statSync().modified),
+      );
+      return files.map((file) => file.path).toList();
+    } catch (error) {
+      debugPrint('列出备份失败：$error');
+      return const [];
+    }
+  }
+
+  /// 删掉主库旁的 -wal / -shm / -journal：替换或重建库文件时必须清干净，
+  /// 否则旧日志会把新库改回损坏状态。
+  Future<void> _deleteSidecars() async {
+    for (final suffix in ['-wal', '-shm', '-journal']) {
+      for (final base in [dbPath, p.join(dbDir, 'score.db')]) {
+        try {
+          final file = File('$base$suffix');
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+      }
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -314,8 +434,13 @@ class DatabaseHelper {
     final opening = _databaseFuture;
     if (opening == null) return;
     _databaseFuture = null;
-    final db = await opening;
-    await db.close();
+    try {
+      final db = await opening;
+      await db.close();
+    } catch (error) {
+      // 关库失败（例如打开本来就在失败）不该连锁抛出：置空缓存后下次重新打开。
+      debugPrint('关闭数据库失败：$error');
+    }
   }
 
   /// Reload all data after restore/reset - triggers lazy re-initialization
@@ -333,7 +458,11 @@ class DatabaseHelper {
       whereArgs: [key],
     );
     if (result.isNotEmpty) {
-      return result.first['value'] as String;
+      // 历史库 / 手工改过的库里 value 可能是 NULL：直接 as String 会抛类型
+      // 错误，而这里被所有 Provider 在启动路径上调用，一个坏键就会让整个
+      // 启动失败。统一降级成 null（调用方本来就有默认值）。
+      final value = result.first['value'];
+      return value?.toString();
     }
     return null;
   }

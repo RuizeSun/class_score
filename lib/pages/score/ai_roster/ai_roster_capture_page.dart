@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
@@ -220,7 +221,13 @@ class _AiRosterCapturePageState extends State<AiRosterCapturePage> {
 
   @override
   void dispose() {
-    _controller?.dispose();
+    // 先把引用摘掉再释放：dispose 是同步的，而 controller.dispose() 是异步的，
+    // 期间若还有回帧（_startCamera 的 await 未返回）会拿到一个已释放的控制器。
+    final controller = _controller;
+    _controller = null;
+    // 忽略释放失败：相机可能已被系统回收（拔掉 USB 摄像头 / 被其它程序抢占），
+    // 那种情况下 dispose 会抛异常，绝不能让退出页面变成崩溃。
+    unawaited(controller?.dispose().catchError((Object _) {}));
     super.dispose();
   }
 

@@ -155,6 +155,9 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
   /// 让转圈动画看起来像卡死。
   bool _dataReady = false;
 
+  /// 启动初始化失败的原因；非 null 时渲染可读的错误页而不是一直转圈。
+  String? _startupError;
+
   /// 防止「配置 + 推内容」在连续的 notify 下并发重入。
   bool _syncingBar = false;
   bool _barSyncPending = false;
@@ -219,38 +222,76 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
     // 主窗口「在屏上 / 收进托盘 / 最小化」一变就立刻同步球：事件来自真实窗口
     // 过程（WM_SIZE / WM_SHOWWINDOW），比每秒的状态推送及时得多。
     windowManager.addListener(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // 先把 Provider 取出来：下面有 await，之后再碰 context 会触发
-      // use_build_context_synchronously（而且 widget 也可能已被销毁）。
-      final personalization = context.read<PersonalizationProvider>();
-      final auth = context.read<AuthProvider>();
-      final desktop = context.read<DesktopScheduleProvider>();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _beginStartup());
+  }
 
-      // 互不依赖的初始化先一起启动，避免串行等待；sqflite 的查询本身在后台 isolate。
-      final authReady = auth.init();
-      final scoreReady = context.read<ScoreProvider>().init();
-      final desktopReady = desktop.init();
+  /// 从加载页进入主界面的一次启动流程（首帧后调用；失败可从错误页重试）。
+  Future<void> _beginStartup() async {
+    if (!mounted) return;
+    // 先把 Provider 取出来：下面有 await，之后再碰 context 会触发
+    // use_build_context_synchronously（而且 widget 也可能已被销毁）。
+    final personalization = context.read<PersonalizationProvider>();
+    final auth = context.read<AuthProvider>();
+    final desktop = context.read<DesktopScheduleProvider>();
 
+    // 互不依赖的初始化先一起启动，避免串行等待；sqflite 的查询本身在后台 isolate。
+    //
+    // 任何一步失败都必须落到 [_startupError]：以前这里没有任何兜底，初始化
+    // 抛异常就会永远停在转圈页（看起来就是「启动卡死」）。
+    final authReady = auth.init();
+    final scoreReady = context.read<ScoreProvider>().init();
+    final desktopReady = desktop.init();
+
+    try {
       await personalization.init();
       if (!mounted) return;
       await Future.wait([authReady, scoreReady, desktopReady]);
       if (!mounted) return;
-
-      _desktop = desktop;
-      _auth = auth;
-
-      // 数据齐了就立刻离开加载页：其余同步接线等淡入动画跑完再做。
-      setState(() => _dataReady = true);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(
-          _finishStartupAfterTransition(
-            personalization: personalization,
-            auth: auth,
-            desktop: desktop,
-          ),
-        );
+    } catch (error, stack) {
+      debugPrint('启动初始化失败：$error\n$stack');
+      if (!mounted) return;
+      setState(() {
+        _startupError = _describeStartupError(error);
+        _dataReady = true;
       });
+      return;
+    }
+
+    _desktop = desktop;
+    _auth = auth;
+
+    // 数据齐了就立刻离开加载页：其余同步接线等淡入动画跑完再做。
+    setState(() => _dataReady = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(
+        _finishStartupAfterTransition(
+          personalization: personalization,
+          auth: auth,
+          desktop: desktop,
+        ),
+      );
     });
+  }
+
+  /// 错误页上的「重试」：把状态复位后再跑一次同一条启动流程。
+  void _retryStartup() {
+    setState(() {
+      _startupError = null;
+      _dataReady = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _beginStartup());
+  }
+
+  /// 把启动异常翻译成用户看得懂的一句话 + 处理建议。
+  static String _describeStartupError(Object error) {
+    final db = DatabaseHelper.instance;
+    final dbError = db.lastOpenError;
+    final dir = db.dbDir;
+    final nl = String.fromCharCodes(const [10, 10]);
+    if (dbError != null && dbError.isNotEmpty) {
+      return '读取本地数据库失败。$nl$dbError$nl数据目录：$dir';
+    }
+    return '启动时发生错误。$nl$error$nl数据目录：$dir';
   }
 
   /// 主页淡入完成后再接托盘 / 浮窗 / shader，避免打断转圈与切页动画。
@@ -566,7 +607,16 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
     // 启动加载 → 设置 PIN → 主页之间淡入淡出（整屏切换，用较慢的时长）
     final Widget page;
     final String stage;
-    if (!auth.isInitialized || !personalization.isInitialized || !_dataReady) {
+    if (_startupError != null) {
+      page = _StartupErrorPage(
+        message: _startupError!,
+        // 重试走整页重建：Provider 的 init 都是幂等的，失败的那一步会再跑一次。
+        onRetry: _retryStartup,
+      );
+      stage = 'startup_error';
+    } else if (!auth.isInitialized ||
+        !personalization.isInitialized ||
+        !_dataReady) {
       page = const Scaffold(body: Center(child: CircularProgressIndicator()));
       stage = 'loading';
     } else if (!auth.isPinSet) {
@@ -582,6 +632,56 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
       switchKey: stage,
       duration: AppMotion.slow,
       child: page,
+    );
+  }
+}
+
+/// 启动失败时的兜底页：说清原因、给出数据目录与「重试」，绝不让人对着转圈猜。
+///
+/// 以前启动路径上任何一次异常（数据库打不开、迁移失败、设置项异常）都会让
+/// 界面永远停在 CircularProgressIndicator 上，看起来和「闪退 / 卡死」一样。
+class _StartupErrorPage extends StatelessWidget {
+  const _StartupErrorPage({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.error_outline_rounded,
+                  size: 56,
+                  color: theme.colorScheme.error,
+                ),
+                const SizedBox(height: 16),
+                Text('启动没有完成', style: theme.textTheme.titleLarge),
+                const SizedBox(height: 12),
+                SelectableText(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('重试'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

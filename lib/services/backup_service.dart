@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqflite_common_ffi/sqflite_ffi.dart' show Database, OpenDatabaseOptions, databaseFactoryFfi;
 
 /// 备份节流器：决定「这次要不要真的复制一份库」。
 ///
@@ -163,25 +164,102 @@ class BackupService {
     return files;
   }
 
-  /// Restore from a backup file
+  /// Restore from a backup file.
+  ///
+  /// 恢复是**整库替换**，所以顺序必须是：先把当前库留档 → 校验备份可用 →
+  /// 关库 → 清掉 -wal/-shm → 覆盖 → 重开。任何一步失败都把原库放回去，
+  /// 绝不会出现「恢复到一半，两边都不完整」。
   Future<bool> restoreBackup(String backupPath) async {
+    final dbPath = DatabaseHelper.instance.dbPath;
+    final stamp = DateTime.now()
+        .toIso8601String()
+        .replaceAll(':', '-')
+        .replaceAll('.', '-');
+    final previous = '$dbPath.before-restore-$stamp';
+
+    // 1. 校验备份本身：打不开或完整性检查不过的直接拒绝，别拿坏文件去覆盖。
+    if (!await _isUsableDatabase(backupPath)) {
+      debugPrint('备份文件不可用，已取消恢复：$backupPath');
+      return false;
+    }
+
+    bool hadPrevious = false;
     try {
-      final dbPath = DatabaseHelper.instance.dbPath;
-
-      // Close current database
+      // 2. 当前库留档（关库后再复制，保证是落盘状态）。
       await DatabaseHelper.instance.closeDatabase();
+      final current = File(dbPath);
+      if (await current.exists()) {
+        await current.copy(previous);
+        hadPrevious = true;
+      }
+      await _deleteSidecars(dbPath);
 
-      // Copy backup over current database
+      // 3. 覆盖并重开。
       await File(backupPath).copy(dbPath);
-
-      // Reopen database (will trigger onCreate check)
+      await _deleteSidecars(dbPath);
       await DatabaseHelper.instance.database;
       await DatabaseHelper.instance.reloadAll();
 
+      if (hadPrevious) {
+        try {
+          await File(previous).delete();
+        } catch (_) {}
+      }
       return true;
     } catch (e) {
-      await DatabaseHelper.instance.database;
+      debugPrint('恢复备份失败，正在回滚：$e');
+      // 4. 回滚：把刚才留档的原库放回去，尽量让用户回到恢复前的状态。
+      try {
+        await DatabaseHelper.instance.closeDatabase();
+        await _deleteSidecars(dbPath);
+        if (hadPrevious && await File(previous).exists()) {
+          await File(previous).copy(dbPath);
+          await _deleteSidecars(dbPath);
+        }
+      } catch (rollbackError) {
+        debugPrint('回滚原库失败：$rollbackError');
+      }
+      try {
+        await DatabaseHelper.instance.database;
+      } catch (openError) {
+        debugPrint('回滚后重开数据库失败：$openError');
+      }
       return false;
+    }
+  }
+
+  /// 备份文件是否是能打开、且完整性检查通过的真实数据库。
+  Future<bool> _isUsableDatabase(String path) async {
+    if (!await File(path).exists()) return false;
+    Database? probe;
+    try {
+      probe = await databaseFactoryFfi.openDatabase(
+        path,
+        options: OpenDatabaseOptions(readOnly: true),
+      );
+      final rows = await probe.rawQuery('PRAGMA integrity_check');
+      if (rows.isEmpty) return false;
+      return '${rows.first.values.first}'.toLowerCase() == 'ok';
+    } catch (error) {
+      debugPrint('校验备份失败：$path（$error）');
+      return false;
+    } finally {
+      try {
+        await probe?.close();
+      } catch (_) {}
+    }
+  }
+
+  /// 删掉主库旁的 -wal / -shm / -journal：整库替换时必须清干净，否则旧日志
+  /// 会把刚换上的库改回损坏状态。
+  Future<void> _deleteSidecars(String dbPath) async {
+    for (final suffix in ['-wal', '-shm', '-journal']) {
+      try {
+        final file = File('$dbPath$suffix');
+        if (await file.exists()) await file.delete();
+      } catch (error) {
+        debugPrint('清理 $suffix 失败：$error');
+      }
     }
   }
 
@@ -235,6 +313,11 @@ class BackupService {
     return encoder.convert(data);
   }
 
+  /// 导入 JSON 快照。
+  ///
+  /// 整段导入放在**一个事务**里：以前是先逐表 delete 再逐行 insert，中途任何
+  /// 一行数据不合法（缺字段、外键对不上）都会停在「已经清空、还没导完」的
+  /// 状态，用户看到的就是数据全没了。现在要么全部生效，要么原样保留。
   Future<bool> importFromJson(String jsonStr) async {
     try {
       final data = jsonDecode(jsonStr) as Map<String, dynamic>;
@@ -243,57 +326,30 @@ class BackupService {
       // Backup first
       await createBackup(force: true);
 
-      // Clear existing data (in reverse order of foreign keys)
-      await db.delete('score_records');
-      await db.delete('students');
-      await db.delete('groups');
-      await db.delete('course_schedule');
-      await db.delete('schedule_adjustment');
-
-      // Import groups
-      if (data['groups'] != null) {
-        for (final row in data['groups'] as List) {
-          final map = Map<String, dynamic>.from(row as Map);
-          map.remove('id'); // Let DB auto-assign
-          await db.insert('groups', map);
+      // 导入顺序按外键依赖：组 → 学生 → 记录；其余表互不相关。
+      const tables = <String>[
+        'groups',
+        'students',
+        'score_records',
+        'course_schedule',
+        'schedule_adjustment',
+      ];
+      await db.transaction((txn) async {
+        // 先清空（顺序与外键相反），再按依赖顺序写回。
+        for (final table in tables.reversed) {
+          await txn.delete(table);
         }
-      }
-
-      // Import students
-      if (data['students'] != null) {
-        for (final row in data['students'] as List) {
-          final map = Map<String, dynamic>.from(row as Map);
-          map.remove('id');
-          await db.insert('students', map);
+        for (final table in tables) {
+          final rows = data[table];
+          if (rows is! List) continue;
+          for (final row in rows) {
+            if (row is! Map) continue;
+            final map = Map<String, dynamic>.from(row);
+            map.remove('id'); // Let DB auto-assign
+            await txn.insert(table, map);
+          }
         }
-      }
-
-      // Import score_records
-      if (data['score_records'] != null) {
-        for (final row in data['score_records'] as List) {
-          final map = Map<String, dynamic>.from(row as Map);
-          map.remove('id');
-          await db.insert('score_records', map);
-        }
-      }
-
-      // Import course_schedule
-      if (data['course_schedule'] != null) {
-        for (final row in data['course_schedule'] as List) {
-          final map = Map<String, dynamic>.from(row as Map);
-          map.remove('id');
-          await db.insert('course_schedule', map);
-        }
-      }
-
-      // Import schedule_adjustment（调休）
-      if (data['schedule_adjustment'] != null) {
-        for (final row in data['schedule_adjustment'] as List) {
-          final map = Map<String, dynamic>.from(row as Map);
-          map.remove('id');
-          await db.insert('schedule_adjustment', map);
-        }
-      }
+      });
 
       await DatabaseHelper.instance.reloadAll();
       return true;
