@@ -16,8 +16,8 @@ const LiquidGlassSettings glassButtonSettings = LiquidGlassSettings(
 
 /// 高密度控件（列表行 / 表格行 / 工具栏里的图标按钮、勾选框）用的「轻玻璃」。
 ///
-/// 与 [glassButtonSettings] 的**颜色、厚度、边缘高光、投影全部一致**，只把
-/// `blur`（背景模糊）归零——在本应用里这一项一个像素都不会变，代价却极大：
+/// 与 [glassButtonSettings] 的**颜色、厚度、边缘高光、投影、frost 全部一致**，
+/// 只把 `blur`（背景模糊）归零——在本应用里这一项一个像素都不会变，代价却极大：
 ///
 /// - 所有页面都是纯色 Material 底色，没有背景图。对一块纯色做高斯模糊，
 ///   结果还是同一块纯色，肉眼分辨不出。
@@ -34,8 +34,16 @@ const LiquidGlassSettings glassButtonSettings = LiquidGlassSettings(
 const LiquidGlassSettings denseGlassButtonSettings = LiquidGlassSettings(
   glassColor: Color(0x24FFFFFF),
   thickness: 18,
+  // 只关 blur（背景模糊），**不要**连 frost 一起关。
+  //
+  // blur > 0 才会 pushLayer(BackdropFilterLayer)，为每个控件拷一遍整窗画面
+  // ——这是低配机上真正的开销，归零有意义。
+  // 但 frost 只是着色器里的一个 uniform（不产生合成层），把它也归零没有任何
+  // 性能收益，反而会让玻璃面退化成「外圈描边 + 一层纯色底」两个独立图层：
+  // 按下 / 拖动时两者按不同的坐标系重绘，就出现了「紫色主体和外层玻璃壳
+  // 错开成两个圆角矩形」的观感（2026-11-24 用户实测截图确认）。
   blur: 0,
-  frost: 0,
+  frost: 6,
   frostOpacity: 0.32,
   chromaticAberration: 0.06,
   rimShade: 0.5,
@@ -155,6 +163,21 @@ class GlassActionButton extends StatelessWidget {
       style: buttonStyle,
       settings: dense ? denseGlassButtonSettings : glassButtonSettings,
       tintColor: tint,
+      // 按下时那层「均匀提亮」必须染成按钮自己的主色，不能用库默认的白色。
+      //
+      // 库的 GlassDefaults.ambientBaseLight = 0.3 是为「透明玻璃」调的白光；
+      // 而 prominent 档会把 thickness 与 glassColor 的 alpha 各放大 2.5 倍
+      // （glass_button.dart 里 copyWith(thickness: ×2.5, glassColor.a: ×2.5)），
+      // 再叠上白色提亮，主色底就被洗成接近白色——外圈描边仍是有色厚环、
+      // 内芯发白，按下去像一个**空心圆环**，而不是鼓起来的主色按钮。
+      //
+      // 传 0 关掉白色均匀提亮，提亮全部交给主色的 pressLightColor，
+      // 按下前后色相不变、只亮一档。中性（filled）按钮本来就是无色玻璃，
+      // 白色提亮是正确观感，保持库默认（传 null）。
+      ambientBaseLight: isProminent ? 0 : null,
+      pressLightColor: isProminent
+          ? scheme.primary.withValues(alpha: 0.16)
+          : null,
       glowColor: foreground.withValues(alpha: 0.16),
       child: Padding(
         padding: padding,
