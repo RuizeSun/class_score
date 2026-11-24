@@ -36,6 +36,9 @@ class _HomePageState extends State<HomePage>
 
   late final PageController _pageController;
 
+  /// [AuthProvider] 的引用（在 [initState] 取出，供 [dispose] 使用）。
+  late final AuthProvider _auth;
+
   late final List<Widget> _pages;
 
   @override
@@ -56,7 +59,11 @@ class _HomePageState extends State<HomePage>
 
     // Listen to auth state changes to toggle prevent close
     _updatePreventClose();
-    context.read<AuthProvider>().addListener(_onAuthStateChanged);
+    // 记下引用：dispose() 里不能再 context.read（那时元素已失活，读取祖先
+    // 会抛 "Looking up a deactivated widget's ancestor is unsafe"）。主窗口
+    // 平时不会 dispose，但测试与将来「重新挂载主页」都会走到。
+    _auth = context.read<AuthProvider>();
+    _auth.addListener(_onAuthStateChanged);
     windowManager.addListener(this);
   }
 
@@ -128,7 +135,7 @@ class _HomePageState extends State<HomePage>
 
   @override
   void dispose() {
-    context.read<AuthProvider>().removeListener(_onAuthStateChanged);
+    _auth.removeListener(_onAuthStateChanged);
     _pageController.dispose();
     super.dispose();
   }
@@ -217,9 +224,19 @@ class _HomePageState extends State<HomePage>
                 verticalPadding: 12,
                 barHeight: 64,
                 tabPadding: const EdgeInsets.symmetric(horizontal: 8),
+                // 指示块（选中 Tab 下那颗白胶囊）按下 / 拖动时向外鼓起的幅度。
+                //
+                // 这个值调过两次，别再来回摆：
+                // - 4/4（原始）：指示块只比轨道圆角多鼓 4pt，肉眼看不出浮起；
+                // - 14/11（上一版）：**过了**——用户反馈「浮动幅度又太大了」，
+                //   指示块像一个白盘子呼在轨道上，压住了相邻 Tab 的图标。
+                // 现在取 8/5：垂直多盖 8pt（相对 64 高的轨道约 +12%），
+                // 已经明显浮出轮廓，又不会盖到上一行/相邻图标。
+                // 上限仍是 16（轨道 64 + 上下 padding 12 的整条 bar 居中放在
+                // 96 高的 bottomNavigationBar 里：(96-88)/2 + 12 = 16）。
                 indicatorExpansion: const EdgeInsets.symmetric(
-                  horizontal: 4,
-                  vertical: 4,
+                  horizontal: 5,
+                  vertical: 8,
                 ),
                 // 底部导航条压在纯色页面上：这里的背景模糊（blur）与片元
                 // 着色器（thickness / 色散 / 边缘高光）在纯色底上画不出可辨
