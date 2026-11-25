@@ -1,6 +1,7 @@
 import 'package:class_score/pages/settings/course_schedule_management.dart';
 import 'package:class_score/providers/auth_provider.dart';
 import 'package:class_score/widgets/glass_buttons.dart';
+import 'package:class_score/widgets/glass_inputs.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -82,8 +83,9 @@ void main() {
 
     // 表头与输入框提示都可能出现"课程名称"
     expect(find.text('课程名称'), findsWidgets);
-    expect(find.widgetWithText(TextField, '数学'), findsOneWidget);
-    expect(find.widgetWithText(TextField, '08:00'), findsOneWidget);
+    // 行内输入框已换成液态玻璃输入框（GlassInput），不再用 Material TextField
+    expect(find.widgetWithText(GlassInput, '数学'), findsOneWidget);
+    expect(find.widgetWithText(GlassInput, '08:00'), findsOneWidget);
     expect(find.text('添加一行'), findsOneWidget);
 
     // 新增一行后应出现未保存提示与保存按钮

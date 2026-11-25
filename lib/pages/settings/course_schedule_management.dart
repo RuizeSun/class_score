@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/schedule_import_service.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
+import '../../widgets/glass_inputs.dart';
 import 'settings_common.dart';
 
 /// Show dialog to add or edit a course schedule.
@@ -53,36 +54,27 @@ void showCourseScheduleDialog(
               onChanged: (v) => setDialogState(() => selectedWeekday = v!),
             ),
             const SizedBox(height: 12),
-            TextField(
+            GlassInput(
               controller: nameController,
-              decoration: const InputDecoration(
-                labelText: '课程名称',
-                border: OutlineInputBorder(),
-              ),
+              label: '课程名称',
             ),
             const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
-                  child: TextField(
+                  child: GlassInput(
                     controller: startController,
-                    decoration: const InputDecoration(
-                      labelText: '开始时间',
-                      border: OutlineInputBorder(),
-                      hintText: '08:00',
-                    ),
+                    label: '开始时间',
+                    hint: '08:00',
                     keyboardType: TextInputType.datetime,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: TextField(
+                  child: GlassInput(
                     controller: endController,
-                    decoration: const InputDecoration(
-                      labelText: '结束时间',
-                      border: OutlineInputBorder(),
-                      hintText: '09:40',
-                    ),
+                    label: '结束时间',
+                    hint: '09:40',
                     keyboardType: TextInputType.datetime,
                   ),
                 ),
@@ -1364,17 +1356,11 @@ class _CourseScheduleManagementViewState
     required TextEditingController controller,
     required String hint,
   }) {
-    return TextField(
+    return GlassInput(
       controller: controller,
-      decoration: InputDecoration(
-        hintText: hint,
-        isDense: true,
-        border: const OutlineInputBorder(),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 10,
-          vertical: 10,
-        ),
-      ),
+      hint: hint,
+      dense: true,
+      height: 38,
     );
   }
 
@@ -1390,15 +1376,12 @@ class _CourseScheduleManagementViewState
           controller.text = normalized;
         }
       },
-      child: TextField(
+      child: GlassInput(
         controller: controller,
+        hint: 'HH:mm',
+        dense: true,
+        height: 38,
         keyboardType: TextInputType.datetime,
-        decoration: const InputDecoration(
-          hintText: 'HH:mm',
-          isDense: true,
-          border: OutlineInputBorder(),
-          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        ),
       ),
     );
   }

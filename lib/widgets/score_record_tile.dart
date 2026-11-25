@@ -5,6 +5,7 @@ import '../providers/score_item_provider.dart';
 import '../providers/score_provider.dart';
 import 'glass_buttons.dart';
 import 'glass_controls.dart';
+import 'glass_inputs.dart';
 import 'student_name_text.dart';
 
 /// 评分记录条目（列表样式 + 操作逻辑的唯一实现）。
@@ -475,17 +476,14 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
                   style: TextStyle(color: Colors.red.shade700, fontSize: 13),
                 ),
               ),
-            TextField(
+            GlassInput(
               controller: _scoreController,
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
                 signed: true,
               ),
-              decoration: const InputDecoration(
-                labelText: '分值',
-                border: OutlineInputBorder(),
-                hintText: '请输入分值（支持小数，如 0.5 或 -1）',
-              ),
+              label: '分值',
+              hint: '请输入分值（支持小数，如 0.5 或 -1）',
             ),
             const SizedBox(height: 12),
             GlassDropdownField<int?>(
@@ -533,24 +531,17 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
             ),
             if (isCustom) ...[
               const SizedBox(height: 12),
-              TextField(
+              GlassInput(
                 controller: _customController,
-                decoration: const InputDecoration(
-                  labelText: '评分项名称（自定义）',
-                  border: OutlineInputBorder(),
-                  hintText: '如：考勤扣分、作业加分（不填则清除评分项）',
-                ),
+                label: '评分项名称（自定义）',
+                hint: '如：考勤扣分、作业加分（不填则清除评分项）',
               ),
             ],
             const SizedBox(height: 12),
-            TextField(
+            GlassTextAreaInput(
               controller: _reasonController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: '变动原因',
-                border: OutlineInputBorder(),
-                hintText: '请输入具体变动原因（可选）',
-              ),
+              label: '变动原因',
+              hint: '请输入具体变动原因（可选）',
             ),
           ],
         ),

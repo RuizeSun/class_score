@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../database/database_helper.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
+import '../../widgets/glass_inputs.dart';
 import '../../widgets/student_name_text.dart';
 import 'settings_common.dart';
 
@@ -17,9 +18,9 @@ void showGroupDialog(BuildContext context, {Group? group}) {
     context: context,
     builder: (ctx) => AlertDialog(
       title: Text(group == null ? '添加小组' : '编辑小组'),
-      content: TextField(
+      content: GlassInput(
         controller: controller,
-        decoration: const InputDecoration(labelText: '小组名称'),
+        label: '小组名称',
         autofocus: true,
       ),
       actions: [

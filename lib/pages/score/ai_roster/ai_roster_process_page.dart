@@ -8,6 +8,7 @@ import '../../../services/ai_roster_service.dart';
 import '../../../services/roster_matcher.dart';
 import '../../../widgets/glass_buttons.dart';
 import '../../../widgets/glass_controls.dart';
+import '../../../widgets/glass_inputs.dart';
 import '../../../widgets/student_name_text.dart';
 import '../../settings/ai_provider_settings.dart';
 
@@ -278,17 +279,14 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: TextField(
+                child: GlassInput(
                   controller: _thresholdController,
                   enabled: _threshold != ScoreThreshold.none,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(
-                    labelText: '分数',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
+                  label: '分数',
+                  dense: true,
                 ),
               ),
             ],
@@ -299,13 +297,9 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           ),
           const SizedBox(height: 8),
-          TextField(
+          GlassTextAreaInput(
             controller: _customController,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              hintText: '例如：只选订正过的学生',
-            ),
+            hint: '例如：只选订正过的学生',
           ),
           const SizedBox(height: 16),
           if (_error != null) ...[
@@ -599,14 +593,12 @@ class _AiRosterProcessPageState extends State<AiRosterProcessPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('提出进一步要求'),
-        content: TextField(
+        content: GlassTextAreaInput(
           controller: _followUpController,
+          minLines: 4,
           maxLines: 4,
           autofocus: true,
-          decoration: const InputDecoration(
-            border: OutlineInputBorder(),
-            hintText: '例如：只选第 2 列的标记；三角也算选中；忽略第一行标题',
-          ),
+          hint: '例如：只选第 2 列的标记；三角也算选中；忽略第一行标题',
         ),
         actions: [
           GlassActionButton(

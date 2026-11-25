@@ -6,6 +6,7 @@ import '../../models/weather_snapshot.dart';
 import '../../providers/desktop_schedule_provider.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
+import '../../widgets/glass_inputs.dart';
 import '../../services/weather_service.dart';
 import '../../widgets/desktop_schedule/desktop_schedule_common.dart';
 import '../../widgets/desktop_schedule/desktop_schedule_widget.dart';
@@ -579,14 +580,11 @@ Future<void> showWeatherCityDialog(BuildContext context) async {
                 Row(
                   children: [
                     Expanded(
-                      child: TextField(
+                      child: GlassInput(
                         controller: controller,
                         autofocus: true,
-                        decoration: const InputDecoration(
-                          labelText: '城市名称',
-                          hintText: '例如：北京',
-                          border: OutlineInputBorder(),
-                        ),
+                        label: '城市名称',
+                        hint: '例如：北京',
                         onSubmitted: (_) => search(),
                       ),
                     ),

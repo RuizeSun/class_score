@@ -7,6 +7,7 @@ import '../../providers/group_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
+import '../../widgets/glass_inputs.dart';
 import '../../widgets/student_name_text.dart';
 import 'settings_common.dart';
 
@@ -49,18 +50,16 @@ void showStudentDialog(BuildContext context, {Student? student}) {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
+            GlassInput(
               controller: nameController,
-              decoration: const InputDecoration(labelText: '学生姓名'),
+              label: '学生姓名',
               autofocus: true,
             ),
             const SizedBox(height: 12),
-            TextField(
+            GlassInput(
               controller: studentNumberController,
-              decoration: const InputDecoration(
-                labelText: '学号',
-                hintText: '请输入唯一学号（留空则自动生成）',
-              ),
+              label: '学号',
+              hint: '请输入唯一学号（留空则自动生成）',
             ),
             const SizedBox(height: 16),
             GlassDropdownField<int?>(

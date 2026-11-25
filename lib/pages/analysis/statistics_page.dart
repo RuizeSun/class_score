@@ -10,6 +10,7 @@ import '../../providers/personalization_provider.dart';
 import '../../utils/ranking.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
+import '../../widgets/glass_inputs.dart';
 import '../../widgets/motion.dart';
 import '../../widgets/pane_header.dart';
 import '../../widgets/ranking_tile.dart';
@@ -578,24 +579,17 @@ class _RecordManagementViewState extends State<RecordManagementView> {
                   ),
                   if (isCustom) ...[
                     const SizedBox(height: 12),
-                    TextField(
+                    GlassInput(
                       controller: customNameController,
-                      decoration: const InputDecoration(
-                        labelText: '评分项名称（自定义）',
-                        border: OutlineInputBorder(),
-                        hintText: '如：考勤扣分、作业加分',
-                      ),
+                      label: '评分项名称（自定义）',
+                      hint: '如：考勤扣分、作业加分',
                     ),
                   ],
                   const SizedBox(height: 12),
-                  TextField(
+                  GlassTextAreaInput(
                     controller: reasonController,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: '变动原因',
-                      border: OutlineInputBorder(),
-                      hintText: '请输入具体变动原因（可选）',
-                    ),
+                    label: '变动原因',
+                    hint: '请输入具体变动原因（可选）',
                   ),
                 ],
               ),

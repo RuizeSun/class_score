@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
+import '../../widgets/glass_inputs.dart';
 import 'settings_common.dart';
 
 /// Show dialog to write a USB key.
@@ -45,12 +46,9 @@ void showWriteKeyDialog(BuildContext context) {
                     onChanged: (v) => setDialogState(() => selectedDrive = v),
                   ),
                   const SizedBox(height: 12),
-                  TextField(
-                    decoration: const InputDecoration(
-                      labelText: '密钥名称（可选）',
-                      border: OutlineInputBorder(),
-                      hintText: '如：金士顿 U 盘',
-                    ),
+                  GlassInput(
+                    label: '密钥名称（可选）',
+                    hint: '如：金士顿 U 盘',
                     onChanged: (v) => label = v,
                   ),
                 ],
@@ -103,12 +101,9 @@ void showRenameKeyDialog(BuildContext context, int id, String currentLabel) {
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('重命名密钥'),
-      content: TextField(
+      content: GlassInput(
         controller: controller,
-        decoration: const InputDecoration(
-          labelText: '密钥名称',
-          border: OutlineInputBorder(),
-        ),
+        label: '密钥名称',
         autofocus: true,
       ),
       actions: [

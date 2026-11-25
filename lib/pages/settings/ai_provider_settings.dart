@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../services/ai_roster_service.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
+import '../../widgets/glass_inputs.dart';
 import 'settings_common.dart';
 
 /// AI 服务商设置（可单独压栈，也可嵌入设置中心）。
@@ -166,38 +167,29 @@ class _AiProviderSettingsViewState extends State<AiProviderSettingsView> {
           },
         ),
         const SizedBox(height: 16),
-        TextField(
+        GlassInput(
           controller: _baseUrlController,
-          decoration: const InputDecoration(
-            labelText: '接口地址 baseUrl',
-            border: OutlineInputBorder(),
-            hintText: 'https://api.example.com/v1',
-          ),
+          label: '接口地址 baseUrl',
+          hint: 'https://api.example.com/v1',
         ),
         const SizedBox(height: 12),
-        TextField(
+        GlassInput(
           controller: _modelController,
-          decoration: const InputDecoration(
-            labelText: '模型名（需支持图片输入的视觉模型）',
-            border: OutlineInputBorder(),
-            hintText: '例如 deepseek-chat / qwen-vl-plus / gpt-4o-mini',
-          ),
+          label: '模型名（需支持图片输入的视觉模型）',
+          hint: '例如 deepseek-chat / qwen-vl-plus / gpt-4o-mini',
         ),
         const SizedBox(height: 12),
-        TextField(
+        GlassInput(
           controller: _apiKeyController,
           obscureText: _obscureKey,
-          decoration: InputDecoration(
-            labelText: s.provider.requiresApiKey
-                ? 'API Key'
-                : 'API Key（本服务可留空）',
-            border: const OutlineInputBorder(),
-            suffixIcon: GlassIconAction(
-              size: 32,
-              iconSize: 18,
-              icon: Icon(_obscureKey ? Icons.visibility_off : Icons.visibility),
-              onPressed: () => setState(() => _obscureKey = !_obscureKey),
-            ),
+          label: s.provider.requiresApiKey
+              ? 'API Key'
+              : 'API Key（本服务可留空）',
+          suffixIcon: GlassIconAction(
+            size: 28,
+            iconSize: 16,
+            icon: Icon(_obscureKey ? Icons.visibility_off : Icons.visibility),
+            onPressed: () => setState(() => _obscureKey = !_obscureKey),
           ),
         ),
         const SizedBox(height: SettingsLayout.sectionSpacing),

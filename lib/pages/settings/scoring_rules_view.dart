@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../providers/score_provider.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
+import '../../widgets/glass_inputs.dart';
 import 'settings_common.dart';
 
 /// 计分规则设置分项（无卡片，可嵌入 SettingsHubPage）：
@@ -119,32 +120,26 @@ class _ScoringRulesViewState extends State<ScoringRulesView> {
         Row(
           children: [
             Expanded(
-              child: TextField(
+              child: GlassInput(
                 controller: _studentInitialController,
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                   signed: true,
                 ),
-                decoration: const InputDecoration(
-                  labelText: '学生初始分',
-                  border: OutlineInputBorder(),
-                  hintText: '默认 0',
-                ),
+                label: '学生初始分',
+                hint: '默认 0',
               ),
             ),
             const SizedBox(width: 16),
             Expanded(
-              child: TextField(
+              child: GlassInput(
                 controller: _groupInitialController,
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                   signed: true,
                 ),
-                decoration: const InputDecoration(
-                  labelText: '小组初始分',
-                  border: OutlineInputBorder(),
-                  hintText: '默认 0（小组自定初始分模式生效）',
-                ),
+                label: '小组初始分',
+                hint: '默认 0（小组自定初始分模式生效）',
               ),
             ),
           ],
@@ -259,32 +254,26 @@ class _ScoringRulesViewState extends State<ScoringRulesView> {
           Row(
             children: [
               Expanded(
-                child: TextField(
+                child: GlassInput(
                   controller: _rangeMinController,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                     signed: true,
                   ),
-                  decoration: const InputDecoration(
-                    labelText: '下限 n1',
-                    border: OutlineInputBorder(),
-                    hintText: '最小值',
-                  ),
+                  label: '下限 n1',
+                  hint: '最小值',
                 ),
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: TextField(
+                child: GlassInput(
                   controller: _rangeMaxController,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                     signed: true,
                   ),
-                  decoration: const InputDecoration(
-                    labelText: '上限 n2',
-                    border: OutlineInputBorder(),
-                    hintText: '最大值',
-                  ),
+                  label: '上限 n2',
+                  hint: '最大值',
                 ),
               ),
             ],

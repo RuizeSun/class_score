@@ -12,6 +12,7 @@ import '../../models/student.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
+import '../../widgets/glass_inputs.dart';
 import '../../widgets/student_name_text.dart';
 import 'ai_roster/ai_roster_capture_page.dart';
 
@@ -863,28 +864,22 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                     Row(
                       children: [
                         Expanded(
-                          child: TextField(
+                          child: GlassInput(
                             controller: _customNameController,
-                            decoration: const InputDecoration(
-                              labelText: '评分项名称',
-                              border: OutlineInputBorder(),
-                              hintText: '如：考勤扣分、作业加分',
-                            ),
+                            label: '评分项名称',
+                            hint: '如：考勤扣分、作业加分',
                           ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: TextField(
+                          child: GlassInput(
                             controller: _scoreController,
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                               signed: true,
                             ),
-                            decoration: const InputDecoration(
-                              labelText: '分值',
-                              border: OutlineInputBorder(),
-                              hintText: '请输入分值（支持小数，如 0.5 或 -1）',
-                            ),
+                            label: '分值',
+                            hint: '请输入分值（支持小数，如 0.5 或 -1）',
                           ),
                         ),
                       ],
@@ -898,13 +893,9 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                     style: TextStyle(fontWeight: FontWeight.bold, height: 1.2),
                   ),
                   const SizedBox(height: 4),
-                  TextField(
+                  GlassTextAreaInput(
                     controller: _reasonController,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      hintText: '请输入评分原因（可选）',
-                    ),
+                    hint: '请输入评分原因（可选）',
                   ),
                 ] else ...[
                   // ===== 快速评分模式 =====

@@ -4,6 +4,7 @@ import '../../models/score_item.dart';
 import '../../providers/score_item_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/glass_buttons.dart';
+import '../../widgets/glass_inputs.dart';
 import 'settings_common.dart';
 
 /// Show dialog to add or edit a score item.
@@ -21,27 +22,26 @@ void showScoreItemDialog(BuildContext context, {ScoreItem? item}) {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(
+          GlassInput(
             controller: nameController,
-            decoration: const InputDecoration(labelText: '评分项名称'),
+            label: '评分项名称',
             autofocus: true,
           ),
           const SizedBox(height: 12),
-          TextField(
+          GlassInput(
             controller: scoreController,
-            decoration: const InputDecoration(
-              labelText: '默认分值',
-              hintText: '支持小数，如 -1 或 +0.5',
-            ),
+            label: '默认分值',
+            hint: '支持小数，如 -1 或 +0.5',
             keyboardType: const TextInputType.numberWithOptions(
               decimal: true,
               signed: true,
             ),
           ),
           const SizedBox(height: 12),
-          TextField(
+          GlassTextAreaInput(
             controller: descController,
-            decoration: const InputDecoration(labelText: '描述（可选）'),
+            label: '描述（可选）',
+            minLines: 2,
             maxLines: 2,
           ),
         ],
