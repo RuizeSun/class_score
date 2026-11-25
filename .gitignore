@@ -55,3 +55,6 @@ app.*.map.json
 # AI 记忆库（本地数据库，误删不可恢复，绝不入库）
 .dsh-meow/
 /.commandcode
+
+# Flutter tool scratch state
+.flutter_tool_state

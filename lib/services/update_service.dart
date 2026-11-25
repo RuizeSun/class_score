@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -297,90 +298,168 @@ class UpdateService {
       throw Exception('解压更新包失败：' + expand.stderr.toString());
     }
 
-    // 2) 写更新脚本并脱离本进程启动：脚本等我们退出后再覆盖文件
-    final helper = File(p.join(tempDirPath, 'update_helper.ps1'));
-    await helper.writeAsString(_updaterScript);
-    await Process.start(
+    // 2) 写更新脚本：必须带 UTF-8 BOM（PowerShell 5.1 否则按 GBK 解析，
+    //    会把中文注释后的换行吞掉、让脚本静默失效）。
+    // 脚本放在系统临时目录根而不是 TempDir 里：执行中的 .ps1 会被占用，
+    // 放在 TempDir 内会导致收尾删不掉整个临时目录（实测残留）。
+    final helper = File(
+      p.join(Directory.systemTemp.path, 'class_score_update_helper.ps1'),
+    );
+    await helper.writeAsBytes(
+      <int>[0xEF, 0xBB, 0xBF, ...utf8.encode(_updaterScript)],
+      flush: true,
+    );
+
+    // 3) 启动更新脚本。注意不能用 ProcessStartMode.detached：Windows 下
+    //    DETACHED_PROCESS 的 PowerShell 会直接空跑退出（不写日志、不执行），
+    //    实测 helper 完全没跑起来。普通启动后立即排空管道，脚本自身不依赖父进程，
+    //    本进程退出后它会继续完成替换与重启。
+    // 只有我们自己创建的临时目录才允许脚本收尾时删除；防呆：万一传入的 zip
+    // 在别处（例如 %TEMP% 根），清理会把整个目录删掉。
+    final ownsTempDir = p.basename(tempDirPath).startsWith('class_score_update');
+    final helperProcess = await Process.start(
       'powershell.exe',
       [
         '-NoProfile',
         '-ExecutionPolicy',
         'Bypass',
-        '-WindowStyle',
-        'Hidden',
         '-File',
         helper.path,
         '-OldPid',
         pid.toString(),
+        '-TempDir',
+        tempDirPath,
         '-ExtractDir',
         extractDir,
         '-AppDir',
         appDir,
         '-ExeName',
         exeName,
+        if (ownsTempDir) '-Cleanup',
       ],
-      mode: ProcessStartMode.detached,
+      // 工作目录不能用 tempDirPath：进程 CWD 指向该目录时 Windows 拒绝删除它，
+      // 收尾清理会失败、留下空目录（实测）。
+      workingDirectory: Directory.systemTemp.path,
     );
+    unawaited(helperProcess.stdout.drain<void>());
+    unawaited(helperProcess.stderr.drain<void>());
 
-    // 3) 让位：脚本在等本进程退出，直接结束（托盘图标由新进程重新注册）
-    exit(0);
+    // 4) 确认脚本真的跑起来了（编码 / 执行策略 / 路径问题的第一现场）：
+    //    等它写 BEGIN 日志；超时或有 ERROR 就取消本次更新，应用保持运行。
+    final logFile = File(p.join(tempDirPath, 'update_helper.log'));
+    for (var i = 0; i < 60; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      String text;
+      try {
+        if (!await logFile.exists()) continue;
+        text = await logFile.readAsString();
+      } catch (_) {
+        continue;
+      }
+      if (text.contains('ERROR')) {
+        throw Exception('更新脚本执行失败：' + text.trim());
+      }
+      if (text.contains('BEGIN')) {
+        // 脚本已经接管：退出，让它在后台替换文件并重启
+        exit(0);
+      }
+    }
+    throw Exception('更新脚本未能启动，已取消本次更新（应用保持运行）');
   }
 
-  /// 覆盖式更新脚本：等待旧进程退出 -> 快照当前程序文件 -> 复制新文件 ->
-  /// 重启。新版本若启动失败（30 秒内进程退出 / 没起来），自动把快照整包
-  /// 复制回去恢复旧版本并重启，绝不把用户留在装坏了的状态。
+  /// 更新脚本：等待旧进程退出 -> 快照当前程序文件 -> 覆盖新文件 -> 启动并
+  /// 监视新版本（30 秒内退出即整包回滚重启旧版）。
+  ///
+  /// 注意：脚本必须是纯 ASCII 并带 UTF-8 BOM 写入。PowerShell 5.1 读无 BOM 的
+  /// 脚本时按系统 ANSI(GBK) 解码，中文注释里的字节会吞掉换行、把后续语句并进
+  /// 注释，导致脚本静默失效（1.6.0 就是这么踩的）。日志写到 update_helper.log。
   static const String _updaterScript = r'''
 param(
-    [int]$OldPid,
+    [int]$OldPid = 0,
+    [string]$TempDir,
     [string]$ExtractDir,
     [string]$AppDir,
-    [string]$ExeName
+    [string]$ExeName,
+    [switch]$Cleanup
 )
 $ErrorActionPreference = 'Stop'
-if ($OldPid -gt 0) { Wait-Process -Id $OldPid -ErrorAction SilentlyContinue }
-Start-Sleep -Milliseconds 800
-
-# release.zip 根目录直接是文件（CI 用 7z 压 Release/*）；万一将来包了一层目录也兼容
-$source = $ExtractDir
-$children = Get-ChildItem -LiteralPath $ExtractDir -Force
-if ($children.Count -eq 1 -and $children[0].PSIsContainer) {
-    $source = $children[0].FullName
+$logPath = Join-Path $TempDir 'update_helper.log'
+function Write-Log([string]$m) {
+    try { Add-Content -LiteralPath $logPath -Value ((Get-Date).ToString('o') + ' ' + $m) } catch {}
 }
-
-# ---- 冗余：快照当前程序文件（不含运行期数据）----
-# data/（数据库）、backups/（备份）是运行期数据，不属于程序文件，跳过；
-# 数据库另有更新前 VACUUM INTO 快照 + 3 分钟自动备份兜底。
-$snapshotDir = Join-Path (Split-Path -Parent $ExtractDir) 'snapshot'
-New-Item -ItemType Directory -Path $snapshotDir -Force | Out-Null
-$programFiles = Get-ChildItem -LiteralPath $AppDir -Force |
-    Where-Object { $_.Name -notin @('data', 'backups') }
-foreach ($f in $programFiles) { Copy-Item -LiteralPath $f.FullName -Destination $snapshotDir -Recurse -Force }
-
-# ---- 覆盖式复制新版本（不删除任何旧文件）----
-Copy-Item -Path (Join-Path $source '*') -Destination $AppDir -Recurse -Force
-
-# ---- 启动新版本；若启动失败（30 秒内进程退出/没起来），整包回滚 ----
-$newExe = Join-Path $AppDir $ExeName
-Start-Process -FilePath $newExe
-$proc = Get-Process -Name ([System.IO.Path]::GetFileNameWithoutExtension($ExeName)) -ErrorAction SilentlyContinue |
-    Where-Object { $_.Id -ne $OldPid } | Select-Object -First 1
-$healthy = $false
-if ($null -ne $proc) {
-    $healthy = $true
-    try { $proc.WaitForExit(30000) | Out-Null } catch {}
-    if ($proc.HasExited) { $healthy = $false }
-}
-
-if (-not $healthy) {
-    # 回滚：先结束残留的新进程，再把快照覆盖回去，重启旧版本
-    Get-Process -Name ([System.IO.Path]::GetFileNameWithoutExtension($ExeName)) -ErrorAction SilentlyContinue |
-        Where-Object { $_.Id -ne $OldPid } | Stop-Process -Force -ErrorAction SilentlyContinue
+Write-Log ('BEGIN oldpid=' + $OldPid + ' app=' + $AppDir + ' exe=' + $ExeName)
+try {
+    if ($OldPid -gt 0) {
+        Write-Log 'WAIT old process'
+        Wait-Process -Id $OldPid -ErrorAction SilentlyContinue
+    }
     Start-Sleep -Milliseconds 800
-    Copy-Item -Path (Join-Path $snapshotDir '*') -Destination $AppDir -Recurse -Force
-    Start-Process -FilePath $newExe
-}
 
-Start-Sleep -Seconds 3
-Remove-Item -LiteralPath (Split-Path -Parent $ExtractDir) -Recurse -Force -ErrorAction SilentlyContinue
+    # release.zip root holds files directly (CI packs Release/*); accept one wrapping folder too
+    $source = $ExtractDir
+    $children = @(Get-ChildItem -LiteralPath $ExtractDir -Force)
+    if ($children.Count -eq 1 -and $children[0].PSIsContainer) { $source = $children[0].FullName }
+    Write-Log ('SOURCE ' + $source)
+
+    # snapshot current program files (skip runtime data: data/, backups/)
+    $snapshotDir = Join-Path $TempDir 'snapshot'
+    if (Test-Path $snapshotDir) { Remove-Item -LiteralPath $snapshotDir -Recurse -Force }
+    New-Item -ItemType Directory -Path $snapshotDir -Force | Out-Null
+    $programFiles = @(Get-ChildItem -LiteralPath $AppDir -Force | Where-Object { $_.Name -notin @('data', 'backups') })
+    foreach ($f in $programFiles) {
+        Copy-Item -LiteralPath $f.FullName -Destination $snapshotDir -Recurse -Force
+    }
+    Write-Log ('SNAPSHOT files=' + $programFiles.Count)
+
+    Copy-Item -Path (Join-Path $source '*') -Destination $AppDir -Recurse -Force
+    Write-Log 'COPIED'
+
+    $newExe = Join-Path $AppDir $ExeName
+    $proc = $null
+    try { $proc = Start-Process -FilePath $newExe -WorkingDirectory $AppDir -PassThru } catch {
+        Write-Log ('START_FAILED ' + $_.Exception.Message)
+    }
+    $healthy = $false
+    if ($null -ne $proc) {
+        Write-Log ('STARTED pid=' + $proc.Id)
+        $healthy = $true
+        try { $proc.WaitForExit(30000) | Out-Null; if ($proc.HasExited) { $healthy = $false } } catch {}
+    }
+    Write-Log ('HEALTH ' + $healthy)
+    if (-not $healthy) {
+        Write-Log 'ROLLBACK'
+        if ($null -ne $proc) { try { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue } catch {} }
+        Start-Sleep -Milliseconds 800
+        Copy-Item -Path (Join-Path $snapshotDir '*') -Destination $AppDir -Recurse -Force
+        try {
+            $restored = Start-Process -FilePath $newExe -WorkingDirectory $AppDir -PassThru
+            Write-Log ('ROLLED_BACK restarted pid=' + $restored.Id)
+        } catch {
+            Write-Log ('ROLLBACK_START_FAILED ' + $_.Exception.Message)
+        }
+    } else {
+        Write-Log 'ROLLED_FORWARD'
+    }
+    Write-Log 'DONE'
+} catch {
+    Write-Log ('ERROR ' + $_.Exception.Message)
+    throw
+}
+# keep a copy of the log outside the temp dir for post-mortem, then clean up
+try { Copy-Item -LiteralPath $logPath -Destination (Join-Path $env:TEMP 'class_score_update_last.log') -Force } catch {}
+Write-Log ('CLEANUP_START ' + $Cleanup + ' dir=' + $TempDir)
+if ($Cleanup) {
+    Start-Sleep -Seconds 2
+    $removed = $false
+    for ($i = 0; $i -lt 8; $i++) {
+        try { Remove-Item -LiteralPath $TempDir -Recurse -Force -ErrorAction Stop; $removed = $true; break } catch {}
+        Start-Sleep -Seconds 1
+    }
+    if (-not $removed) {
+        Write-Log 'CLEANUP_PS_FAILED try rd'
+        cmd /c rd /s /q "$TempDir" 2>$null
+    }
+    Write-Log ('CLEANUP_DONE exists=' + (Test-Path $TempDir))
+}
 ''';
 }
