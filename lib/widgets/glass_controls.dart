@@ -319,7 +319,10 @@ class GlassChipControl extends StatelessWidget {
       tintColor: selected ? scheme.primary.withValues(alpha: 0.22) : null,
       fontSize: fontSize,
       fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-      shape: const LiquidOval(),
+      // 胶囊：半径取高度的一半。**不要用 LiquidOval**——它走 OvalBorder，
+      // 是内切椭圆，宽胶囊会被拉成橄榄球（「已按「X」筛选」这枚 chip 最明显，
+      // 2026-11-25 用户实测截图确认）。
+      shape: LiquidRoundedSuperellipse(borderRadius: height / 2),
       child: content,
     );
 
