@@ -23,6 +23,7 @@ dependencies:
     window_manager: ^0.4.3
     screen_retriever: ^0.2.0
     package_info_plus: ^8.0.0
+    crypto: ^3.0.3
     desktop_multi_window: ^0.3.1
     camera: ^0.12.2
     image: ^4.3.0

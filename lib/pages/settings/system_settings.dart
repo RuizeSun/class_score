@@ -10,9 +10,11 @@ import '../../providers/group_provider.dart';
 import '../../providers/student_provider.dart';
 import '../../providers/score_item_provider.dart';
 import '../../services/backup_service.dart';
+import '../../services/update_service.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
 import 'pin_dialogs.dart';
+import 'update_dialog.dart';
 import 'settings_common.dart';
 
 /// System settings view for use in SettingsHubPage.
@@ -26,6 +28,7 @@ class SystemSettingsView extends StatefulWidget {
 class _SystemSettingsViewState extends State<SystemSettingsView> {
   String _version = '加载中...';
   String _buildNumber = '';
+  bool _checkingUpdate = false;
 
   @override
   void initState() {
@@ -87,6 +90,29 @@ class _SystemSettingsViewState extends State<SystemSettingsView> {
     );
     if (selected != null) {
       await auth.setAutoLockMinutes(selected);
+    }
+  }
+
+  /// 手动检查更新：有新版弹更新弹窗；已是最新 / 失败用 SnackBar 提示。
+  Future<void> _checkForUpdate() async {
+    if (_checkingUpdate) return;
+    setState(() => _checkingUpdate = true);
+    try {
+      final update = await UpdateService.instance.checkForUpdate();
+      if (!mounted) return;
+      if (update == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('检查更新失败，请检查网络后重试')),
+        );
+      } else if (!update.updateAvailable) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('当前已是最新版本 v${update.latestVersion}')),
+        );
+      } else {
+        await showUpdateAvailableDialog(context, update);
+      }
+    } finally {
+      if (mounted) setState(() => _checkingUpdate = false);
     }
   }
 
@@ -158,6 +184,27 @@ class _SystemSettingsViewState extends State<SystemSettingsView> {
           leading: const Icon(Icons.settings_backup_restore),
           title: const Text('重置全部设置（数据库和设置）'),
           onTap: () => resetAllSettings(context),
+        ),
+
+        const Divider(height: 1),
+        const SizedBox(height: SettingsLayout.sectionSpacing),
+
+        // ---- 关于与更新 ----
+        const SettingsSectionTitle(title: '关于与更新'),
+        const SizedBox(height: 8),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.system_update),
+          title: const Text('检查更新'),
+          subtitle: const Text('从 GitHub Releases 检查并安装新版本'),
+          trailing: _checkingUpdate
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.chevron_right),
+          onTap: _checkForUpdate,
         ),
 
         const Divider(height: 1),

@@ -13,6 +13,7 @@ import 'services/desktop_ball_service.dart';
 import 'services/desktop_bar_log.dart';
 import 'services/desktop_window_service.dart';
 import 'services/tray_service.dart';
+import 'services/update_service.dart';
 import 'services/window_service.dart';
 import 'widgets/desktop_schedule/desktop_schedule_common.dart';
 import 'providers/group_provider.dart';
@@ -24,6 +25,7 @@ import 'providers/personalization_provider.dart';
 import 'providers/desktop_schedule_provider.dart';
 import 'pages/core/home_page.dart';
 import 'pages/core/pin_setup_page.dart';
+import 'pages/settings/update_dialog.dart';
 import 'widgets/motion.dart';
 
 Future<void> main(List<String> args) async {
@@ -342,6 +344,25 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
     );
 
     unawaited(_warmGlassAfterFirstFrame());
+
+    // 自动更新：首页稳定后静默检查 GitHub Releases；有新版本才弹窗，失败不打扰。
+    unawaited(_autoCheckForUpdate());
+  }
+
+  /// 启动后的静默更新检查。
+  ///
+  /// 延迟几秒等界面与托盘 / 浮窗接线都安定下来；只在发现新版本时弹一次
+  /// 更新弹窗，检查失败或已是最新都保持安静（手动检查入口在系统设置）。
+  Future<void> _autoCheckForUpdate() async {
+    await Future<void>.delayed(const Duration(seconds: 4));
+    if (!mounted) return;
+    try {
+      final update = await UpdateService.instance.checkForUpdate();
+      if (!mounted || update == null || !update.updateAvailable) return;
+      await showUpdateAvailableDialog(context, update);
+    } catch (_) {
+      // 静默：自动检查失败不打扰用户
+    }
   }
 
   /// 主页首帧之后再预热玻璃 shader。
