@@ -66,12 +66,19 @@ class ScoreProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _advancedResults = [];
   Map<String, String?>? _advancedTimeRange;
 
+  /// 小组查询是否把「不参与小组量化评分」的学生也计入小组总分。
+  ///
+  /// 默认关：与统计报表、小组总分计算保持一致（这类学生既不贡献分值，
+  /// 也不计入「人均得分」的分母）。打开后小组总分等价于「全班学生都算」。
+  bool _advancedCountExcludedStudents = false;
+
   int? get advancedStartPeriod => _advancedStartPeriod;
   int? get advancedEndPeriod => _advancedEndPeriod;
   int? get advancedGroupId => _advancedGroupId;
   bool get advancedShowGroup => _advancedShowGroup;
   List<Map<String, dynamic>> get advancedResults => _advancedResults;
   Map<String, String?>? get advancedTimeRange => _advancedTimeRange;
+  bool get advancedCountExcludedStudents => _advancedCountExcludedStudents;
 
   void setAdvancedPeriodRange(int? start, int? end) {
     _advancedStartPeriod = start;
@@ -86,6 +93,13 @@ class ScoreProvider extends ChangeNotifier {
     _advancedShowGroup = showGroup;
   }
 
+  /// 切换小组查询是否计入「不参与小组量化评分」的学生。
+  void setAdvancedCountExcludedStudents(bool value) {
+    if (_advancedCountExcludedStudents == value) return;
+    _advancedCountExcludedStudents = value;
+    notifyListeners();
+  }
+
   /// 执行高级查询：获取指定周期范围内的排名
   Future<void> executeAdvancedQuery() async {
     if (_advancedStartPeriod == null || _advancedEndPeriod == null) {
@@ -97,11 +111,18 @@ class ScoreProvider extends ChangeNotifier {
 
     if (_advancedShowGroup) {
       // 查询小组排名
-      _advancedResults = await DatabaseHelper.instance
+      final rawGroups = await DatabaseHelper.instance
           .getGroupTotalScoresByPeriodRange(
             startPeriod: _advancedStartPeriod,
             endPeriod: _advancedEndPeriod,
+            countExcludedStudents: _advancedCountExcludedStudents,
           );
+      // 「未分组」是系统内置的兜底分组：没有学生时它只是一条空壳，
+      // 混在小组排名里既突兀又占位，因此成员数为 0 时不显示。
+      _advancedResults = rawGroups.where((g) {
+        if ((g['name'] as String?) != '未分组') return true;
+        return ((g['member_count'] as num?)?.toInt() ?? 0) > 0;
+      }).toList();
     } else {
       // 查询学生排名
       _advancedResults = await DatabaseHelper.instance
@@ -122,11 +143,12 @@ class ScoreProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 清除高级查询结果
+  /// 清除高级查询结果（连带把「计入不参与量化评分的学生」开关复位）
   void clearAdvancedQuery() {
     _advancedStartPeriod = null;
     _advancedEndPeriod = null;
     _advancedGroupId = null;
+    _advancedCountExcludedStudents = false;
     _advancedResults = [];
     _advancedTimeRange = null;
     notifyListeners();

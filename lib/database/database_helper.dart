@@ -1461,19 +1461,29 @@ class DatabaseHelper {
 
   // ---- Statistics ----
   /// 获取指定周期范围内的小组总分。
-  /// member_count 为该组全部成员数（含不参与小组总分统计的学生，供统计报表展示）；
-  /// total_score 只累计参与统计的成员。
+  ///
+  /// member_count 为该组全部成员数（含不参与小组总分统计的学生，供展示）；
+  /// total_score 默认只累计参与统计的成员。调用方显式传
+  /// [countExcludedStudents] = true 时（高级查询里的小组查询开关），
+  /// 把「不参与小组量化评分」（students.include_in_group_total = 0）的学生
+  /// 也按普通成员计入总分与人均分母，结果与「全部学生」一致。
   Future<List<Map<String, dynamic>>> getGroupTotalScoresByPeriodRange({
     int? startPeriod,
     int? endPeriod,
+    bool countExcludedStudents = false,
   }) async {
     if (startPeriod == null || endPeriod == null) {
       // 回退到当前周期查询
-      return getGroupTotalScores();
+      return getGroupTotalScores(countExcludedStudents: countExcludedStudents);
     }
     final db = await database;
     final config = await _getScoreConfig();
     final groupExpr = _groupTotalExpr(config: config);
+    // 参与统计的判据：默认只要 include_in_group_total = 1；打开开关后等价于
+    // 「全部学生」，写成 1 = 1 让两条分支的 SQL 完全同构（只换一个条件串）。
+    final scoringCond = countExcludedStudents
+        ? '1 = 1'
+        : 's.include_in_group_total = 1';
     final query =
         '''
       SELECT groups.id, groups.name,
@@ -1483,9 +1493,9 @@ class DatabaseHelper {
       LEFT JOIN (
         SELECT s.group_id,
                COUNT(DISTINCT s.id) as member_count,
-               COUNT(DISTINCT CASE WHEN s.include_in_group_total = 1 THEN s.id END)
+               COUNT(DISTINCT CASE WHEN $scoringCond THEN s.id END)
                  as scoring_member_count,
-               COALESCE(SUM(CASE WHEN s.include_in_group_total = 1 THEN sr.score ELSE 0 END), 0)
+               COALESCE(SUM(CASE WHEN $scoringCond THEN sr.score ELSE 0 END), 0)
                  as score_sum
         FROM students s
         LEFT JOIN score_records sr
@@ -1559,15 +1569,23 @@ class DatabaseHelper {
     return null;
   }
 
-  /// 获取当前周期的小组总分。
-  /// member_count 为该组全部成员数（含不参与小组总分统计的学生，供统计报表展示）；
-  /// total_score 只累计参与统计的成员。
-  Future<List<Map<String, dynamic>>> getGroupTotalScores({int? period}) async {
+  /// 获取（当前周期或指定周期的）小组总分。
+  ///
+  /// member_count 为该组全部成员数（含不参与小组总分统计的学生，供展示）；
+  /// total_score 默认只累计参与统计的成员；[countExcludedStudents] 为 true 时
+  /// 把不参与小组量化评分的学生也计入（语义与周期范围查询一致）。
+  Future<List<Map<String, dynamic>>> getGroupTotalScores({
+    int? period,
+    bool countExcludedStudents = false,
+  }) async {
     final db = await database;
     final config = await _getScoreConfig();
     final periodOn = period != null ? 'AND sr.period = $period' : '';
     // 根据计算方式生成小组总分表达式
     final groupExpr = _groupTotalExpr(config: config);
+    final scoringCond = countExcludedStudents
+        ? '1 = 1'
+        : 's.include_in_group_total = 1';
     final query =
         '''
       SELECT groups.id, groups.name,
@@ -1577,9 +1595,9 @@ class DatabaseHelper {
       LEFT JOIN (
         SELECT s.group_id,
                COUNT(DISTINCT s.id) as member_count,
-               COUNT(DISTINCT CASE WHEN s.include_in_group_total = 1 THEN s.id END)
+               COUNT(DISTINCT CASE WHEN $scoringCond THEN s.id END)
                  as scoring_member_count,
-               COALESCE(SUM(CASE WHEN s.include_in_group_total = 1 THEN sr.score ELSE 0 END), 0)
+               COALESCE(SUM(CASE WHEN $scoringCond THEN sr.score ELSE 0 END), 0)
                  as score_sum
         FROM students s
         LEFT JOIN score_records sr
