@@ -53,6 +53,8 @@ jobs:
                   cd build/windows/x64/runner
                   # 使用 Windows 自带的 7z 压缩（GitHub Actions 环境自带）
                   7z a -tzip release.zip ./Release/*
+                  # 完整性校验：客户端下载后先对 sha256，不匹配拒装
+                  sha256sum release.zip | awk '{ print $1 }' > release.zip.sha256
 
             # ---------- 创建 Tag 和 Release ----------
             - name: Create Tag and Release
