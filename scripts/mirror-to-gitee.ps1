@@ -97,11 +97,12 @@ if ($zipSize -gt 100MB) {
 
 # ---------- 3. Push code and tag ----------
 Write-Section 'Push code and tag'
+# Always push by URL rather than a remote name. The manifest step later runs in a
+# brand-new repo in RUNNER_TEMP, where a remote named `gitee` does not exist --
+# that broke 1.6.3 with "fatal: 'gitee' does not appear to be a git repository".
 $remote = "https://oauth2:$token@gitee.com/$owner/$repoName.git"
-git remote remove gitee 2>$null | Out-Null
-git remote add gitee $remote
 # Push the tag after main: creating the Release needs the tag to exist.
-git push --quiet gitee "HEAD:refs/heads/main"
+git push --quiet $remote "HEAD:refs/heads/main"
 if ($LASTEXITCODE -ne 0) { throw 'Failed to push main to Gitee (resolve divergence manually first)' }
 Write-Info 'main synced'
 
@@ -109,7 +110,7 @@ Write-Info 'main synced'
 # NOTE: use ${tag} not $tag here. In PowerShell `$tag:` parses the colon as part
 # of the variable name, so "refs/tags/$tag:refs/tags/$tag" silently becomes
 # "refs/tags//tags/1.6.2" and git fails with "invalid refspec" (hit on 1.6.2).
-$remoteTags = git ls-remote --tags gitee "refs/tags/${tag}"
+$remoteTags = git ls-remote --tags $remote "refs/tags/${tag}"
 if ([string]::IsNullOrWhiteSpace(($remoteTags -join ''))) {
     # A backfill run (workflow_dispatch) starts from a fresh clone that has no
     # tag at all, and the commit may not even be on the checked-out branch.
@@ -122,7 +123,7 @@ if ([string]::IsNullOrWhiteSpace(($remoteTags -join ''))) {
             throw "Tag $tag not found locally nor on GitHub; cannot mirror (check the version number)"
         }
     }
-    git push --quiet gitee "refs/tags/${tag}:refs/tags/${tag}"
+    git push --quiet $remote "refs/tags/${tag}:refs/tags/${tag}"
     if ($LASTEXITCODE -ne 0) { throw "Failed to push tag $tag to Gitee" }
     Write-Info "tag $tag pushed"
 } else {
@@ -230,7 +231,11 @@ try {
     )
     git add latest.json
     git commit --quiet -m "chore(update): latest.json for $version"
-    git push --quiet --force gitee 'HEAD:refs/heads/update'
+    # Push by full URL, not the `gitee` remote name: this is a freshly-initialised
+    # repo in RUNNER_TEMP and remote names added in the checkout are not inherited.
+    # Using the name here failed with "fatal: 'gitee' does not appear to be a git
+    # repository" on 1.6.3.
+    git push --quiet --force $remote 'HEAD:refs/heads/update'
     if ($LASTEXITCODE -ne 0) { throw 'Failed to push update branch to Gitee' }
 } finally {
     Pop-Location
