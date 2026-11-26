@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:path/path.dart' as p;
@@ -10,9 +9,11 @@ import '../../providers/group_provider.dart';
 import '../../providers/student_provider.dart';
 import '../../providers/score_item_provider.dart';
 import '../../services/backup_service.dart';
+import '../../services/heavy_compute.dart';
 import '../../services/update_service.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
+import '../../widgets/loading_state.dart';
 import 'pin_dialogs.dart';
 import 'update_dialog.dart';
 import 'settings_common.dart';
@@ -328,8 +329,13 @@ Future<void> exportDatabase(BuildContext context) async {
     return;
   }
   try {
-    // 用户在设置页显式点「导出数据库」：不受节流限制，必定产生一份新备份
-    final path = await BackupService.instance.createBackup(force: true);
+    // 用户在设置页显式点「导出数据库」：不受节流限制，必定产生一份新备份。
+    // 整库快照期间显示忙碌遮罩，否则窗口会静默冻结、容易被当成卡死。
+    final path = await runBusy(
+      context,
+      () => BackupService.instance.createBackup(force: true),
+      message: '正在导出数据库…',
+    );
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('备份已创建: $path')));
@@ -368,8 +374,17 @@ Future<void> importDatabase(BuildContext context) async {
       ).showSnackBar(const SnackBar(content: Text('文件路径无效')));
       return;
     }
-    final jsonStr = await File(path).readAsString();
-    final success = await BackupService.instance.importFromJson(jsonStr);
+    // 读取 + 解码 + 清库 + 写回整库：耗时且会阻塞，期间给出明确反馈。
+    // 上面 await 过文件选择器，用 context 前先确认页面还在。
+    if (!context.mounted) return;
+    final success = await runBusy(
+      context,
+      () async {
+        final jsonStr = await File(path).readAsString();
+        return BackupService.instance.importFromJson(jsonStr);
+      },
+      message: '正在导入数据库…',
+    );
     if (success) {
       ScaffoldMessenger.of(
         context,
@@ -392,24 +407,23 @@ Future<void> exportScores(BuildContext context) async {
       return;
     }
     try {
-      // 获取 JSON 数据并转换为 CSV 表格
-      final jsonStr = await BackupService.instance.exportToJson();
-      final Map<String, dynamic> data =
-          jsonDecode(jsonStr) as Map<String, dynamic>;
-      final List<dynamic> records =
-          data['score_records'] as List<dynamic>? ?? [];
-      // 构建 CSV 内容，使用第一条记录的键作为表头
-      final StringBuffer csvBuffer = StringBuffer();
-      if (records.isNotEmpty) {
-        final first = records.first as Map<String, dynamic>;
-        final headers = first.keys.where((k) => k != 'id').toList();
-        csvBuffer.writeln(headers.join(','));
-        for (final rec in records) {
-          final map = rec as Map<String, dynamic>;
-          final row = headers.map((h) => '${map[h] ?? ''}').join(',');
-          csvBuffer.writeln(row);
-        }
-      }
+      // 获取 JSON 数据并转换为 CSV 表格。
+      // 拼接可能涉及上万条记录，交给后台 isolate，导出期间窗口不再冻结。
+      final csvContent = await runBusy(
+        context,
+        () async {
+          final jsonStr = await BackupService.instance.exportToJson();
+          final Map<String, dynamic> data =
+              await HeavyCompute.decodeJson(jsonStr) as Map<String, dynamic>;
+          final rows = <Map<String, Object?>>[
+            for (final rec in (data['score_records'] as List<dynamic>? ??
+                const []))
+              if (rec is Map) Map<String, Object?>.from(rec),
+          ];
+          return HeavyCompute.buildScoresCsv(rows);
+        },
+        message: '正在导出积分表格…',
+      );
       // 将 CSV 保存为文件，文件名包含时间戳
       final timestamp = DateTime.now()
           .toIso8601String()
@@ -419,7 +433,7 @@ Future<void> exportScores(BuildContext context) async {
       await BackupService.instance.ensureBackupDir();
       final filePath = p.join(BackupService.instance.backupDir, fileName);
       final file = File(filePath);
-      await file.writeAsString(csvBuffer.toString());
+      await file.writeAsString(csvContent);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('积分已导出为表格至 $filePath')));
@@ -464,7 +478,11 @@ Future<void> clearAllScores(BuildContext context) async {
       ).showSnackBar(const SnackBar(content: Text('PIN 验证失败')));
       return;
     }
-    await BackupService.instance.resetScoreRecords();
+    await runBusy(
+      context,
+      () => BackupService.instance.resetScoreRecords(),
+      message: '正在清除评分记录…',
+    );
     // 清除评分记录后需要刷新 ScoreProvider 的缓存数据
     await context.read<ScoreItemProvider>().loadItems();
     ScaffoldMessenger.of(
@@ -482,7 +500,11 @@ Future<void> resetDatabase(BuildContext context) async {
       ).showSnackBar(const SnackBar(content: Text('PIN 验证失败')));
       return;
     }
-    await BackupService.instance.resetAll();
+    await runBusy(
+      context,
+      () => BackupService.instance.resetAll(),
+      message: '正在重置数据库…',
+    );
     // 重置数据库后需要刷新所有 Provider 的缓存数据
     await Future.wait([
       context.read<GroupProvider>().loadGroups(),
@@ -504,8 +526,14 @@ Future<void> resetAllSettings(BuildContext context) async {
       ).showSnackBar(const SnackBar(content: Text('PIN 验证失败')));
       return;
     }
-    await BackupService.instance.resetAll();
-    await BackupService.instance.clearAllBackups();
+    await runBusy(
+      context,
+      () async {
+        await BackupService.instance.resetAll();
+        await BackupService.instance.clearAllBackups();
+      },
+      message: '正在重置全部设置…',
+    );
     // 重置全部设置后需要刷新所有 Provider 的缓存数据
     await Future.wait([
       context.read<GroupProvider>().loadGroups(),

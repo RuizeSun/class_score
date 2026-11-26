@@ -11,6 +11,7 @@ import '../../utils/ranking.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
 import '../../widgets/glass_inputs.dart';
+import '../../widgets/loading_state.dart';
 import '../../widgets/motion.dart';
 import '../../widgets/pane_header.dart';
 import '../../widgets/ranking_tile.dart';
@@ -32,7 +33,8 @@ class StatisticsAnalysisPage extends StatefulWidget {
   State<StatisticsAnalysisPage> createState() => _StatisticsAnalysisPageState();
 }
 
-class _StatisticsAnalysisPageState extends State<StatisticsAnalysisPage> {
+class _StatisticsAnalysisPageState extends State<StatisticsAnalysisPage>
+    with AutomaticKeepAliveClientMixin<StatisticsAnalysisPage> {
   /// 左栏选中的目标：联动右栏记录列表，并高亮左栏该行。
   ({String type, int id, String name})? _selectedTarget;
 
@@ -61,8 +63,15 @@ class _StatisticsAnalysisPageState extends State<StatisticsAnalysisPage> {
     setState(() => _selectedTarget = null);
   }
 
+  /// 切走再切回「查询」Tab 时保留两栏 State（含已选联动目标与滚动位置）。
+  ///
+  /// 两栏初始化要跑十几条查询，被销毁重建的代价最直观：切回来先空白再填。
+  @override
+  bool get wantKeepAlive => true;
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final ratio = context.watch<PersonalizationProvider>().analysisSplitRatio;
     final selected = _selectedTarget;
 
@@ -90,6 +99,19 @@ class _StatisticsAnalysisPageState extends State<StatisticsAnalysisPage> {
 
 // ==================== 统计报表 ====================
 
+/// 「统计报表」栏真正依赖的 [ScoreProvider] 字段。
+///
+/// 用 `context.select` 订阅这个记录（record）而不是整个 Provider：排行榜只关心
+/// 两份榜单数据与名次规则，其余字段（当前周期、快速评分开关、记录列表…）变化时
+/// 没理由重建榜单。
+typedef _RankingRules = ({
+  List<Map<String, dynamic>> students,
+  List<Map<String, dynamic>> groups,
+  bool mergeSameRank,
+  bool competitionRanking,
+  int? filterGroupId,
+});
+
 /// 统计报表栏：学生榜 / 小组榜（分屏左栏）。
 class StatisticsView extends StatefulWidget {
   /// 点击学生/小组行：联动筛选右侧记录列表（[targetId] 必不为空）。
@@ -115,36 +137,76 @@ class StatisticsView extends StatefulWidget {
   State<StatisticsView> createState() => _StatisticsViewState();
 }
 
-class _StatisticsViewState extends State<StatisticsView> {
+class _StatisticsViewState extends State<StatisticsView>
+    with LoadableStateMixin<StatisticsView> {
   // 切换学生/小组视图
   bool _showGroup = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<GroupProvider>().loadGroups();
-      context.read<ScoreProvider>().loadStatistics();
-    });
+    // 同步就置为「加载中」：首帧直接渲染转圈，而不是先闪一下空榜单。
+    beginLoad();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadAll());
+  }
+
+  /// 载入榜单数据。左栏进页面时要跑约 10 条查询，切换小组筛选又是 9 条，
+  /// 以前全程没有任何反馈——加载期间显示的是「暂无排名」，看起来像没数据。
+  Future<void> _loadAll({int? groupId, bool filterChanged = false}) async {
+    // await 之前取好 provider 引用：之后不再用 context。
+    final groupProvider = context.read<GroupProvider>();
+    final scoreProvider = context.read<ScoreProvider>();
+    final token = beginLoad();
+    if (filterChanged) setState(() {});
+    try {
+      await groupProvider.loadGroups();
+      await scoreProvider.loadStatistics(groupId: groupId);
+    } finally {
+      if (mounted) {
+        // 只有最新一次请求才允许收掉加载态：旧请求先结束会把仍在新请求
+        // 进行中的页面提前摘掉转圈，看起来像「加载完了但内容还是旧的」。
+        if (isLatest(token)) {
+          endLoad();
+          setState(() {});
+        }
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final scoreProvider = context.watch<ScoreProvider>();
-    final studentScores = scoreProvider.studentTotalScores;
-    final groupScores = scoreProvider.groupTotalScores;
+    // 只订阅本栏真正渲染的字段。
+    //
+    // 以前是 `watch<ScoreProvider>()` 整体订阅：ScoreProvider 每次记分、删除、
+    // 改规则都会 notify，连与榜单无关的「当前周期 / 快速评分开关」变化也会
+    // 重建整个榜单（含 buildRankedEntries 的整表排序）。
+    final stats = context.select<ScoreProvider, _RankingRules>(
+      (p) => (
+        students: p.studentTotalScores,
+        groups: p.groupTotalScores,
+        mergeSameRank: p.mergeSameRank,
+        competitionRanking: p.competitionRanking,
+        filterGroupId: p.filterGroupId,
+      ),
+    );
+    final studentScores = stats.students;
+    final groupScores = stats.groups;
     final groups = context.watch<GroupProvider>().groups;
     // 仅「全部小组」时提供班级图表分析入口（小组模式等效全部小组）
-    final showClassAnalysis = _showGroup || scoreProvider.filterGroupId == null;
+    final showClassAnalysis = _showGroup || stats.filterGroupId == null;
     // 名次分组：默认合并同名次并使用标准比赛名次（并列后跳号），
     // 可在「计分规则 → 统计报表」调整；学生榜与小组榜共用同一套名次计算与行样式。
     final rankedEntries = buildRankedEntries(
       _showGroup ? groupScores : studentScores,
-      mergeSameRank: scoreProvider.mergeSameRank,
-      competitionRanking: scoreProvider.competitionRanking,
+      mergeSameRank: stats.mergeSameRank,
+      competitionRanking: stats.competitionRanking,
     );
 
-    return SingleChildScrollView(
+    return LoadableContent(
+      loading: isLoading,
+      hasLoadedOnce: hasLoadedOnce,
+      loadingLabel: '正在统计榜单…',
+      child: SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Align(
         alignment: Alignment.topCenter,
@@ -189,7 +251,7 @@ class _StatisticsViewState extends State<StatisticsView> {
                     SizedBox(
                       width: 220,
                       child: GlassDropdownField<int?>(
-                        initialValue: scoreProvider.filterGroupId,
+                        initialValue: stats.filterGroupId,
                         isExpanded: true,
                         decoration: const InputDecoration(
                           border: OutlineInputBorder(),
@@ -214,9 +276,8 @@ class _StatisticsViewState extends State<StatisticsView> {
                           ),
                         ],
                         onChanged: (v) {
-                          context.read<ScoreProvider>().loadStatistics(
-                            groupId: v,
-                          );
+                          // 切换筛选会重跑 9 条查询：先进加载态，再拉数据。
+                          _loadAll(groupId: v, filterChanged: true);
                         },
                       ),
                     ),
@@ -261,7 +322,7 @@ class _StatisticsViewState extends State<StatisticsView> {
                             for (var i = 0; i < rankedEntries.length; i++) ...[
                               if (i > 0)
                                 SizedBox(
-                                  height: scoreProvider.mergeSameRank
+                                  height: stats.mergeSameRank
                                       ? RankingMetrics.rankGroupSpacing
                                       : RankingMetrics.rowSpacing,
                                 ),
@@ -283,6 +344,7 @@ class _StatisticsViewState extends State<StatisticsView> {
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -343,7 +405,8 @@ class RecordManagementView extends StatefulWidget {
   State<RecordManagementView> createState() => _RecordManagementViewState();
 }
 
-class _RecordManagementViewState extends State<RecordManagementView> {
+class _RecordManagementViewState extends State<RecordManagementView>
+    with LoadableStateMixin<RecordManagementView> {
   int? _filterGroupId;
   int? _filterStudentId;
 
@@ -356,13 +419,37 @@ class _RecordManagementViewState extends State<RecordManagementView> {
     super.initState();
     // 左栏可能已选中某个学生/小组（分屏初建时）
     _syncExternalFilter(widget.externalFilter);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<GroupProvider>().loadGroups();
-      context.read<StudentProvider>().loadStudents();
-      context.read<ScoreItemProvider>().loadItems();
-      context.read<ScoreProvider>().loadScoreConfig();
-      _loadRecords();
-    });
+    // 首帧直接进加载态：本栏初始化要跑 4 个 provider 加载 + 记录查询，
+    // 以前这段时间显示的是「暂无评分记录」，看起来像库是空的。
+    beginLoad();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadAll());
+  }
+
+  /// 一次性加载本栏需要的全部数据，并在期间维持加载态。
+  Future<void> _loadAll() async {
+    final groupProvider = context.read<GroupProvider>();
+    final studentProvider = context.read<StudentProvider>();
+    final itemProvider = context.read<ScoreItemProvider>();
+    final scoreProvider = context.read<ScoreProvider>();
+    final token = beginLoad();
+    try {
+      await Future.wait([
+        groupProvider.loadGroups(),
+        studentProvider.loadStudents(),
+        itemProvider.loadItems(),
+        scoreProvider.loadScoreConfig(),
+      ]);
+      await _loadRecordsAsync();
+    } finally {
+      if (mounted) {
+        // 只有最新一次请求才允许收掉加载态：旧请求先结束会把仍在新请求
+        // 进行中的页面提前摘掉转圈，看起来像「加载完了但内容还是旧的」。
+        if (isLatest(token)) {
+          endLoad();
+          setState(() {});
+        }
+      }
+    }
   }
 
   @override
@@ -416,27 +503,43 @@ class _RecordManagementViewState extends State<RecordManagementView> {
     }
   }
 
-  void _loadRecords() {
+  /// 按当前筛选拉取记录，并在期间维持加载态（筛选变更走这里）。
+  Future<void> _loadRecords() async {
+    final token = beginLoad();
+    setState(() {});
+    try {
+      await _loadRecordsAsync();
+    } finally {
+      if (mounted) {
+        // 只有最新一次请求才允许收掉加载态：旧请求先结束会把仍在新请求
+        // 进行中的页面提前摘掉转圈，看起来像「加载完了但内容还是旧的」。
+        if (isLatest(token)) {
+          endLoad();
+          setState(() {});
+        }
+      }
+    }
+  }
+
+  /// 按当前筛选拉取记录（不管理加载态；由 [_loadAll] / [_loadRecords] 包住）。
+  Future<void> _loadRecordsAsync() {
     final scoreProvider = context.read<ScoreProvider>();
     if (_filterGroupId != null) {
       if (_filterStudentId != null) {
-        scoreProvider.loadRecords(
+        return scoreProvider.loadRecords(
           targetType: 'student',
           targetId: _filterStudentId,
         );
-      } else {
-        scoreProvider.loadRecords(groupId: _filterGroupId);
       }
-    } else {
-      if (_filterStudentId != null) {
-        scoreProvider.loadRecords(
-          targetType: 'student',
-          targetId: _filterStudentId,
-        );
-      } else {
-        scoreProvider.loadRecords(targetType: 'student');
-      }
+      return scoreProvider.loadRecords(groupId: _filterGroupId);
     }
+    if (_filterStudentId != null) {
+      return scoreProvider.loadRecords(
+        targetType: 'student',
+        targetId: _filterStudentId,
+      );
+    }
+    return scoreProvider.loadRecords(targetType: 'student');
   }
 
   // ===== 补充/修改变动原因与批量操作逻辑 =====
@@ -846,8 +949,10 @@ class _RecordManagementViewState extends State<RecordManagementView> {
 
   @override
   Widget build(BuildContext context) {
-    final scoreProvider = context.watch<ScoreProvider>();
-    final records = scoreProvider.recordsWithName;
+    // 只订阅记录列表本身：本栏不关心榜单、周期、计分规则。
+    final records = context.select<ScoreProvider, List<Map<String, dynamic>>>(
+      (p) => p.recordsWithName,
+    );
     final allStudents = context.watch<StudentProvider>().students;
     final groups = context.watch<GroupProvider>().groups;
     final isUnlocked = context.watch<AuthProvider>().isUnlocked;
@@ -993,33 +1098,46 @@ class _RecordManagementViewState extends State<RecordManagementView> {
           ),
 
         // 记录列表：筛选（含左栏联动）变化时整块淡出 → 淡入。列表批量替换用
-        // 更快节奏，避免长列表出现明显的空窗
+        // 更快节奏，避免长列表出现明显的空窗。
+        //
+        // 加载中与「真的没有记录」必须是两种不同的呈现：以前两者都显示
+        // 「暂无评分记录」，慢查询看起来就像数据丢了。
         Expanded(
-          child: FadeThroughSwitcher(
-            expand: true,
-            duration: AppMotion.fast,
-            switchKey: '${_filterGroupId}_$_filterStudentId',
-            child: records.isEmpty
-                ? const Center(child: Text('暂无评分记录'))
-                : ListView.builder(
-                    itemCount: records.length,
-                    itemBuilder: (_, i) {
-                      final r = records[i];
-                      final recordId = r['id'] as int;
-                      final isSelected = _selectedRecordIds.contains(recordId);
+          child: LoadableContent(
+            loading: isLoading,
+            hasLoadedOnce: hasLoadedOnce,
+            loadingLabel: '正在读取评分记录…',
+            child: FadeThroughSwitcher(
+              expand: true,
+              duration: AppMotion.fast,
+              switchKey: '${_filterGroupId}_$_filterStudentId',
+              child: records.isEmpty
+                  ? const Center(child: Text('暂无评分记录'))
+                  : ListView.builder(
+                      itemCount: records.length,
+                      itemBuilder: (_, i) {
+                        final r = records[i];
+                        final recordId = r['id'] as int;
+                        final isSelected = _selectedRecordIds.contains(
+                          recordId,
+                        );
 
-                      // 条目样式与操作逻辑复用「记录管理」的 ScoreRecordTile
-                      return ScoreRecordTile(
-                        record: r,
-                        batchMode: _batchMode,
-                        selected: isSelected,
-                        onToggleSelect: () => _toggleRecordSelection(recordId),
-                        isUnlocked: isUnlocked,
-                        onMutated: () =>
-                            setState(() => _selectedRecordIds.remove(recordId)),
-                      );
-                    },
-                  ),
+                        // 条目样式与操作逻辑复用「记录管理」的 ScoreRecordTile
+                        return ScoreRecordTile(
+                          record: r,
+                          batchMode: _batchMode,
+                          selected: isSelected,
+                          onToggleSelect: () => _toggleRecordSelection(
+                            recordId,
+                          ),
+                          isUnlocked: isUnlocked,
+                          onMutated: () => setState(
+                            () => _selectedRecordIds.remove(recordId),
+                          ),
+                        );
+                      },
+                    ),
+            ),
           ),
         ),
       ],

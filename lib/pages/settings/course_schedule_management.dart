@@ -6,6 +6,7 @@ import '../../services/schedule_import_service.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
 import '../../widgets/glass_inputs.dart';
+import '../../widgets/loading_state.dart';
 import 'settings_common.dart';
 
 /// Show dialog to add or edit a course schedule.
@@ -642,9 +643,15 @@ class _CourseScheduleManagementViewState
     if (choice == null || choice == 0 || !mounted) return;
 
     final overwrite = choice == -1;
-    final count = await context.read<AuthProvider>().importCourseSchedules(
-      imported.map((e) => e.toMap()).toList(),
-      overwrite: overwrite,
+    // 覆盖导入会先清空再整批写入；数据多时明显耗时，期间给出忙碌遮罩。
+    final auth = context.read<AuthProvider>();
+    final count = await runBusy(
+      context,
+      () => auth.importCourseSchedules(
+        imported.map((e) => e.toMap()).toList(),
+        overwrite: overwrite,
+      ),
+      message: overwrite ? '正在覆盖导入课程表…' : '正在导入课程表…',
     );
     if (!mounted) return;
 

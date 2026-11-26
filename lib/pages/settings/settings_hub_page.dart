@@ -43,7 +43,8 @@ enum SettingsSection {
   system,
 }
 
-class _SettingsHubPageState extends State<SettingsHubPage> {
+class _SettingsHubPageState extends State<SettingsHubPage>
+    with AutomaticKeepAliveClientMixin<SettingsHubPage> {
   static const double _breakpoint = 800;
   static const double _sidebarWidth = 260;
 
@@ -59,8 +60,13 @@ class _SettingsHubPageState extends State<SettingsHubPage> {
     });
   }
 
+  /// 切走再切回「设置」Tab 时保留 State：当前分项、滚动位置与输入框内容都不该丢。
+  @override
+  bool get wantKeepAlive => true;
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= _breakpoint;

@@ -156,13 +156,12 @@ class ScoreProvider extends ChangeNotifier {
 
   // 初始化 - 加载当前周期设置
   Future<void> init() async {
-    final periodStr = await DatabaseHelper.instance.getSetting(
+    final settings = await DatabaseHelper.instance.getSettings(const [
       'current_period',
-    );
-    _currentPeriod = int.tryParse(periodStr ?? '1') ?? 1;
-    _defaultQuickScoring =
-        (await DatabaseHelper.instance.getSetting('default_quick_scoring')) ==
-        'true';
+      'default_quick_scoring',
+    ]);
+    _currentPeriod = int.tryParse(settings['current_period'] ?? '1') ?? 1;
+    _defaultQuickScoring = settings['default_quick_scoring'] == 'true';
     await loadScoreConfig();
   }
 
@@ -228,7 +227,7 @@ class ScoreProvider extends ChangeNotifier {
     String? customName,
     bool isQuick = false,
   }) async {
-    await BackupService.instance.createBackup();
+    BackupService.instance.scheduleBackup();
     final map = <String, dynamic>{
       'target_type': targetType,
       'target_id': targetId,
@@ -257,7 +256,7 @@ class ScoreProvider extends ChangeNotifier {
     String? customName,
     bool isQuick = false,
   }) async {
-    await BackupService.instance.createBackup();
+    BackupService.instance.scheduleBackup();
     final now = DateTime.now().toIso8601String();
     final records = <Map<String, dynamic>>[];
     for (final targetId in targetIds) {
@@ -300,7 +299,8 @@ class ScoreProvider extends ChangeNotifier {
   /// 批量删除评分记录：移入回收站（保留 7 天，可恢复），并清理过期回收站。
   Future<void> deleteScoreRecords(List<int> ids) async {
     if (ids.isEmpty) return;
-    await BackupService.instance.createBackup();
+    // 移入回收站仍是「可能丢数据」的动作（7 天后永久清除）：先落快照再动手。
+    await BackupService.instance.createBackup(force: true);
     await DatabaseHelper.instance.purgeExpiredArchives(
       now: DateTime.now(),
       retention: _archiveRetention,
@@ -374,7 +374,8 @@ class ScoreProvider extends ChangeNotifier {
   /// 切换到下一个评分周期
   /// 会清空新周期的所有评分记录
   Future<void> switchToNextPeriod() async {
-    await BackupService.instance.createBackup();
+    // 切周期会删掉目标周期的全部评分记录：必须**先**有快照。
+    await BackupService.instance.createBackup(force: true);
 
     // 获取新周期号
     final nextPeriod = _currentPeriod + 1;
@@ -587,7 +588,8 @@ class ScoreProvider extends ChangeNotifier {
   /// 永久删除回收站记录。
   Future<int> permanentlyDeleteArchivedRecords(List<int> archiveIds) async {
     if (archiveIds.isEmpty) return 0;
-    await BackupService.instance.createBackup();
+    // 永久删除不可恢复：先落快照。
+    await BackupService.instance.createBackup(force: true);
     return DatabaseHelper.instance.permanentlyDeleteArchivedRecords(archiveIds);
   }
 
@@ -647,28 +649,37 @@ class ScoreProvider extends ChangeNotifier {
 
   // ---- 计分规则配置 ----
   /// 从数据库加载计分规则全局设置
+  ///
+  /// 一次 `IN` 查询取回全部键；以前这里是 8 次串行 [getSetting]，
+  /// 且每次记分后的 `_reloadAfterScoreMutation` 不重读配置、只在启动/进设置页时读，
+  /// 因此这次优化主要缩短启动与切页的等待。
   Future<void> loadScoreConfig() async {
     final db = DatabaseHelper.instance;
-    _studentInitialScore =
-        double.tryParse((await db.getSetting('student_initial_score')) ?? '') ??
-        0.0;
-    _groupInitialScore =
-        double.tryParse((await db.getSetting('group_initial_score')) ?? '') ??
-        0.0;
-    _groupScoreMode = await db.getSetting('group_score_mode') ?? 'sum';
-    _defaultQuickScoring =
-        (await db.getSetting('default_quick_scoring')) == 'true';
+    final settings = await db.getSettings(const [
+      'student_initial_score',
+      'group_initial_score',
+      'group_score_mode',
+      'default_quick_scoring',
+      'merge_same_rank',
+      'competition_ranking',
+      'score_range_mode',
+      'score_range_min',
+      'score_range_max',
+    ]);
+    String? read(String key) => settings[key];
+
+    _studentInitialScore = double.tryParse(read('student_initial_score') ?? '') ?? 0.0;
+    _groupInitialScore = double.tryParse(read('group_initial_score') ?? '') ?? 0.0;
+    _groupScoreMode = read('group_score_mode') ?? 'sum';
+    _defaultQuickScoring = read('default_quick_scoring') == 'true';
     // 同名次合并默认开启：只有显式存过 'false' 才视为关闭
     // （与 default_quick_scoring 默认关闭的 == 'true' 判定不同）。
-    _mergeSameRank = (await db.getSetting('merge_same_rank')) != 'false';
+    _mergeSameRank = read('merge_same_rank') != 'false';
     // 标准比赛名次默认开启：只有显式存过 'false' 才切换为紧凑名次。
-    _competitionRanking =
-        (await db.getSetting('competition_ranking')) != 'false';
-    _scoreRangeMode = await db.getSetting('score_range_mode') ?? 'unlimited';
-    _scoreRangeMin =
-        double.tryParse((await db.getSetting('score_range_min')) ?? '') ?? 0;
-    _scoreRangeMax =
-        double.tryParse((await db.getSetting('score_range_max')) ?? '') ?? 0;
+    _competitionRanking = read('competition_ranking') != 'false';
+    _scoreRangeMode = read('score_range_mode') ?? 'unlimited';
+    _scoreRangeMin = double.tryParse(read('score_range_min') ?? '') ?? 0;
+    _scoreRangeMax = double.tryParse(read('score_range_max') ?? '') ?? 0;
     notifyListeners();
   }
 
@@ -707,7 +718,7 @@ class ScoreProvider extends ChangeNotifier {
 
   /// 设置学生初始分（统一值）
   Future<void> setStudentInitialScore(double value) async {
-    await BackupService.instance.createBackup();
+    BackupService.instance.scheduleBackup();
     await DatabaseHelper.instance.setSetting(
       'student_initial_score',
       value.toString(),
@@ -718,7 +729,7 @@ class ScoreProvider extends ChangeNotifier {
 
   /// 设置小组初始分（统一值）
   Future<void> setGroupInitialScore(double value) async {
-    await BackupService.instance.createBackup();
+    BackupService.instance.scheduleBackup();
     await DatabaseHelper.instance.setSetting(
       'group_initial_score',
       value.toString(),
@@ -729,7 +740,7 @@ class ScoreProvider extends ChangeNotifier {
 
   /// 设置小组总分计算方式：'sum' | 'group_init' | 'avg'
   Future<void> setGroupScoreMode(String mode) async {
-    await BackupService.instance.createBackup();
+    BackupService.instance.scheduleBackup();
     await DatabaseHelper.instance.setSetting('group_score_mode', mode);
     _groupScoreMode = mode;
     notifyListeners();
@@ -737,7 +748,7 @@ class ScoreProvider extends ChangeNotifier {
 
   /// 设置允许分值范围模式：'only_add' | 'only_deduct' | 'unlimited' | 'custom'
   Future<void> setScoreRangeMode(String mode) async {
-    await BackupService.instance.createBackup();
+    BackupService.instance.scheduleBackup();
     await DatabaseHelper.instance.setSetting('score_range_mode', mode);
     _scoreRangeMode = mode;
     notifyListeners();
@@ -745,7 +756,7 @@ class ScoreProvider extends ChangeNotifier {
 
   /// 设置自定义允许分值范围：n1 <= 分值 <= n2
   Future<void> setScoreRange(double min, double max) async {
-    await BackupService.instance.createBackup();
+    BackupService.instance.scheduleBackup();
     await DatabaseHelper.instance.setSetting('score_range_min', min.toString());
     await DatabaseHelper.instance.setSetting('score_range_max', max.toString());
     _scoreRangeMin = min;

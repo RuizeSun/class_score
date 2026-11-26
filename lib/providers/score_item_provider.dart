@@ -14,7 +14,7 @@ class ScoreItemProvider extends ChangeNotifier {
   }
 
   Future<void> addItem(ScoreItem item) async {
-    await BackupService.instance.createBackup();
+    BackupService.instance.scheduleBackup();
     await DatabaseHelper.instance.insertScoreItem(item.toMap());
     await loadItems();
   }
@@ -26,7 +26,7 @@ class ScoreItemProvider extends ChangeNotifier {
   }
 
   Future<void> deleteItem(int id) async {
-    await BackupService.instance.createBackup();
+    await BackupService.instance.createBackup(force: true);
     await DatabaseHelper.instance.deleteScoreItem(id);
     await loadItems();
   }

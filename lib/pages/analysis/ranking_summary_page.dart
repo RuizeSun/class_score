@@ -5,6 +5,7 @@ import '../../providers/group_provider.dart';
 import '../../utils/ranking.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
+import '../../widgets/loading_state.dart';
 import '../../widgets/pane_header.dart';
 import '../../widgets/ranking_tile.dart';
 import '../../widgets/resizable_split_view.dart';
@@ -22,7 +23,8 @@ class RankingSummaryPage extends StatefulWidget {
   State<RankingSummaryPage> createState() => _RankingSummaryPageState();
 }
 
-class _RankingSummaryPageState extends State<RankingSummaryPage> {
+class _RankingSummaryPageState extends State<RankingSummaryPage>
+    with LoadableStateMixin<RankingSummaryPage> {
   // 目标类型切换：学生/小组
   bool _showGroup = false;
 
@@ -67,13 +69,26 @@ class _RankingSummaryPageState extends State<RankingSummaryPage> {
   }
 
   /// 周期已选全时执行一次查询（改条件即查，不用再点按钮）。
+  ///
+  /// 查询涉及 2-3 条聚合 SQL，周期范围大时会明显耗时；期间维持加载态，
+  /// 避免右栏一直显示上一次的结果、看起来像「改了条件没反应」。
   Future<void> _runIfReady(ScoreProvider provider) async {
     final start = provider.advancedStartPeriod;
     final end = provider.advancedEndPeriod;
     if (start == null || end == null) return;
     provider.setAdvancedShowGroup(_showGroup);
-    await provider.executeAdvancedQuery();
-    if (mounted) setState(() {});
+    final token = beginLoad();
+    setState(() {});
+    try {
+      await provider.executeAdvancedQuery();
+    } finally {
+      if (mounted) {
+        if (isLatest(token)) {
+          endLoad();
+          setState(() {});
+        }
+      }
+    }
   }
 
   @override
@@ -379,42 +394,57 @@ class _RankingSummaryPageState extends State<RankingSummaryPage> {
                   title: '请选择周期范围',
                   hint: '左侧选择起始与结束周期后自动查询',
                 )
-              : rankedEntries.isEmpty
-              ? const _ResultHint(
-                  icon: Icons.search_off,
-                  title: '暂无数据',
-                  hint: '该周期范围内没有评分记录',
-                )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxWidth: RankingMetrics.contentMaxWidth,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          RankingListHeader(title: _showGroup ? '小组' : '学生'),
-                          for (var i = 0; i < rankedEntries.length; i++) ...[
-                            if (i > 0)
-                              SizedBox(
-                                height: scoreProvider.mergeSameRank
-                                    ? RankingMetrics.rankGroupSpacing
-                                    : RankingMetrics.rowSpacing,
+              : LoadableContent(
+                  loading: isLoading,
+                  hasLoadedOnce: hasLoadedOnce,
+                  loadingLabel: '正在统计…',
+                  child: rankedEntries.isEmpty
+                      ? const _ResultHint(
+                          icon: Icons.search_off,
+                          title: '暂无数据',
+                          hint: '该周期范围内没有评分记录',
+                        )
+                      : SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(
+                                maxWidth: RankingMetrics.contentMaxWidth,
                               ),
-                            RankingGroup(
-                              children: [
-                                for (final row in rankedEntries[i].rows)
-                                  _buildResultTile(rankedEntries[i].rank, row),
-                              ],
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  RankingListHeader(
+                                    title: _showGroup ? '小组' : '学生',
+                                  ),
+                                  for (
+                                    var i = 0;
+                                    i < rankedEntries.length;
+                                    i++
+                                  ) ...[
+                                    if (i > 0)
+                                      SizedBox(
+                                        height: scoreProvider.mergeSameRank
+                                            ? RankingMetrics.rankGroupSpacing
+                                            : RankingMetrics.rowSpacing,
+                                      ),
+                                    RankingGroup(
+                                      children: [
+                                        for (final row
+                                            in rankedEntries[i].rows)
+                                          _buildResultTile(
+                                            rankedEntries[i].rank,
+                                            row,
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
                             ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
+                          ),
+                        ),
                 ),
         ),
       ],

@@ -10,41 +10,68 @@ import 'settings_common.dart';
 void showWriteKeyDialog(BuildContext context) {
   String? selectedDrive;
   String label = '';
+  // 驱动器枚举只发起一次。
+  //
+  // 以前 future 写在 FutureBuilder 的参数里，而它位于 StatefulBuilder 内部：
+  // 每次 setDialogState（例如选下拉框、输入名称）都会重新枚举一遍驱动器，
+  // 同时把「加载中」和「未检测到 U 盘」混为同一种显示。
+  final drivesFuture = context.read<AuthProvider>().getAvailableUsbDrives();
 
   showDialog(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setDialogState) {
         return FutureBuilder<List<String>>(
-          future: context.read<AuthProvider>().getAvailableUsbDrives(),
+          future: drivesFuture,
           builder: (ctx, snapshot) {
-            final drives = snapshot.data ?? [];
+            final loading =
+                snapshot.connectionState == ConnectionState.waiting;
+            final drives = snapshot.data ?? const <String>[];
             return AlertDialog(
               title: const Text('写入密钥到 U 盘'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  GlassDropdownField<String>(
-                    initialValue: selectedDrive,
-                    decoration: const InputDecoration(
-                      labelText: '选择 U 盘驱动器',
-                      border: OutlineInputBorder(),
+                  if (loading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2.4),
+                          ),
+                          SizedBox(width: 10),
+                          Text('正在检测 U 盘…'),
+                        ],
+                      ),
+                    )
+                  else
+                    GlassDropdownField<String>(
+                      initialValue: selectedDrive,
+                      decoration: const InputDecoration(
+                        labelText: '选择 U 盘驱动器',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: drives.isEmpty
+                          ? [
+                              const DropdownMenuItem(
+                                value: null,
+                                child: Text('未检测到 U 盘'),
+                              ),
+                            ]
+                          : drives
+                                .map(
+                                  (d) => DropdownMenuItem(
+                                    value: d,
+                                    child: Text(d),
+                                  ),
+                                )
+                                .toList(),
+                      onChanged: (v) =>
+                          setDialogState(() => selectedDrive = v),
                     ),
-                    items: drives.isEmpty
-                        ? [
-                            const DropdownMenuItem(
-                              value: null,
-                              child: Text('未检测到 U 盘'),
-                            ),
-                          ]
-                        : drives
-                              .map(
-                                (d) =>
-                                    DropdownMenuItem(value: d, child: Text(d)),
-                              )
-                              .toList(),
-                    onChanged: (v) => setDialogState(() => selectedDrive = v),
-                  ),
                   const SizedBox(height: 12),
                   GlassInput(
                     label: '密钥名称（可选）',

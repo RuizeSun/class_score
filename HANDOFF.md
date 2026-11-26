@@ -3,12 +3,23 @@
 ## 元信息
 
 - 生成时间：2026-09-26（2026-09-30：P0 性能修复）
-- commit：1.6.3 = 本地待发（修 Gitee 镜像 + 补跑入口）；1.6.2 = 8591727（已 push、
-  GitHub 已发版，**Gitee 镜像失败**，见下方 PowerShell 插值坑）；
-  1.6.1 = 942c675（已 push、已发版）；1.5.1 = 04e18ba
-- last_verified：2026-11-26 1.6.3 筹备中（`fvm flutter test` 236 全过、
-  `fvm flutter analyze` 62 条既有 info / warning、无 error；`build windows --release` 通过）。
-  本轮内容：修 `mirror-to-gitee.ps1` 的 refspec 插值 bug（`$tag:` → `${tag}`）、
+- commit：1.6.4 = 本地待发（计算与 UI 分离，见下）；1.6.3 = 5e60676（已 push、
+  已发版）；1.6.2 = 8591727（已 push、已发版）；1.6.1 = 942c675；1.5.1 = 04e18ba
+- last_verified：2026-11-27 1.6.4 筹备中（`fvm flutter test` 253 全过、
+  `fvm flutter analyze` 55 条既有 info / 5 条既有 warning、无 error；
+  `build windows --release` 通过）。
+  本轮内容：**计算与 UI 分离（消除掉帧）** —— 重活搬进后台 isolate
+  （新增 `lib/services/heavy_compute.dart`）、新增统一加载态
+  （`lib/widgets/loading_state.dart`）并接入各页面、Tab 页 KeepAlive、
+  订阅收敛（`context.select`）、桌面胶囊热路径优化、
+  设置项批量读（`getSettings`）。
+  **备份分层修正**：只有纯新增走 `scheduleBackup`，会丢旧数据的操作（删学生 /
+  删小组 / 删评分项 / 删记录 / 切周期 / 恢复归档）恢复为 `await createBackup(force: true)`，
+  并新增退出前 `flushPendingBackup`（1.6.3 那版曾把全部写入都改成延后备份，
+  等于删完才备份——已修）。花名册 CSV 改 `shouldParseNumbers: false` 保住学号前导零。
+  测试从 236 → 253（新增 `heavy_compute_test` / `backup_schedule_test` /
+  `backup_flush_test`）。详见下方「计算与 UI 分离」红线。
+  上一轮 1.6.3（5e60676）：修 `mirror-to-gitee.ps1` 的 refspec 插值 bug（`$tag:` → `${tag}`）、
   去掉掩盖失败的 `continue-on-error`、Release 创建改 query 传 token、
   StrictMode 下属性访问改防御式、新增 `workflow_dispatch` 手动补跑入口。
   上一轮 1.6.2：检查更新改为 Gitee/GitHub 多源回退，CI 新增 Gitee 镜像
@@ -34,7 +45,7 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
 - lib/services/ — 窗口/托盘/天气/备份/导入等服务
 - lib/widgets/ — 通用组件 + desktop_schedule/ 浮窗 UI
 - windows/runner/ — 原生 C++（desktop_bar_channel.cpp、desktop_ball_window.cpp、tray_icon.cpp、app_quit.cpp）
-- test/ — 224 个测试（含 backup_service / database_recovery / database_helper 的 DB 用例，用 DatabaseHelper.dbDirOverride 指到临时目录）；.github/workflows/flutter.yml — CI（Flutter 版本已钉死 3.47.9）
+- test/ — 249 个测试（含 backup_service / database_recovery / database_helper 的 DB 用例，用 DatabaseHelper.dbDirOverride 指到临时目录；heavy_compute / backup_schedule 验证 isolate 与延后备份）；.github/workflows/flutter.yml — CI（Flutter 版本已钉死 3.47.9）
 
 ## 核心链路
 
@@ -117,6 +128,60 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
   （2026-11-26）：本页只依赖「周期 + 允许分值范围规则」（`_ScorePageRules`），
   而 ScoreProvider 每次增删改都 notify。watch 整个 Provider 会让整张评分页
   （全班学生卡 + 十几个玻璃控件）每记一分重建一次。
+
+### 计算与 UI 分离（2026-11-26，勿回退）
+
+前提：`sqflite_common_ffi` 的 SQL **默认已在后台 isolate**（`isolate.dart` 里
+`Isolate.spawn`），所以「SQL 查询阻塞渲染」不是主因。真正卡主 isolate 的是下面这些。
+
+- **重活一律走 `lib/services/heavy_compute.dart`**（`compute()` 顶层函数）：
+  Excel 解码（`decodeWorkbook`，只返字符串表格，列名识别留在调用侧）、
+  CSV 解析（`parseCsv`）、整库 JSON 编解码（`encodeJsonPretty` / `decodeJson`）、
+  导出 CSV 拼接（`buildScoresCsv`）、大文件 sha256（`fileSha256`）。
+  **不要**在 UI isolate 上再写 `readAsBytesSync` + `Excel.decodeBytes`、
+  整库 `JsonEncoder.withIndent`、`sha256.bind(file.openRead())`。
+  各入口都有「小数据直通」阈值，单条 SQL 这种毫秒级操作**不要**走这里
+  （isolate fork 比省下的时间更贵）。
+- **备份分层（1.6.4 踩过坑，不要统一改成 scheduleBackup）**：老实现每次写都
+  `await createBackup()`——快照总在写入**之前**。改成延后调度后，删除类操作的
+  唯一备份会变成「已经删完」的库，安全网就没了。
+  - **纯新增、不丢旧数据**（记分 / 新增分组与评分项 / 改规则与初始分 / 补记录原因）
+    → `scheduleBackup()`：`VACUUM INTO` 是整库重写，若排在评分提交后的重载查询
+    之前就是「点完确认先冻一下」。它延后 `scheduledDelay` 再跑，**不依赖
+    addPostFrameCallback**（窗口闲置时可能长时间不调度帧，备份会被无限拖延）。
+  - **会丢 / 会改旧数据** → `await createBackup(force: true)`：删学生、删小组
+    （连带删组内学生）、删评分项、删记录进回收站、永久删回收站、切换评分周期
+    （清目标周期记录）、恢复归档。必须**先有快照再动手**。
+  - **普通修改**（改学生 / 分组 / 评分项、改记录分值与原因）→ `await createBackup()`
+    （走节流，够用且不卡）。
+  - **退出前要 flush**：`AppShellService.quitApplication` 先
+    `await BackupService.instance.flushPendingBackup()`（上限 3s）再 `exit(0)`。
+    延后队列里的快照留给进程结束，就会随 `exit(0)` 一起丢掉。
+- **`exportToJson` / `importFromJson` 的编码解码不在主 isolate**：`db.query` 结果
+  是纯 Map/List，可直接跨 isolate。
+- **设置项批量读**：`DatabaseHelper.getSettings(keys)` 一次 `IN` 查询。启动路径
+  （`ScoreProvider.init` / `loadScoreConfig` / `DesktopScheduleProvider.init` /
+  `_getScoreConfig`）**不要**改回逐个 `getSetting` 串行往返。
+- **不确定进度条不要常驻**：`LinearProgressIndicator` 没有 `value` 时会永久调度
+  动画帧，把它透明度调成 0 也照跑。`widgets/loading_state.dart` 的
+  `InlineLoadingBar` 因此在不加载时**完全不构建**它。
+- **加载态统一用 `widgets/loading_state.dart`**：`PageLoadingView`（首次加载）/
+  `InlineLoadingBar`（刷新时保留内容）/ `runBusy`（一次性操作的模态遮罩）/
+  `LoadableStateMixin` + `LoadableContent`（loading / hasLoadedOnce / generation）。
+  加载中与「真的没有数据」必须是两种不同呈现（以前慢查询显示「暂无评分记录」）。
+- **Tab 页要 `AutomaticKeepAliveClientMixin`**（`wantKeepAlive => true`，并在
+  `build` 里 `super.build(context)`）：`home_page.dart` 的 4 个 Tab 在 PageView 里，
+  否则离屏即销毁，切回重跑十几条查询（「切过去先空白再填内容」）。
+- **订阅收敛**：统计报表用 `context.select` 只取两份榜单 + 名次规则；记录管理只取
+  `recordsWithName`。**不要**在列表的 `map` 里 `context.watch`（`analysis_page`
+  曾把 `watch<AuthProvider>()` 写在 100 个 tile 的回调里 = 100 个订阅）。
+- **桌面条热路径**：`main.dart` 的 `_syncDesktopBar` 只读 `_appOnScreen` **缓存**，
+  通道探测只在窗口事件 / 15s 看门狗里做（以前倒计时阶段每秒两次通道往返）；
+  `DesktopBarLog` 保持 `flush: true`（崩溃现场最后几行不能丢，`flushEveryWrite` 开关已废弃）；
+  `DesktopScheduleProvider._recompute` 复用 `_timelineFor` 缓存的当天时间线
+  （`buildTimeline` 不再逐秒重排）；`updateSchedules` 要显式清 `_cachedSlots`。
+- **榜单 / 记录列表懒加载**：`RecordManagementView` 已是 `ListView.builder`；
+  `RankingGroup` 与仪表盘饼图已包 `RepaintBoundary`。
 
 ## 稳定性和数据安全红线（2026-11-23 修，勿回退）
 

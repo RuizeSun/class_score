@@ -22,8 +22,8 @@ class DashboardPage extends StatefulWidget {
   State<DashboardPage> createState() => _DashboardPageState();
 }
 
-class _DashboardPageState extends State<DashboardPage> {
-  List<Map<String, dynamic>> _todayScores = [];
+class _DashboardPageState extends State<DashboardPage>
+    with AutomaticKeepAliveClientMixin<DashboardPage> {
   List<Map<String, dynamic>> _todaySchedules = [];
   List<Map<String, dynamic>> _recentRecords = [];
   List<Map<String, dynamic>> _groupRanking = [];
@@ -32,6 +32,13 @@ class _DashboardPageState extends State<DashboardPage> {
 
   /// 今日调休说明（如「调休：按周三课表」），无调休时为 null。
   String? _todayAdjustmentLabel;
+
+  /// 今日总加分 / 总扣分：在 [_loadDashboardData] 里一次算好。
+  ///
+  /// 以前在 `build` 里用两次 `where+fold` 现算，等于每次重建（记分、悬停、
+  /// 任何 setState）都把今日记录重新遍历一遍。
+  double _totalPositive = 0;
+  double _totalNegative = 0;
 
   /// 最近一次加载所用的今日生效星期，用于只在调休变化时重新加载课表。
   int? _loadedEffectiveWeekday;
@@ -221,15 +228,29 @@ class _DashboardPageState extends State<DashboardPage> {
 
       // 一次性写进 UI：以前这里分了 5 次 setState，每轮查询都要重建一次整页
       // （并发保护同样在写之前再确认一次）。
+      //
+      // 今日总分也在这里算好：原来放在 build 里做两次 where+fold，等于每次重建
+      // （含每次记分、每次悬停）都重新遍历一遍今日记录。
+      final totalPositive = todayRecords
+          .where((r) => (r['score'] as num).toDouble() > 0)
+          .fold<double>(0, (sum, r) => sum + (r['score'] as num).toDouble());
+      final totalNegative = todayRecords
+          .where((r) => (r['score'] as num).toDouble() < 0)
+          .fold<double>(
+            0,
+            (sum, r) => sum + (r['score'] as num).toDouble().abs(),
+          );
+
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _todaySchedules = todaySchedules;
         _todayAdjustmentLabel = adjustmentLabel;
-        _todayScores = todayRecords;
         _recentRecords = recentRecords;
         _groupRanking = filteredGroupRanking;
         _positiveDistribution = positiveData;
         _negativeDistribution = negativeData;
+        _totalPositive = totalPositive;
+        _totalNegative = totalNegative;
         _loading = false;
         _hasLoadedOnce = true;
       });
@@ -244,8 +265,16 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  /// 切走再切回本 Tab 时保留 State。
+  ///
+  /// 仪表盘在 PageView 里，默认离开视口就会被销毁，切回来 initState 重跑
+  /// 六条查询——用户感受到的就是「切回主页先空白一下再填内容」。
+  @override
+  bool get wantKeepAlive => true;
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     // 仅首次加载显示进度指示：之后的数据刷新保留已有内容，避免整屏闪烁
     final showInitialLoading = _loading && !_hasLoadedOnce;
 
@@ -261,17 +290,6 @@ class _DashboardPageState extends State<DashboardPage> {
 
   /// 加载完成后的仪表盘内容：卡片网格。
   Widget _buildLoadedView(BuildContext context) {
-    // 计算今日总分
-    final totalPositive = _todayScores
-        .where((r) => (r['score'] as num).toDouble() > 0)
-        .fold<double>(0, (sum, r) => sum + ((r['score'] as num).toDouble()));
-    final totalNegative = _todayScores
-        .where((r) => (r['score'] as num).toDouble() < 0)
-        .fold<double>(
-          0,
-          (sum, r) => sum + ((r['score'] as num).toDouble().abs()),
-        );
-
     final now = DateTime.now();
     final weekDays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
     final weekDayName = weekDays[now.weekday - 1];
@@ -308,8 +326,8 @@ class _DashboardPageState extends State<DashboardPage> {
                       );
                     case 2:
                       return _TotalScoresCard(
-                        positive: totalPositive,
-                        negative: totalNegative,
+                        positive: _totalPositive,
+                        negative: _totalNegative,
                       );
                     case 3:
                       return _GroupRankingCard(ranking: _groupRanking);
@@ -782,16 +800,20 @@ class _PieChartCard extends StatelessWidget {
                   flex: 4,
                   child: AspectRatio(
                     aspectRatio: 1,
-                    child: PieChart(
-                      PieChartData(
-                        sections: _buildPieSections(),
-                        centerSpaceRadius: 20, // 缩小中心圆半径以适应紧凑空间
-                        sectionsSpace: 0.5,
-                        borderData: FlBorderData(show: false),
+                    // 每次记分仪表盘都会整页重建；饼图是这一页最贵的绘制单元，
+                    // 单独封一层 RepaintBoundary，其它卡片重绘时不连带重算它。
+                    child: RepaintBoundary(
+                      child: PieChart(
+                        PieChartData(
+                          sections: _buildPieSections(),
+                          centerSpaceRadius: 20, // 缩小中心圆半径以适应紧凑空间
+                          sectionsSpace: 0.5,
+                          borderData: FlBorderData(show: false),
+                        ),
+                        // 数据切换走图表自带的补间动画，与应用其它过渡同一节奏
+                        duration: AppMotion.medium,
+                        curve: AppMotion.curve,
                       ),
-                      // 数据切换走图表自带的补间动画，与应用其它过渡同一节奏
-                      duration: AppMotion.medium,
-                      curve: AppMotion.curve,
                     ),
                   ),
                 ),

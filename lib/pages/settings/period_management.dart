@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/score_provider.dart';
 import '../../widgets/glass_buttons.dart';
+import '../../widgets/loading_state.dart';
 import 'settings_common.dart';
 
 class PeriodManagementView extends StatelessWidget {
@@ -30,7 +31,12 @@ class PeriodManagementView extends StatelessWidget {
     );
 
     if (confirmed == true) {
-      await context.read<ScoreProvider>().switchToNextPeriod();
+      if (!context.mounted) return;
+      await runBusy(
+        context,
+        () => context.read<ScoreProvider>().switchToNextPeriod(),
+        message: '正在切换周期…',
+      );
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -62,7 +68,12 @@ class PeriodManagementView extends StatelessWidget {
     );
 
     if (confirmed == true) {
-      await context.read<ScoreProvider>().switchToPreviousPeriod();
+      if (!context.mounted) return;
+      await runBusy(
+        context,
+        () => context.read<ScoreProvider>().switchToPreviousPeriod(),
+        message: '正在切换周期…',
+      );
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

@@ -418,7 +418,15 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
     try {
       // 球此刻是否在屏上要在推内容之前算好：它同时决定胶囊的让位（球藏起来时
       // 让位归零，胶囊才真正居中），内容与球必须在同一拍里用同一个结果。
-      await _refreshBallOnScreen();
+      //
+      // 这里**只读缓存**：`isVisible()` / `isMinimized()` 是两次平台通道往返，
+      // 以前每秒推送都查一遍（倒计时阶段就是每秒两次通道往返）。真正的刷新
+      // 发生在窗口事件（show / hide / minimize / restore）、15 秒看门狗，
+      // 以及球外观签名变化时——那些才是「在屏上与否」可能改变的时刻。
+      _ballShown = shouldShowDesktopBall(
+        ballEnabled: true,
+        onScreen: _appOnScreen,
+      );
       do {
         _barSyncPending = false;
         if (!desktop.enabled) {
@@ -580,11 +588,13 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
 
   /// 窗口事件驱动的即时同步（低频的看门狗只作兜底）。
   ///
-  /// 走整条 [_syncDesktopBar]：球的显隐一变，胶囊的让位（是否居中）也要跟着
-  /// 变，两者必须同拍下发。
-  void _syncBallNow() {
+  /// 窗口事件是「在屏上与否」真正可能改变的时刻，所以这里先刷新一次探测值
+  /// （两次通道往返），再走整条 [_syncDesktopBar]：球的显隐一变，胶囊的让位
+  /// （是否居中）也要跟着变，两者必须同拍下发。
+  Future<void> _syncBallNow() async {
     if (_desktop == null) return;
-    unawaited(_syncDesktopBar());
+    await _refreshBallOnScreen();
+    await _syncDesktopBar();
   }
 
   /// 球显隐的兜底复查（见 [_ballWatchdogInterval]）。
@@ -602,16 +612,16 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
   }
 
   @override
-  void onWindowMinimize() => _syncBallNow();
+  void onWindowMinimize() => unawaited(_syncBallNow());
 
   @override
-  void onWindowRestore() => _syncBallNow();
+  void onWindowRestore() => unawaited(_syncBallNow());
 
   @override
   void onWindowEvent(String eventName) {
     // 只有影响「窗口是否在屏上」的事件需要同步；move / resize 之类的高频事件
     // 交给低频的球显隐看门狗兜底，不在这里反复查窗口状态。
-    if (eventName == 'show' || eventName == 'hide') _syncBallNow();
+    if (eventName == 'show' || eventName == 'hide') unawaited(_syncBallNow());
   }
 
   @override

@@ -1,7 +1,6 @@
 import 'dart:io';
-import 'package:csv/csv.dart';
-import 'package:excel/excel.dart' as excel_lib;
 import 'package:file_picker/file_picker.dart';
+import 'heavy_compute.dart';
 import 'import_service.dart';
 
 /// 导入的单条课程安排
@@ -130,11 +129,9 @@ class ScheduleImportService {
     }
 
     try {
-      // 统一换行符，兼容 Windows(\r\n) 与 Unix(\n)
+      // 统一换行符，兼容 Windows(\r\n) 与 Unix(\n)；解析交给后台 isolate
       final normalized = contents.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-      final List<List<dynamic>> rows = CsvToListConverter(
-        eol: '\n',
-      ).convert(normalized);
+      final rows = await HeavyCompute.parseCsv(normalized);
 
       if (rows.isEmpty) {
         errorLogs.add('CSV文件为空');
@@ -170,32 +167,24 @@ class ScheduleImportService {
     final List<ImportedSchedule> schedules = [];
 
     try {
-      final bytes = File(filePath).readAsBytesSync();
-      final excel = excel_lib.Excel.decodeBytes(bytes);
+      // 读取 + 解压解析全在后台 isolate（xlsx = zip + XML，同步解析会卡主 isolate）
+      final bytes = await File(filePath).readAsBytes();
+      final tables = await HeavyCompute.decodeWorkbook(bytes);
 
       bool foundSheet = false;
 
-      for (final sheet in excel.tables.keys) {
-        final table = excel.tables[sheet]!;
-        if (table.rows.isEmpty) continue;
+      for (final sheet in tables.keys) {
+        final rows = tables[sheet]!;
+        if (rows.isEmpty) continue;
 
-        final headers = _parseHeaders(
-          table.rows[0].map((cell) => _cellToString(cell) ?? '').toList(),
-        );
+        final headers = _parseHeaders(rows[0]);
         final columns = _resolveColumns(headers);
         if (columns == null) continue;
 
         foundSheet = true;
 
-        for (int i = 1; i < table.rows.length; i++) {
-          _appendRow(
-            table.rows[i],
-            columns,
-            i + 1,
-            'Sheet "$sheet"',
-            schedules,
-            errorLogs,
-          );
+        for (int i = 1; i < rows.length; i++) {
+          _appendRow(rows[i], columns, i + 1, 'Sheet "$sheet"', schedules, errorLogs);
         }
       }
 
@@ -308,7 +297,7 @@ class ScheduleImportService {
   // ---- 内部辅助 ----
 
   static void _appendRow(
-    List<dynamic> row,
+    List<String> row,
     _ScheduleColumns columns,
     int lineNumber,
     String source,
@@ -317,7 +306,7 @@ class ScheduleImportService {
   ) {
     String cellAt(int index) {
       if (index < 0 || index >= row.length) return '';
-      return (_cellToString(row[index]) ?? '').trim();
+      return row[index].trim();
     }
 
     final weekdayRaw = cellAt(columns.weekday);
@@ -422,12 +411,8 @@ class ScheduleImportService {
 
 
   /// 解析表头，去除空白
-  static List<String> _parseHeaders(List<dynamic> row) {
-    return row.map((cell) {
-      if (cell is String) return cell.trim();
-      if (cell is num) return cell.toString();
-      return '';
-    }).toList();
+  static List<String> _parseHeaders(List<String> row) {
+    return row.map((cell) => cell.trim()).toList();
   }
 
   /// 查找列索引（先精确匹配，再包含匹配）
@@ -448,21 +433,6 @@ class ScheduleImportService {
       }
     }
     return -1;
-  }
-
-  /// 将单元格值转为字符串（兼容 CSV 原始值与 Excel CellValue）
-  static String? _cellToString(dynamic cell) {
-    if (cell == null) return null;
-    if (cell is String) return cell;
-    if (cell is num) return cell.toString();
-    if (cell is bool) return cell.toString();
-    try {
-      final value = cell.value; // Excel CellValue
-      if (value == null) return null;
-      return value.toString();
-    } catch (_) {
-      return cell.toString();
-    }
   }
 }
 

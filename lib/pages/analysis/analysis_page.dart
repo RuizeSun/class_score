@@ -8,6 +8,7 @@ import '../../providers/group_provider.dart';
 import '../../providers/score_item_provider.dart';
 import '../../providers/score_provider.dart';
 import '../../widgets/glass_controls.dart';
+import '../../widgets/loading_state.dart';
 import '../../widgets/motion.dart';
 import '../../widgets/score_record_tile.dart';
 import '../../widgets/student_name_text.dart';
@@ -34,7 +35,8 @@ class AnalysisView extends StatefulWidget {
   State<AnalysisView> createState() => _AnalysisViewState();
 }
 
-class _AnalysisViewState extends State<AnalysisView> {
+class _AnalysisViewState extends State<AnalysisView>
+    with LoadableStateMixin<AnalysisView> {
   // 目标类型切换：学生/小组
   late String _targetType; // 'student' | 'group'
 
@@ -52,15 +54,9 @@ class _AnalysisViewState extends State<AnalysisView> {
   List<Map<String, dynamic>> _records = [];
   List<Map<String, dynamic>> _distribution = [];
   Map<String, dynamic> _dailyAverages = {};
-  // 初始即为加载中：首帧直接显示进度指示，避免先闪一下空图表
-  bool _loading = true;
 
-  /// 是否已完成过一次加载。
-  ///
-  /// 用于区分「首次加载」与「切换筛选时的刷新」：首次加载显示进度指示并淡入
-  /// 内容；之后的刷新保留已有图表，由 fl_chart 的补间动画平滑过渡，
-  /// 不再每次切筛选都整屏闪烁。
-  bool _hasLoadedOnce = false;
+  // 加载态（isLoading / hasLoadedOnce）由 LoadableStateMixin 提供：
+  // 首次加载显示进度指示，之后切筛选保留已有图表、只在顶部显示细进度条。
 
   String? _startDate;
   String? _endDate;
@@ -75,6 +71,8 @@ class _AnalysisViewState extends State<AnalysisView> {
     } else {
       _filterStudentId = widget.initialTargetId;
     }
+    // 首帧就置为加载中：直接渲染进度指示，避免先闪一下空图表。
+    beginLoad();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<StudentProvider>().loadStudents();
       context.read<GroupProvider>().loadGroups();
@@ -108,7 +106,8 @@ class _AnalysisViewState extends State<AnalysisView> {
   }
 
   Future<void> _loadData() async {
-    setState(() => _loading = true);
+    final token = beginLoad();
+    setState(() {});
     _updateTimeRange();
 
     final db = DatabaseHelper.instance;
@@ -154,25 +153,20 @@ class _AnalysisViewState extends State<AnalysisView> {
       excludeNotInGroupTotal: excludeNotInGroupTotal,
     );
 
-    if (!mounted) return;
-    setState(() {
-      _loading = false;
-      _hasLoadedOnce = true;
-    });
+    if (!mounted || !isLatest(token)) return;
+    endLoad();
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    // 仅首次加载显示进度指示；后续刷新保留已有图表，避免整屏闪烁
-    final showInitialLoading = _loading && !_hasLoadedOnce;
-
-    // 首次加载与图表内容交叉淡入淡出，替代过去的硬切
-    return FadeThroughSwitcher(
-      expand: true,
-      switchKey: showInitialLoading ? 'loading' : 'content',
-      child: showInitialLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _buildLoadedView(context),
+    // 仅首次加载显示进度指示；后续筛选切换保留已有图表，只在顶部显示细进度条。
+    // 以前每次切筛选都整屏转圈，图表闪一下再回来，观感比等待本身更卡。
+    return LoadableContent(
+      loading: isLoading,
+      hasLoadedOnce: hasLoadedOnce,
+      loadingLabel: '正在统计数据…',
+      child: _buildLoadedView(context),
     );
   }
 
@@ -180,6 +174,12 @@ class _AnalysisViewState extends State<AnalysisView> {
   Widget _buildLoadedView(BuildContext context) {
     final students = context.watch<StudentProvider>().students;
     final groups = context.watch<GroupProvider>().groups;
+    // 解锁态只取一次。
+    //
+    // 以前 `context.watch<AuthProvider>()` 写在「评分变动记录」的 map 里，
+    // 每条记录订阅一次——100 条就是 100 个订阅，AuthProvider 每 10 秒轮询一次
+    // 状态就重建 100 个 tile。
+    final isUnlocked = context.watch<AuthProvider>().isUnlocked;
 
     return Column(
       children: [
@@ -599,7 +599,7 @@ class _AnalysisViewState extends State<AnalysisView> {
                       .map(
                         (r) => ScoreRecordTile(
                           record: r,
-                          isUnlocked: context.watch<AuthProvider>().isUnlocked,
+                          isUnlocked: isUnlocked,
                           onMutated: _loadData,
                         ),
                       )),

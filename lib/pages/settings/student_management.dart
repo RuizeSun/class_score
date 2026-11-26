@@ -7,6 +7,7 @@ import '../../providers/group_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
+import '../../widgets/loading_state.dart';
 import '../../widgets/glass_inputs.dart';
 import '../../widgets/student_name_text.dart';
 import 'settings_common.dart';
@@ -211,9 +212,14 @@ class _StudentManagementViewState extends State<StudentManagementView> {
             onPressed: () async {
               Navigator.pop(ctx);
               final provider = context.read<StudentProvider>();
+              if (!context.mounted) return;
               // 一次备份 + 一条 SQL 删完 + 一次重载（逐条删会成倍放大开销）
               final ids = _selectedStudentIds.toList();
-              await provider.deleteStudents(ids);
+              await runBusy(
+                context,
+                () => provider.deleteStudents(ids),
+                message: '正在删除学生…',
+              );
               if (context.mounted) {
                 _clearSelection();
                 ScaffoldMessenger.of(context).showSnackBar(

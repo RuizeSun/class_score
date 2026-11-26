@@ -3,11 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
-import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'backup_service.dart';
+import 'heavy_compute.dart';
 
 /// 更新包 / 版本信息的来源站点。
 enum UpdateProvider {
@@ -435,10 +435,11 @@ class UpdateService {
   }
 
   /// 计算本地文件 sha256（十六进制小写）。
-  static Future<String> _sha256OfFile(File file) async {
-    final digest = await sha256.bind(file.openRead()).first;
-    return digest.toString();
-  }
+  ///
+  /// 走后台 isolate：安装包十几兆，流式哈希在主 isolate 上也会让下载完成后的
+  /// 那一帧明显卡顿。
+  static Future<String> _sha256OfFile(File file) =>
+      HeavyCompute.fileSha256(file.path);
 
   /// 解析 GitHub latest release 接口响应。解析失败返回 null。
   static Future<UpdateCheckResult?> parseLatestReleaseJson(

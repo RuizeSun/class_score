@@ -13,6 +13,7 @@ import '../../providers/auth_provider.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
 import '../../widgets/glass_inputs.dart';
+import '../../widgets/loading_state.dart';
 import '../../widgets/student_name_text.dart';
 import 'ai_roster/ai_roster_capture_page.dart';
 
@@ -28,7 +29,8 @@ class ScoreInputPage extends StatefulWidget {
   State<ScoreInputPage> createState() => _ScoreInputPageState();
 }
 
-class _ScoreInputPageState extends State<ScoreInputPage> {
+class _ScoreInputPageState extends State<ScoreInputPage>
+    with AutomaticKeepAliveClientMixin<ScoreInputPage> {
   final _scoreController = TextEditingController();
   final _reasonController = TextEditingController();
   final _customNameController = TextEditingController();
@@ -65,20 +67,37 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<GroupProvider>().loadGroups();
-      context.read<StudentProvider>().loadStudents();
-      context.read<ScoreItemProvider>().loadItems();
-      context.read<ScoreProvider>().loadRecords(targetType: 'student');
-      // 加载计分规则（含允许分值范围），并据此初始化快速评分状态
-      context.read<ScoreProvider>().loadScoreConfig().then((_) {
-        if (!mounted) return;
-        setState(() {
-          _quickMode = context.read<ScoreProvider>().defaultQuickScoring;
-          _quickScore = _clampQuickScore(_quickScore);
-        });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrap());
+  }
+
+  /// 首次进入本页需要加载 4 类数据（小组 / 学生 / 评分项 / 记录与规则）。
+  ///
+  /// 以前这些加载没有任何占位：页面先渲染成一张空名单，几拍之后学生卡片才
+  /// 突然出现——看起来像「点了评分页卡了一下」。现在加载期间在名单区域显示
+  /// 进度指示，数据到位后再淡入。
+  bool _bootstrapping = true;
+
+  Future<void> _bootstrap() async {
+    final groupProvider = context.read<GroupProvider>();
+    final studentProvider = context.read<StudentProvider>();
+    final itemProvider = context.read<ScoreItemProvider>();
+    final scoreProvider = context.read<ScoreProvider>();
+    try {
+      await Future.wait([
+        groupProvider.loadGroups(),
+        studentProvider.loadStudents(),
+        itemProvider.loadItems(),
+        scoreProvider.loadRecords(targetType: 'student'),
+        scoreProvider.loadScoreConfig(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _quickMode = scoreProvider.defaultQuickScoring;
+        _quickScore = _clampQuickScore(_quickScore);
       });
-    });
+    } finally {
+      if (mounted) setState(() => _bootstrapping = false);
+    }
   }
 
   /// 计算学生卡片的统一宽度（按名单 + 可用宽度缓存）。
@@ -572,8 +591,16 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
     );
   }
 
+  /// 切走再切回本 Tab 时保留 State（含已选学生、输入框内容与卡片宽度缓存）。
+  ///
+  /// 默认 PageView 会销毁离屏页，切回来 initState 重跑 5 个加载 + 全班名单
+  /// 重新排版，用户感受到的是「切回评分页卡一下、选中的学生也没了」。
+  @override
+  bool get wantKeepAlive => true;
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final isUnlocked = context.watch<AuthProvider>().isUnlocked;
 
     if (!isUnlocked) {
@@ -739,6 +766,10 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                 ),
                 const SizedBox(height: 4),
                 const SizedBox(height: 4),
+                // 名单区：首次加载显示进度指示，学生卡片到位后淡入。
+                if (_bootstrapping)
+                  const PageLoadingView(label: '正在加载学生名单…', minHeight: 160)
+                else
                 // 根据容器宽度动态计算每行显示的学生数量
                 LayoutBuilder(
                   builder: (ctx, constraints) {

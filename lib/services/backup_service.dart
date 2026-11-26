@@ -1,7 +1,8 @@
-import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
+import 'heavy_compute.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart' show Database, OpenDatabaseOptions, databaseFactoryFfi;
 
@@ -35,6 +36,10 @@ class BackupThrottle {
 
   /// 记录一次真正开始的备份时刻。
   void markRun() => _lastRunAt = _clock();
+
+  /// 清除「上次备份时刻」（测试用：单例节流器状态会跨用例残留）。
+  @visibleForTesting
+  void resetForTest() => _lastRunAt = null;
 }
 
 class BackupService {
@@ -54,6 +59,16 @@ class BackupService {
 
   /// 正在进行的备份：并发调用等同一份结果，避免两次「快照 / 复制」交错。
   Future<String?>? _inFlight;
+
+  /// 已排进延后队列、尚未开始的备份（见 [scheduleBackup]）。
+  bool _scheduled = false;
+
+  /// 延后队列的定时器。必须持有句柄：退出程序时要能把这次备份**立刻补上**，
+  /// 否则「写完就退出」会连唯一一份快照一起丢掉。
+  Timer? _scheduledTimer;
+
+  /// [scheduleBackup] 的延后时长：让评分提交后的重载查询先跑完。
+  static const Duration scheduledDelay = Duration(milliseconds: 400);
 
   String get backupDir {
     return backupDirOverride ??
@@ -82,6 +97,64 @@ class BackupService {
     final future = _createBackup();
     _inFlight = future;
     return future.whenComplete(() => _inFlight = null);
+  }
+
+  /// 日常写入（记分 / 改规则 / 增删学生…）用的备份入口：**不阻塞调用方**。
+  ///
+  /// 为什么要延后而不是直接 `unawaited(createBackup())`：
+  /// 评分提交的顺序是「写记录 → 重载列表 → 重载统计」，三步都排在数据库那条连接
+  /// 上。`VACUUM INTO` 是整库重写，如果它抢在重载查询之前排队，用户看到的就是
+  /// 「点完确认，界面先冻一下再出结果」——这正是掉帧的主因。
+  /// 这里把备份推到下一帧之后、再延后 [scheduledDelay]，让重载查询先跑完；
+  /// 备份本身照常执行，只是不再挡在提交路径上。
+  ///
+  /// 节流与单飞语义与 [createBackup] 一致：一次排队期间再次调用只算一次。
+  /// 不做 `force`——真正需要「先有备份再动手」的破坏性操作请显式 await
+  /// [createBackup] `force: true`。
+  void scheduleBackup() {
+    if (_scheduled) return;
+    if (!_throttle.shouldRun()) return;
+    _scheduled = true;
+    // 只用一个定时器，**不依赖帧回调**。
+    //
+    // 提交评分时紧随其后还要跑「重载记录 + 重载统计」两批查询，它们都已经排在
+    // 数据库连接上；这里延后 [scheduledDelay] 就能保证那些查询先执行完，快照
+    // 排在它们之后。为什么不用 addPostFrameCallback：窗口闲置（没有动画、没有
+    // 交互）时 Flutter 不调度新帧，帧回调可能迟迟不触发，备份就被无限拖延了。
+    _scheduledTimer?.cancel();
+    _scheduledTimer = Timer(scheduledDelay, () {
+      _scheduledTimer = null;
+      _scheduled = false;
+      unawaited(createBackup());
+    });
+  }
+
+  /// 是否有备份还排着队（退出前判断要不要等它）。
+  bool get hasPendingBackup => _scheduledTimer != null;
+
+  /// 立刻执行排队中的备份（退出程序前调用），返回是否真的补了一次。
+  ///
+  /// 延后队列是为「不卡提交」设计的：如果把等待留到进程结束时，exit(0) 会
+  /// 连同这份快照一起丢掉。因此退出路径必须显式 flush 一次。
+  Future<bool> flushPendingBackup() async {
+    final timer = _scheduledTimer;
+    if (timer == null) return false;
+    timer.cancel();
+    _scheduledTimer = null;
+    _scheduled = false;
+    await createBackup(force: true);
+    return true;
+  }
+
+  /// 重置节流与排队状态（测试用：单例状态会跨用例残留）。
+  @visibleForTesting
+  void resetForTest() {
+    // 定时器也要撤掉：否则上一个用例排队的备份会落进下一个用例的目录，
+    // 让「延后时长过后备份真的出现」变成假通过。
+    _scheduledTimer?.cancel();
+    _scheduledTimer = null;
+    _throttle.resetForTest();
+    _scheduled = false;
   }
 
   Future<String?> _createBackup() async {
@@ -156,12 +229,23 @@ class BackupService {
     await ensureBackupDir();
     final dir = Directory(backupDir);
     final files = await dir.list().toList();
-    files.sort((a, b) {
-      final statA = a.statSync();
-      final statB = b.statSync();
-      return statB.modified.compareTo(statA.modified);
-    });
+    // 逐个 await 取修改时间，再排序。
+    //
+    // 旧实现在 sort 比较器里调 statSync()：一次排序会触发 O(n log n) 次同步
+    // 系统调用，全部阻塞在 UI isolate 上；备份文件多起来（上限 50 份）时
+    // 打开备份列表会明显顿一下。
+    final modified = <FileSystemEntity, DateTime>{};
+    for (final file in files) {
+      modified[file] = await _modifiedTime(file);
+    }
+    files.sort((a, b) => modified[b]!.compareTo(modified[a]!));
     return files;
+  }
+
+  /// 异步取实体修改时间（File 才有 `lastModified`，目录退化到 `stat`）。
+  static Future<DateTime> _modifiedTime(FileSystemEntity entity) async {
+    if (entity is File) return entity.lastModified();
+    return (await entity.stat()).modified;
   }
 
   /// Restore from a backup file.
@@ -286,11 +370,12 @@ class BackupService {
     if (!await dir.exists()) return;
 
     final files = await dir.list().toList();
-    files.sort((a, b) {
-      final statA = a.statSync();
-      final statB = b.statSync();
-      return statA.modified.compareTo(statB.modified);
-    });
+    // 同 listBackups：不在排序比较器里做同步 stat。
+    final modified = <FileSystemEntity, DateTime>{};
+    for (final file in files) {
+      modified[file] = await _modifiedTime(file);
+    }
+    files.sort((a, b) => modified[a]!.compareTo(modified[b]!));
 
     while (files.length > maxBackups) {
       await files.first.delete();
@@ -299,9 +384,13 @@ class BackupService {
   }
 
   // ---- JSON Export/Import ----
+  /// 导出整库为 JSON。
+  ///
+  /// 表数据从数据库读出来后，缩进美化编码放到后台 isolate：几万条记录的库
+  /// 光 `JsonEncoder.withIndent` 就能吃掉上百毫秒的主 isolate 时间。
   Future<String> exportToJson() async {
     final db = await DatabaseHelper.instance.database;
-    final data = {
+    final data = <String, Object?>{
       'groups': await db.query('groups'),
       'students': await db.query('students'),
       'score_records': await db.query('score_records'),
@@ -309,8 +398,7 @@ class BackupService {
       'schedule_adjustment': await db.query('schedule_adjustment'),
       'export_time': DateTime.now().toIso8601String(),
     };
-    final encoder = const JsonEncoder.withIndent('  ');
-    return encoder.convert(data);
+    return HeavyCompute.encodeJsonPretty(data);
   }
 
   /// 导入 JSON 快照。
@@ -320,7 +408,8 @@ class BackupService {
   /// 状态，用户看到的就是数据全没了。现在要么全部生效，要么原样保留。
   Future<bool> importFromJson(String jsonStr) async {
     try {
-      final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+      // 整库 JSON 的解码同样搬到后台 isolate。
+      final data = await HeavyCompute.decodeJson(jsonStr) as Map<String, dynamic>;
       final db = await DatabaseHelper.instance.database;
 
       // Backup first

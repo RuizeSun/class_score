@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:window_manager/window_manager.dart';
 
+import 'backup_service.dart';
 import 'desktop_bar_log.dart';
 import 'desktop_window_service.dart';
 import 'tray_service.dart';
@@ -46,6 +47,17 @@ class AppShellService {
   /// 原生通道不可用（测试环境 / 非 Windows）时兜底直接终止进程：托盘应用
   /// 绝不能出现「点退出没反应」。
   static Future<void> quitApplication() async {
+    // 退出前把排队中的整库快照补上：scheduleBackup 是延后的，
+    // 直接 exit(0) 会让「刚写完就退出」丢掉唯一一份备份。
+    try {
+      if (BackupService.instance.hasPendingBackup) {
+        await BackupService.instance
+            .flushPendingBackup()
+            .timeout(const Duration(seconds: 3));
+      }
+    } catch (error) {
+      await _log('退出前补备份失败：$error');
+    }
     try {
       await TrayService.quitNow().timeout(_nativeQuitTimeout);
     } catch (error) {

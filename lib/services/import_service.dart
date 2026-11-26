@@ -1,8 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
-import 'package:csv/csv.dart';
-import 'package:excel/excel.dart' as excel_lib;
 import 'package:file_picker/file_picker.dart';
+import 'heavy_compute.dart';
 
 /// 导入的学生数据
 class ImportedStudent {
@@ -169,13 +168,15 @@ class ImportService {
     }
 
     try {
-      List<List<dynamic>> rows = const CsvToListConverter().convert(contents);
+      // 解析本身可能耗时（大文件）：交给后台 isolate，窗口不再冻结。
+      // eol 传空串 = 与原来的 `const CsvToListConverter()` 完全一致
+      // （默认 \r\n + 自动识别），不要改成 '\n'。
+      final rows = await HeavyCompute.parseCsv(contents, eol: '');
 
       if (rows.isEmpty) {
         errorLogs.add('CSV文件为空');
         return students;
       }
-
       // 解析表头
       final headers = _parseHeaders(rows[0]);
       final nameIdx = _findColumnIndex(headers, ['姓名', 'name', '学生姓名', '名字']);
@@ -204,14 +205,11 @@ class ImportService {
         final row = rows[i];
 
         // 跳过空行
-        if (row.isEmpty ||
-            (row.length == 1 && (row[0] as String).trim().isEmpty)) {
+        if (row.isEmpty || (row.length == 1 && row[0].trim().isEmpty)) {
           continue;
         }
 
-        final name = nameIdx < row.length
-            ? (row[nameIdx] as String?)?.trim() ?? ''
-            : '';
+        final name = nameIdx < row.length ? row[nameIdx].trim() : '';
 
         if (name.isEmpty) {
           errorLogs.add('第 ${i + 1} 行：姓名为空，已跳过');
@@ -220,7 +218,7 @@ class ImportService {
 
         String? studentNumber;
         if (studentNumberIdx != -1 && studentNumberIdx < row.length) {
-          final sn = (row[studentNumberIdx] as String?)?.trim() ?? '';
+          final sn = row[studentNumberIdx].trim();
           if (sn.isNotEmpty) {
             studentNumber = sn;
           }
@@ -228,7 +226,7 @@ class ImportService {
 
         String? groupName;
         if (groupIdx != -1 && groupIdx < row.length) {
-          final gn = (row[groupIdx] as String?)?.trim() ?? '';
+          final gn = row[groupIdx].trim();
           if (gn.isNotEmpty) {
             groupName = gn;
           }
@@ -257,28 +255,23 @@ class ImportService {
     final List<ImportedStudent> students = [];
 
     try {
-      final bytes = File(filePath).readAsBytesSync();
-      final excel = excel_lib.Excel.decodeBytes(bytes);
+      // 读取 + 解压解析全在后台 isolate：xlsx 是 zip + XML，几百行的名单
+      // 同步解码就要吃掉百毫秒级的主 isolate 时间。
+      final bytes = await File(filePath).readAsBytes();
+      final tables = await HeavyCompute.decodeWorkbook(bytes);
 
       bool foundData = false;
 
       // 遍历所有sheet
-      for (final sheet in excel.tables.keys) {
-        final table = excel.tables[sheet]!;
-        if (table.rows.isEmpty) continue;
+      for (final sheet in tables.keys) {
+        final rows = tables[sheet]!;
+        if (rows.isEmpty) continue;
 
         // 解析表头
-        final headers = table.rows[0].map((cell) {
-          if (cell == null || cell.value == null) return '';
-          final raw = cell.value!;
-          // CellValue needs to be converted to String first
-          final strVal = raw.toString();
-          return strVal.trim();
-        }).toList();
+        final headers = rows[0].map((cell) => cell.trim()).toList();
 
         if (headers.isEmpty) continue;
 
-        // 确保所有header都是字符串
         final normalizedHeaders = headers.map((h) => h.toString()).toList();
 
         final nameIdx = _findColumnIndex(normalizedHeaders, [
@@ -305,14 +298,13 @@ class ImportService {
         if (nameIdx == -1) continue;
 
         // 从第二行开始解析数据
-        for (int i = 1; i < table.rows.length; i++) {
-          final row = table.rows[i];
+        for (int i = 1; i < rows.length; i++) {
+          final row = rows[i];
 
           // 跳过空行
           if (row.isEmpty) continue;
 
-          final nameCell = nameIdx < row.length ? row[nameIdx] : null;
-          final name = _cellToString(nameCell) ?? '';
+          final name = nameIdx < row.length ? row[nameIdx] : '';
 
           if (name.isEmpty) {
             errorLogs.add('Sheet "$sheet" 第 ${i + 1} 行：姓名为空，已跳过');
@@ -321,8 +313,7 @@ class ImportService {
 
           String? studentNumber;
           if (studentNumberIdx != -1 && studentNumberIdx < row.length) {
-            final snCell = row[studentNumberIdx];
-            final sn = _cellToString(snCell) ?? '';
+            final sn = row[studentNumberIdx];
             if (sn.isNotEmpty) {
               studentNumber = sn;
             }
@@ -330,8 +321,7 @@ class ImportService {
 
           String? groupName;
           if (groupIdx != -1 && groupIdx < row.length) {
-            final gnCell = row[groupIdx];
-            final gn = _cellToString(gnCell) ?? '';
+            final gn = row[groupIdx];
             if (gn.isNotEmpty) {
               groupName = gn;
             }
@@ -378,15 +368,5 @@ class ImportService {
       }
     }
     return -1;
-  }
-
-  /// 辅助方法：将单元格值转为字符串
-  static String? _cellToString(dynamic cell) {
-    if (cell == null) return null;
-    final value = cell.value;
-    if (value == null) return null;
-    if (value is String) return value;
-    if (value is num) return value.toString();
-    return value.toString();
   }
 }

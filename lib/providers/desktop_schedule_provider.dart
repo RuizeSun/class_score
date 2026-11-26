@@ -7,6 +7,7 @@ import '../database/database_helper.dart';
 import '../models/desktop_ball_style.dart';
 import '../models/desktop_bar_style.dart';
 import '../models/desktop_schedule_state.dart';
+import '../models/schedule_adjustment.dart';
 import '../models/weather_snapshot.dart';
 import '../services/schedule_timeline_service.dart';
 import '../services/weather_service.dart';
@@ -234,93 +235,110 @@ class DesktopScheduleProvider extends ChangeNotifier {
   /// 读取设置、恢复天气缓存并启动计时器；重复调用无副作用。
   Future<void> init() async {
     if (_isInitialized) return;
-    final settings = DatabaseHelper.instance;
 
-    _enabled = await _readBool(settings, _keyEnabled, fallback: false);
-    _position = _parsePosition(await settings.getSetting(_keyPosition));
-    _layer = _parseLayer(await settings.getSetting(_keyLayer));
-    _clickThrough = await _readBool(settings, _keyClickThrough, fallback: true);
-    _opacity = _parseDouble(await settings.getSetting(_keyOpacity), 0.92)
-        .clamp(0.3, 1.0);
-    _scale = _parseDouble(await settings.getSetting(_keyScale), 1.0).clamp(
-      0.8,
-      1.6,
-    );
-    _ballEnabled = await _readBool(settings, _keyBallEnabled, fallback: true);
-    _ballOffsetX = clampBallOffset(
-      _parseDouble(await settings.getSetting(_keyBallOffsetX), 0),
-    );
-    _ballOffsetY = clampBallOffset(
-      _parseDouble(await settings.getSetting(_keyBallOffsetY), 0),
-    );
-    _foregroundEnabled = await _readBool(
-      settings,
+    // 所有 `desktop_*` 设置项一次性读回。
+    //
+    // 以前是 ~20 次串行 getSetting：启动时每条都要等一轮数据库往返，
+    // 桌面条与主页都要等这些 await 结束才出得来。这里一次 IN 查询取全，
+    // 业务逻辑（各键的默认值与解析规则）完全不变。
+    final raw = await DatabaseHelper.instance.getSettings(const [
+      _keyEnabled,
+      _keyPosition,
+      _keyLayer,
+      _keyClickThrough,
+      _keyOpacity,
+      _keyScale,
+      _keyBallEnabled,
+      _keyBallOffsetX,
+      _keyBallOffsetY,
       _keyForegroundEnabled,
-      fallback: false,
-    );
+      _keyForegroundPosition,
+      _keyForegroundLayer,
+      _keyForegroundClickThrough,
+      _keyForegroundOpacity,
+      _keyForegroundScale,
+      _keyPreClassAlert,
+      _keyNoticeDuration,
+      _keyCountdownSeconds,
+      _keyHintSeconds,
+      _keyLegacyAlternate,
+      _keyWeatherEnabled,
+      _keyWeatherCity,
+      _keyWeatherLatitude,
+      _keyWeatherLongitude,
+      _keyWeatherRefresh,
+      _keyWeatherCache,
+    ]);
+
+    bool readBool(String key, {required bool fallback}) {
+      final value = raw[key];
+      if (value == null) return fallback;
+      return value == 'true';
+    }
+
+    _enabled = readBool(_keyEnabled, fallback: false);
+    _position = _parsePosition(raw[_keyPosition]);
+    _layer = _parseLayer(raw[_keyLayer]);
+    _clickThrough = readBool(_keyClickThrough, fallback: true);
+    _opacity = _parseDouble(raw[_keyOpacity], 0.92).clamp(0.3, 1.0);
+    _scale = _parseDouble(raw[_keyScale], 1.0).clamp(0.8, 1.6);
+    _ballEnabled = readBool(_keyBallEnabled, fallback: true);
+    _ballOffsetX = clampBallOffset(_parseDouble(raw[_keyBallOffsetX], 0));
+    _ballOffsetY = clampBallOffset(_parseDouble(raw[_keyBallOffsetY], 0));
+    _foregroundEnabled = readBool(_keyForegroundEnabled, fallback: false);
     _foregroundPosition = _parsePosition(
-      await settings.getSetting(_keyForegroundPosition),
+      raw[_keyForegroundPosition],
       fallback: DesktopBarPosition.top,
     );
     // 前台态默认置顶：程序盖在桌面上时，桌面级的胶囊会被完全挡住，
     // 功能看起来就像坏了。
     _foregroundLayer = _parseLayer(
-      await settings.getSetting(_keyForegroundLayer),
+      raw[_keyForegroundLayer],
       fallback: DesktopBarLayer.topMost,
     );
-    _foregroundClickThrough = await _readBool(
-      settings,
+    _foregroundClickThrough = readBool(
       _keyForegroundClickThrough,
       fallback: true,
     );
     _foregroundOpacity = _parseDouble(
-      await settings.getSetting(_keyForegroundOpacity),
+      raw[_keyForegroundOpacity],
       0.92,
     ).clamp(0.3, 1.0);
-    _foregroundScale = _parseDouble(
-      await settings.getSetting(_keyForegroundScale),
-      1.0,
-    ).clamp(0.8, 1.6);
-    _preClassAlertMinutes =
-        _parseInt(
-          await settings.getSetting(_keyPreClassAlert),
-          _preClassAlertMinutes,
-        ).clamp(minPreClassAlertMinutes, maxPreClassAlertMinutes);
+    _foregroundScale = _parseDouble(raw[_keyForegroundScale], 1.0).clamp(
+      0.8,
+      1.6,
+    );
+    _preClassAlertMinutes = _parseInt(
+      raw[_keyPreClassAlert],
+      _preClassAlertMinutes,
+    ).clamp(minPreClassAlertMinutes, maxPreClassAlertMinutes);
     _noticeSeconds = _parseInt(
-      await settings.getSetting(_keyNoticeDuration),
+      raw[_keyNoticeDuration],
       _noticeSeconds,
     ).clamp(minNoticeSeconds, maxNoticeSeconds);
     // 旧版只有一个「交替间隔」：升级后第一次读取时把它当作两个时长的初值，
     // 只要用户改过任意一个，新键就已写入，后续不再受它影响。
     final legacyAlternate = _parseInt(
-      await settings.getSetting(_keyLegacyAlternate),
+      raw[_keyLegacyAlternate],
       defaultCountdownSeconds,
     );
     _countdownSeconds = _parseInt(
-      await settings.getSetting(_keyCountdownSeconds),
+      raw[_keyCountdownSeconds],
       legacyAlternate,
     ).clamp(minCountdownSeconds, maxCountdownSeconds);
     _hintSeconds = _parseInt(
-      await settings.getSetting(_keyHintSeconds),
+      raw[_keyHintSeconds],
       legacyAlternate,
     ).clamp(minHintSeconds, maxHintSeconds);
-    _weatherEnabled = await _readBool(
-      settings,
-      _keyWeatherEnabled,
-      fallback: true,
-    );
-    _weatherCity = (await settings.getSetting(_keyWeatherCity)) ?? '';
-    _weatherLatitude = _parseNullableDouble(
-      await settings.getSetting(_keyWeatherLatitude),
-    );
-    _weatherLongitude = _parseNullableDouble(
-      await settings.getSetting(_keyWeatherLongitude),
-    );
+    _weatherEnabled = readBool(_keyWeatherEnabled, fallback: true);
+    _weatherCity = raw[_keyWeatherCity] ?? '';
+    _weatherLatitude = _parseNullableDouble(raw[_keyWeatherLatitude]);
+    _weatherLongitude = _parseNullableDouble(raw[_keyWeatherLongitude]);
     _weatherRefreshMinutes = _parseInt(
-      await settings.getSetting(_keyWeatherRefresh),
+      raw[_keyWeatherRefresh],
       _weatherRefreshMinutes,
     ).clamp(minWeatherRefreshMinutes, maxWeatherRefreshMinutes);
-    _weather = _parseWeatherCache(await settings.getSetting(_keyWeatherCache));
+    _weather = _parseWeatherCache(raw[_keyWeatherCache]);
 
     _isInitialized = true;
     _restartTicker();
@@ -343,6 +361,9 @@ class DesktopScheduleProvider extends ChangeNotifier {
   }) {
     _courseSchedules = courseSchedules;
     _scheduleAdjustments = scheduleAdjustments;
+    // 显式失效时间线缓存：外部可能传入同一个列表实例（原地修改后重推），
+    // 只靠 identical 判断会漏掉这种「内容变了、对象没变」的情况。
+    _cachedSlots = null;
     _recompute(now: now, force: true);
   }
 
@@ -352,6 +373,46 @@ class DesktopScheduleProvider extends ChangeNotifier {
 
   /// 最近一次已通知监听者的渲染指纹（见 [_renderSignature]）。
   String? _lastRenderSignature;
+
+  /// 当天时间线的缓存（见 [_timelineFor]）。
+  List<ScheduleSlot>? _cachedSlots;
+  List<Map<String, dynamic>>? _cachedSlotsSource;
+  List<Map<String, dynamic>>? _cachedSlotsAdjustments;
+  DateTime? _cachedSlotsDay;
+  int? _cachedSlotsWeekday;
+
+  /// 取当天课表时间线；课表 / 调休 / 日期 / 生效星期都没变时复用上次结果。
+  ///
+  /// `buildTimeline` 每次都要遍历全部课程、逐条解析时间字符串并排序。桌面条
+  /// 每秒 tick 一次，这份结果在一整天里其实只跟「课表数据 + 生效星期」有关，
+  /// 没有任何理由每秒重算一遍。
+  List<ScheduleSlot> _timelineFor(DateTime moment) {
+    final weekday = ScheduleAdjustment.effectiveWeekdayFor(
+      _scheduleAdjustments,
+      moment,
+    );
+    final day = DateTime(moment.year, moment.month, moment.day);
+    final cached = _cachedSlots;
+    if (cached != null &&
+        identical(_cachedSlotsSource, _courseSchedules) &&
+        identical(_cachedSlotsAdjustments, _scheduleAdjustments) &&
+        _cachedSlotsDay == day &&
+        _cachedSlotsWeekday == weekday) {
+      return cached;
+    }
+
+    final slots = ScheduleTimelineService.buildTimeline(
+      _courseSchedules,
+      effectiveWeekday: weekday,
+      day: day,
+    );
+    _cachedSlots = slots;
+    _cachedSlotsSource = _courseSchedules;
+    _cachedSlotsAdjustments = _scheduleAdjustments;
+    _cachedSlotsDay = day;
+    _cachedSlotsWeekday = weekday;
+    return slots;
+  }
 
   /// 以 [now]（默认当前时间）重新求解状态。
   ///
@@ -371,6 +432,8 @@ class DesktopScheduleProvider extends ChangeNotifier {
       now: moment,
       preClassAlert: Duration(minutes: _preClassAlertMinutes),
       noticeDuration: Duration(seconds: _noticeSeconds),
+      // 复用当天时间线：课表没变时不再逐秒重排 / 重解析课程时间。
+      prebuiltSlots: _timelineFor(moment),
     );
     _state = next;
 
@@ -702,16 +765,6 @@ class DesktopScheduleProvider extends ChangeNotifier {
 
   Future<void> _save(String key, String value) =>
       DatabaseHelper.instance.setSetting(key, value);
-
-  static Future<bool> _readBool(
-    DatabaseHelper settings,
-    String key, {
-    required bool fallback,
-  }) async {
-    final value = await settings.getSetting(key);
-    if (value == null) return fallback;
-    return value == 'true';
-  }
 
   static int _parseInt(String? value, int fallback) =>
       int.tryParse(value ?? '') ?? fallback;

@@ -57,19 +57,26 @@ class ScheduleTimelineService {
   ///   横幅（图二），再进入倒计时（图三 ↔ 图四），正式上课瞬间播「上课」
   ///   横幅（图五）后回到常态条；
   /// - 下课不提示：课程结束时刻直接回到课间休息常态条。
+  ///
+  /// [prebuiltSlots] 可由调用方传入已构建好的当天时间线（桌面条每秒 tick 时
+  /// 复用同一份）：[buildTimeline] 每次都要遍历并排序全部课程、逐条解析时间
+  /// 字符串，逐秒重跑属于纯浪费。传 null 时行为与以前完全一致。
   static DesktopScheduleState resolve({
     required List<Map<String, dynamic>> courseSchedules,
     required DateTime now,
     List<Map<String, dynamic>> adjustments = const [],
     Duration preClassAlert = defaultPreClassAlert,
     Duration noticeDuration = defaultNoticeDuration,
+    List<ScheduleSlot>? prebuiltSlots,
   }) {
     final weekday = ScheduleAdjustment.effectiveWeekdayFor(adjustments, now);
-    final slots = buildTimeline(
-      courseSchedules,
-      effectiveWeekday: weekday,
-      day: now,
-    );
+    final slots =
+        prebuiltSlots ??
+        buildTimeline(
+          courseSchedules,
+          effectiveWeekday: weekday,
+          day: now,
+        );
 
     if (slots.isEmpty) {
       return DesktopScheduleState(

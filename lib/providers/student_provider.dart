@@ -8,6 +8,7 @@ import '../services/import_service.dart';
 import '../providers/group_provider.dart';
 import '../widgets/glass_buttons.dart';
 import '../widgets/glass_controls.dart';
+import '../widgets/loading_state.dart';
 import '../widgets/student_name_text.dart';
 
 class StudentProvider extends ChangeNotifier {
@@ -36,7 +37,7 @@ class StudentProvider extends ChangeNotifier {
     int? groupId, {
     bool includeInGroupTotal = true,
   }) async {
-    await BackupService.instance.createBackup();
+    BackupService.instance.scheduleBackup();
 
     // If the student number is empty, generate the next sequential number.
     String finalStudentNumber = studentNumber.trim();
@@ -73,7 +74,7 @@ class StudentProvider extends ChangeNotifier {
   }
 
   Future<void> deleteStudent(int id) async {
-    await BackupService.instance.createBackup();
+    await BackupService.instance.createBackup(force: true);
     await DatabaseHelper.instance.deleteStudent(id);
     await loadStudents(groupId: _filterGroupId);
   }
@@ -85,7 +86,7 @@ class StudentProvider extends ChangeNotifier {
   Future<int> deleteStudents(Iterable<int> ids) async {
     final idList = ids.toSet().toList();
     if (idList.isEmpty) return 0;
-    await BackupService.instance.createBackup();
+    await BackupService.instance.createBackup(force: true);
     final deleted = await DatabaseHelper.instance.deleteStudents(idList);
     await loadStudents(groupId: _filterGroupId);
     return deleted;
@@ -100,8 +101,14 @@ class StudentProvider extends ChangeNotifier {
   }) async {
     if (importedStudents.isEmpty) return 0;
 
-    // 覆盖导入会清空学生/分组/评分记录，属整库级破坏性操作：跳过节流、必定备份。
-    await BackupService.instance.createBackup(force: overwrite);
+    // 覆盖导入会清空学生/分组/评分记录，属整库级破坏性操作：必须**先**有备份，
+    // 所以这一条仍然 await（不能被调度器推到写入之后）。
+    // 追加导入只是普通写入，走延后备份即可，不必挡在导入前面。
+    if (overwrite) {
+      await BackupService.instance.createBackup(force: true);
+    } else {
+      BackupService.instance.scheduleBackup();
+    }
 
     final db = await DatabaseHelper.instance.database;
     int successCount = 0;
@@ -121,49 +128,55 @@ class StudentProvider extends ChangeNotifier {
         );
       }
 
+      // 分组表与「下一个学号」在整批导入里各读一次即可。
+      //
+      // 以前是每名学生都查一遍 groups 全表 + 一次 MAX(student_number)：
+      // 导入 50 人就是 100 次多余查询，全部串行排在数据库上，
+      // 整段导入期间界面看起来就是卡死。现在只在循环外读一次、循环内查内存。
+      // 同名分组只认先出现的那个：旧实现用 firstWhere 取第一条，
+      // 直接建 map 会保留最后一条，分组归属就会与以前不同。
+      final groupRows = await txn.query('groups', orderBy: 'id');
+      final groupIdByName = <String, int>{};
+      for (final g in groupRows) {
+        groupIdByName.putIfAbsent(g['name'] as String, () => g['id'] as int);
+      }
+      final maxNumberRow = await txn.rawQuery(
+        'SELECT MAX(CAST(student_number AS INTEGER)) as max_num FROM students',
+      );
+      var nextStudentNumber =
+          ((maxNumberRow.first['max_num'] as int?) ?? 0) + 1;
+
       for (final student in importedStudents) {
         try {
-          // 解析小组名
+          // 解析小组名：命中已有分组就复用，否则建一个并记进内存表
           int? resolvedGroupId;
-          if (student.groupName != null && student.groupName!.isNotEmpty) {
-            // 在事务中查找或创建分组
-            final groups = await txn.query('groups');
-            final group = groups.firstWhere(
-              (g) => g['name'] == student.groupName,
-              orElse: () => <String, dynamic>{},
-            );
-            if (group.isNotEmpty && group.containsKey('id')) {
-              resolvedGroupId = group['id'] as int;
-            } else {
-              final newId = await txn.insert('groups', {
-                'name': student.groupName,
-              });
-              resolvedGroupId = newId;
-            }
+          final groupName = (student.groupName != null &&
+                  student.groupName!.isNotEmpty)
+              ? student.groupName!
+              : '未分组';
+          final existing = groupIdByName[groupName];
+          if (existing != null) {
+            resolvedGroupId = existing;
           } else {
-            // 查找或创建默认分组
-            final groups = await txn.query(
-              'groups',
-              where: 'name = ?',
-              whereArgs: ['未分组'],
-            );
-            if (groups.isNotEmpty) {
-              resolvedGroupId = groups.first['id'] as int;
-            } else {
-              final newId = await txn.insert('groups', {'name': '未分组'});
-              resolvedGroupId = newId;
-            }
+            resolvedGroupId = await txn.insert('groups', {'name': groupName});
+            groupIdByName[groupName] = resolvedGroupId;
           }
 
-          // 处理学号：如果是覆盖模式或学号为空，自动生成
+          // 处理学号：为空时按批内递增生成
           String? finalStudentNumber = student.studentNumber;
           if (finalStudentNumber == null || finalStudentNumber.isEmpty) {
-            // 在事务中获取下一个学号
-            final result = await txn.rawQuery(
-              'SELECT MAX(CAST(student_number AS INTEGER)) as max_num FROM students',
-            );
-            final maxNum = result.first['max_num'] as int?;
-            finalStudentNumber = ((maxNum ?? 0) + 1).toString();
+            finalStudentNumber = (nextStudentNumber++).toString();
+          } else {
+            // 显式学号若比当前计数大，后续自动生成的学号要接着它往下排
+            // （原来每条插入后都重查一次 MAX，这里用等价的内存推进）。
+            // 与旧实现等价：旧实现每插一条就取 MAX(CAST(student_number AS
+            // INTEGER))，而 SQLite 的 CAST 取的是最长数字前缀
+            // (12abc 得到 12、3.5 得到 3、1e3 得到 1)，
+            // 不是 int.tryParse 的严格整串解析。
+            final explicit = _sqliteCastToInt(finalStudentNumber);
+            if (explicit != null && explicit >= nextStudentNumber) {
+              nextStudentNumber = explicit + 1;
+            }
           }
 
           // 插入学生
@@ -183,6 +196,21 @@ class StudentProvider extends ChangeNotifier {
 
     await loadStudents(groupId: _filterGroupId);
     return successCount;
+  }
+
+  /// 复刻 SQLite CAST(text AS INTEGER) 的取值：取最长数字前缀，
+  /// 没有数字前缀则为 0；超出 64 位范围时按 SQLite 的规则夹到 INT64 边界。
+  /// 用于让自动学号与旧实现的 MAX(CAST(...)) 一致。
+  static int? _sqliteCastToInt(String? value) {
+    if (value == null) return null;
+    final match = RegExp(r'^\s*([+-]?\d+)').firstMatch(value);
+    if (match == null) return 0;
+    final parsed = int.tryParse(match.group(1)!);
+    if (parsed != null) return parsed;
+    // 数字前缀长到溢出 int64：SQLite 会夹到边界而不是报错。
+    return match.group(1)!.startsWith('-')
+        ? -0x8000000000000000
+        : 0x7FFFFFFFFFFFFFFF;
   }
 
   /// 批量将选中的学生添加到指定小组
@@ -363,6 +391,9 @@ class StudentProvider extends ChangeNotifier {
     final List<String> errorLogs = [];
     final List<ImportedStudent> students = [];
 
+    // 解析已搬进后台 isolate，界面在解析期间不会冻结；
+    // 这里**不加**忙碌遮罩：文件选择器是系统原生窗口，遮罩会一直盖在
+    // 应用窗口上、与选择器同屏出现，反而更奇怪。
     final importedStudents = await ImportService.pickAndImport(
       errorLogs: errorLogs,
     );
@@ -465,10 +496,17 @@ class StudentProvider extends ChangeNotifier {
 
       if (importedCount == 0) return; // 用户取消
 
-      // 执行导入
-      final count = await context.read<StudentProvider>().batchImportStudents(
-        importedStudents: students,
-        overwrite: importedCount == -1,
+      // 执行导入。整批写入（覆盖模式还要清库 + 强制备份）在数据多时明显耗时，
+      // 期间给出忙碌遮罩，避免看起来没反应、被连点两次。
+      if (!context.mounted) return;
+      final provider = context.read<StudentProvider>();
+      final count = await runBusy(
+        context,
+        () => provider.batchImportStudents(
+          importedStudents: students,
+          overwrite: importedCount == -1,
+        ),
+        message: importedCount == -1 ? '正在覆盖导入…' : '正在导入学生…',
       );
 
       // 显示结果

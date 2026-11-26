@@ -475,16 +475,45 @@ class DatabaseHelper {
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
+  /// 一次性读取多个设置项（`WHERE key IN (...)`）。
+  ///
+  /// 启动路径上各 Provider 会连读十几个设置项，逐个 [getSetting] 就是十几次
+  /// 串行往返。返回值只包含**库里真实存在**的键，缺失的键由调用方按默认值处理。
+  Future<Map<String, String>> getSettings(Iterable<String> keys) async {
+    final keyList = keys.toList();
+    if (keyList.isEmpty) return const {};
+    final db = await database;
+    final placeholders = List.filled(keyList.length, '?').join(', ');
+    final rows = await db.query(
+      'app_settings',
+      where: 'key IN ($placeholders)',
+      whereArgs: keyList,
+    );
+    return {
+      for (final row in rows)
+        if (row['value'] != null)
+          row['key'] as String: row['value'].toString(),
+    };
+  }
+
   // ---- Score Config ----
   /// 读取计分规则全局设置（学生初始分、小组初始分、小组总分计算方式）
+  ///
+  /// 一次 `IN` 查询取回三个键。以前是三次串行 [getSetting]，而它又被
+  /// [getGroupTotalScores] / [getStudentTotalScores] 等每次刷新各调一遍——
+  /// 一次榜单刷新光读配置就要六次往返。
   Future<({double studentInitial, double groupInitial, String mode})>
   _getScoreConfig() async {
+    final settings = await getSettings(const [
+      'student_initial_score',
+      'group_initial_score',
+      'group_score_mode',
+    ]);
     final studentInitial =
-        double.tryParse((await getSetting('student_initial_score')) ?? '') ??
-        0.0;
+        double.tryParse(settings['student_initial_score'] ?? '') ?? 0.0;
     final groupInitial =
-        double.tryParse((await getSetting('group_initial_score')) ?? '') ?? 0.0;
-    final mode = await getSetting('group_score_mode') ?? 'sum';
+        double.tryParse(settings['group_initial_score'] ?? '') ?? 0.0;
+    final mode = settings['group_score_mode'] ?? 'sum';
     return (
       studentInitial: studentInitial,
       groupInitial: groupInitial,

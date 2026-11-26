@@ -4,6 +4,7 @@ import '../../providers/score_provider.dart';
 import '../../widgets/glass_buttons.dart';
 import '../../widgets/glass_controls.dart';
 import '../../widgets/glass_inputs.dart';
+import '../../widgets/loading_state.dart';
 import 'settings_common.dart';
 
 /// 计分规则设置分项（无卡片，可嵌入 SettingsHubPage）：
@@ -66,8 +67,16 @@ class _ScoringRulesViewState extends State<ScoringRulesView> {
         double.tryParse(_studentInitialController.text.trim()) ?? 0.0;
     final groupVal =
         double.tryParse(_groupInitialController.text.trim()) ?? 0.0;
-    await p.setStudentInitialScore(studentVal);
-    await p.setGroupInitialScore(groupVal);
+    // 每个 setter 都会写设置项并（节流后）整库备份；两次调用在数据量大时
+    // 合起来有可感知的耗时，用忙碌遮罩盖住这段等待。
+    await runBusy(
+      context,
+      () async {
+        await p.setStudentInitialScore(studentVal);
+        await p.setGroupInitialScore(groupVal);
+      },
+      message: '正在保存初始分…',
+    );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('初始分已保存'), duration: Duration(seconds: 2)),
@@ -95,7 +104,11 @@ class _ScoringRulesViewState extends State<ScoringRulesView> {
       );
       return;
     }
-    await context.read<ScoreProvider>().setScoreRange(minVal, maxVal);
+    await runBusy(
+      context,
+      () => context.read<ScoreProvider>().setScoreRange(minVal, maxVal),
+      message: '正在保存分值范围…',
+    );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('分值范围已保存'), duration: Duration(seconds: 2)),

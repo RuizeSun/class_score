@@ -14,7 +14,7 @@ class GroupProvider extends ChangeNotifier {
   }
 
   Future<void> addGroup(String name) async {
-    await BackupService.instance.createBackup();
+    BackupService.instance.scheduleBackup();
     await DatabaseHelper.instance.insertGroup({'name': name});
     await loadGroups();
   }
@@ -26,7 +26,8 @@ class GroupProvider extends ChangeNotifier {
   }
 
   Future<void> deleteGroup(int id) async {
-    await BackupService.instance.createBackup();
+    // 删小组会连同组内学生一起删掉（见 DatabaseHelper.deleteGroup）：必须先有快照。
+    await BackupService.instance.createBackup(force: true);
     await DatabaseHelper.instance.deleteGroup(id);
     await loadGroups();
   }
