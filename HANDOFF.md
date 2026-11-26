@@ -3,8 +3,10 @@
 ## 元信息
 
 - 生成时间：2026-09-26（2026-09-30：P0 性能修复）
-- commit：HEAD 08a3afc（P0 三轮，未 push）；1.5.1 = 04e18ba
-- last_verified：2026-11-26 低配机第二轮帧率优化后（`fvm flutter test` 224 全过、
+- commit：1.6.1 = 942c675（已 push、已发版）；1.5.1 = 04e18ba
+- last_verified：2026-11-26 1.6.1 已发布（tag 942c675，assets release.zip +
+  release.zip.sha256 均上传，CI 构建全绿）。本轮为低配机第二轮帧率优化
+  （`fvm flutter test` 224 全过、
   `fvm flutter analyze` 63 条既有 info / warning、无 error；`build windows --release` 通过）；
   上一轮 2026-11-23 1.5.4（`fvm flutter test` 210 全过、
   `fvm flutter analyze` 43 条既有 info、无新增；`fvm flutter build windows --release` 通过；
