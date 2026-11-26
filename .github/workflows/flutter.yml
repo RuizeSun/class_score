@@ -91,4 +91,42 @@ jobs:
               uses: actions/upload-artifact@v4
               with:
                   name: windows-release
-                  path: build\windows\x64\runner\Release\
+                  # release.zip 只在 push 到 main 时才生成；PR 构建时该路径缺失只是警告
+                  path: |
+                      build/windows/x64/runner/Release/
+                      build/windows/x64/runner/release.zip
+                      build/windows/x64/runner/release.zip.sha256
+
+    # ============================================================
+    # Gitee 镜像：把同一份产物发到 Gitee，并在 `update` 分支写 latest.json。
+    #
+    # 为什么需要：国内一体机 / 校园网里 api.github.com 常被 RST，应用检查更新
+    # 会瞬间失败。Gitee 侧只提供「raw 静态清单 + Release 附件」，客户端不调
+    # Gitee API（匿名调用会 403 Rate Limit Exceeded）。
+    #
+    # 整个 job 失败不影响 GitHub 发版（continue-on-error），Gitee 只是加速镜像。
+    # 需要的 secret：GITEE_TOKEN（私人令牌，勾 projects 权限）、
+    # GITEE_REPO（如 RuizeSun/class_score，可省略，默认同名）。
+    # ============================================================
+    mirror-gitee:
+        needs: build-windows
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        runs-on: windows-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - uses: actions/download-artifact@v4
+              with:
+                  name: windows-release
+                  path: dist
+
+            - name: Mirror to Gitee
+              continue-on-error: true
+              shell: pwsh
+              env:
+                  GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+                  GITEE_REPO: ${{ secrets.GITEE_REPO }}
+                  COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+              run: ./scripts/mirror-to-gitee.ps1
