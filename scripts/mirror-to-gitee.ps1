@@ -59,12 +59,17 @@ $repoName = $parts[1]
 $distDir = $env:DIST_DIR
 if ([string]::IsNullOrWhiteSpace($distDir)) { $distDir = './dist' }
 
-# Same rule as the Extract step in flutter.yml: first line `build: <version>`
-$commitMessage = $env:COMMIT_MESSAGE
-if ([string]::IsNullOrWhiteSpace($commitMessage)) { $commitMessage = '' }
-$version = ''
-foreach ($line in ($commitMessage -split "`r?`n")) {
-    if ($line -match '^build:\s*(\S+)') { $version = $Matches[1].Trim(); break }
+# Same rule as the Extract step in flutter.yml: first line `build: <version>`.
+# RELEASE_VERSION overrides it so a mirror can be re-run for an already-built
+# release (workflow_dispatch backfill) without a new `build:` commit.
+$version = $env:RELEASE_VERSION
+if (-not [string]::IsNullOrWhiteSpace($version)) { $version = $version.Trim() }
+if ([string]::IsNullOrWhiteSpace($version)) {
+    $commitMessage = $env:COMMIT_MESSAGE
+    if ([string]::IsNullOrWhiteSpace($commitMessage)) { $commitMessage = '' }
+    foreach ($line in ($commitMessage -split "`r?`n")) {
+        if ($line -match '^build:\s*(\S+)') { $version = $Matches[1].Trim(); break }
+    }
 }
 if ([string]::IsNullOrWhiteSpace($version)) {
     Write-Host 'Not a release commit (build: <version>), skipping Gitee mirror.' -ForegroundColor Yellow
@@ -101,9 +106,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Failed to push main to Gitee (resolve divergen
 Write-Info 'main synced'
 
 # The tag may already exist (re-run), skip in that case.
-$remoteTags = git ls-remote --tags gitee "refs/tags/$tag"
+# NOTE: use ${tag} not $tag here. In PowerShell `$tag:` parses the colon as part
+# of the variable name, so "refs/tags/$tag:refs/tags/$tag" silently becomes
+# "refs/tags//tags/1.6.2" and git fails with "invalid refspec" (hit on 1.6.2).
+$remoteTags = git ls-remote --tags gitee "refs/tags/${tag}"
 if ([string]::IsNullOrWhiteSpace(($remoteTags -join ''))) {
-    git push --quiet gitee "refs/tags/$tag:refs/tags/$tag"
+    git push --quiet gitee "refs/tags/${tag}:refs/tags/${tag}"
     if ($LASTEXITCODE -ne 0) { throw "Failed to push tag $tag to Gitee" }
     Write-Info "tag $tag pushed"
 } else {

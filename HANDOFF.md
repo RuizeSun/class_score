@@ -73,8 +73,16 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
 - **Gitee 镜像在 CI**：`.github/workflows/flutter.yml` 的 `mirror-gitee` job →
   `scripts/mirror-to-gitee.ps1`（推 main + tag、建 Release、传 release.zip 与
   `.sha256`、写 `update` 孤儿分支的 latest.json、最后匿名复验）。需要 GitHub secrets
-  `GITEE_TOKEN`（私人令牌勾 projects）与可选 `GITEE_REPO`。该 job `continue-on-error`：
-  **Gitee 挂了不能把 GitHub 发版判成失败**。
+  `GITEE_TOKEN`（私人令牌勾 projects）与可选 `GITEE_REPO`。
+  **不要给这个 job/step 加 `continue-on-error`**（1.6.2 踩过）：它会把镜像失败显示成
+  绿色，让人误以为同步成功，实际 Gitee 上没有 Release 也没有 latest.json。
+  GitHub Release 在上一个 job 已经建好，镜像失败不影响发版本身。
+  支持 `workflow_dispatch` + `mirror_version` 手动补跑某个已发版版本（从 GitHub
+  Release 取产物，不重新构建）。
+- **PowerShell 插值坑**（1.6.2 踩过）：`"refs/tags/$tag:refs/tags/$tag"` 里 `$tag:`
+  会被当成变量名（冒号属于变量名），插值成 `refs/tags//tags/1.6.2`，git 报
+  `无效的引用规格 / invalid refspec`，tag 永远推不上去。**变量后紧跟冒号时必须写
+  `${tag}`**，别用 `$tag:`。
 - 脚本 `scripts/mirror-to-gitee.ps1` **必须保持纯 ASCII**：PowerShell 5.1 读无 BOM 的
   脚本按 ANSI(GBK) 解码，中文注释会吃掉换行让脚本静默失效（1.6.0 的更新脚本踩过）。
   同理 latest.json 用 `UTF8Encoding($false)` 写成无 BOM，否则 Dart `jsonDecode` 报错。

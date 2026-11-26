@@ -5,11 +5,20 @@ on:
         branches: [main]
     pull_request:
         branches: [main]
+    # 手动补跑 Gitee 镜像：1.6.2 的镜像因 refspec bug 失败，用它把已发版的
+    # 产物补到 Gitee，不必再发一个新版本。
+    workflow_dispatch:
+        inputs:
+            mirror_version:
+                description: '只补跑 Gitee 镜像（填已发版版本号，如 1.6.2）；留空则正常发版'
+                required: false
+                default: ''
 
 jobs:
     build-windows:
         runs-on: windows-latest
-        if: startsWith(github.event.head_commit.message, 'build:')
+        # 手动补跑镜像时不需要重新构建：产物从 GitHub Release 取。
+        if: startsWith(github.event.head_commit.message, 'build:') || (github.event_name == 'workflow_dispatch' && github.event.inputs.mirror_version == '')
         steps:
             - uses: actions/checkout@v4
               with:
@@ -104,29 +113,49 @@ jobs:
     # 会瞬间失败。Gitee 侧只提供「raw 静态清单 + Release 附件」，客户端不调
     # Gitee API（匿名调用会 403 Rate Limit Exceeded）。
     #
-    # 整个 job 失败不影响 GitHub 发版（continue-on-error），Gitee 只是加速镜像。
+    # **不要加 continue-on-error**（1.6.2 踩过）：那会把镜像失败显示成绿色，
+    # 让人以为同步成功，实际 Gitee 上没有 Release 也没有 latest.json。
+    # GitHub Release 在上一个 job 里已经建好，所以这里失败不会影响发版本身，
+    # 只是如实把「镜像没成功」标红。
+    #
     # 需要的 secret：GITEE_TOKEN（私人令牌，勾 projects 权限）、
     # GITEE_REPO（如 RuizeSun/class_score，可省略，默认同名）。
     # ============================================================
     mirror-gitee:
         needs: build-windows
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        # 两种入口：正常发版（build-windows 成功），或手动补跑指定版本。
+        # 必须是单行：YAML 多行块会带真实换行，GitHub 的 if 解析对换行不友好。
+        if: "always() && ((github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.build-windows.result == 'success') || (github.event_name == 'workflow_dispatch' && github.event.inputs.mirror_version != ''))"
         runs-on: windows-latest
         steps:
             - uses: actions/checkout@v4
               with:
                   fetch-depth: 0
 
+            # 正常发版：用本次构建的产物。
             - uses: actions/download-artifact@v4
+              if: github.event_name == 'push'
               with:
                   name: windows-release
                   path: dist
 
+            # 手动补跑：产物从已发布的 GitHub Release 取，不重新构建。
+            - name: Fetch artifacts from existing GitHub Release
+              if: github.event_name == 'workflow_dispatch'
+              shell: pwsh
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  VERSION: ${{ github.event.inputs.mirror_version }}
+              run: |
+                  New-Item -ItemType Directory -Path dist -Force | Out-Null
+                  gh release download $env:VERSION --repo ${{ github.repository }} --pattern 'release.zip*' --dir dist
+                  Get-ChildItem dist | Select-Object Name, Length
+
             - name: Mirror to Gitee
-              continue-on-error: true
               shell: pwsh
               env:
                   GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
                   GITEE_REPO: ${{ secrets.GITEE_REPO }}
                   COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+                  RELEASE_VERSION: ${{ github.event.inputs.mirror_version }}
               run: ./scripts/mirror-to-gitee.ps1
