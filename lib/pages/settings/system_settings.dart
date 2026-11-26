@@ -29,11 +29,62 @@ class _SystemSettingsViewState extends State<SystemSettingsView> {
   String _version = '加载中...';
   String _buildNumber = '';
   bool _checkingUpdate = false;
+  UpdateSourcePreference _sourcePreference = UpdateSourcePreference.auto;
 
   @override
   void initState() {
     super.initState();
     _loadVersion();
+    _loadSourcePreference();
+  }
+
+  Future<void> _loadSourcePreference() async {
+    final preference = await UpdateService.instance.readSourcePreference();
+    if (!mounted) return;
+    setState(() => _sourcePreference = preference);
+  }
+
+  String _sourcePreferenceLabel(UpdateSourcePreference preference) {
+    switch (preference) {
+      case UpdateSourcePreference.auto:
+        return '自动（优先上次可用的源，另一个兜底）';
+      case UpdateSourcePreference.giteeFirst:
+        return '优先 Gitee，失败再用 GitHub';
+      case UpdateSourcePreference.githubFirst:
+        return '优先 GitHub，失败再用 Gitee';
+    }
+  }
+
+  Future<void> _showSourcePreferenceDialog() async {
+    final selected = await showDialog<UpdateSourcePreference>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('更新源顺序'),
+        children: UpdateSourcePreference.values
+            .map(
+              (value) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(ctx, value),
+                child: Row(
+                  children: [
+                    Icon(
+                      _sourcePreference == value
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text(_sourcePreferenceLabel(value))),
+                  ],
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+    if (selected == null) return;
+    await UpdateService.instance.saveSourcePreference(selected);
+    if (!mounted) return;
+    setState(() => _sourcePreference = selected);
   }
 
   Future<void> _loadVersion() async {
@@ -94,26 +145,59 @@ class _SystemSettingsViewState extends State<SystemSettingsView> {
   }
 
   /// 手动检查更新：有新版弹更新弹窗；已是最新 / 失败用 SnackBar 提示。
+  ///
+  /// 失败时把 [UpdateCheckException] 里的逐条原因原样展示（哪个域名失败、为什么），
+  /// 否则在「网页能打开 GitHub 但程序报错」的环境里完全没法定位。
   Future<void> _checkForUpdate() async {
     if (_checkingUpdate) return;
     setState(() => _checkingUpdate = true);
     try {
       final update = await UpdateService.instance.checkForUpdate();
       if (!mounted) return;
-      if (update == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('检查更新失败，请检查网络后重试')),
-        );
-      } else if (!update.updateAvailable) {
+      if (!update.updateAvailable) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('当前已是最新版本 v${update.latestVersion}')),
         );
       } else {
         await showUpdateAvailableDialog(context, update);
       }
+    } on UpdateCheckException catch (error) {
+      if (!mounted) return;
+      await _showUpdateFailure(error.message);
+    } catch (error) {
+      if (!mounted) return;
+      await _showUpdateFailure('检查更新失败：$error');
     } finally {
       if (mounted) setState(() => _checkingUpdate = false);
     }
+  }
+
+  /// 失败原因可能很长（两个数据源各一条），SnackBar 放不下就改成可复制弹窗。
+  Future<void> _showUpdateFailure(String message) async {
+    if (message.length <= 80) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('检查更新失败'),
+        content: SizedBox(
+          width: 460,
+          child: SingleChildScrollView(
+            child: SelectableText(message, style: const TextStyle(fontSize: 13)),
+          ),
+        ),
+        actions: [
+          GlassActionButton(
+            onPressed: () => Navigator.pop(ctx),
+            variant: GlassActionVariant.prominent,
+            child: const Text('知道了'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -196,7 +280,7 @@ class _SystemSettingsViewState extends State<SystemSettingsView> {
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.system_update),
           title: const Text('检查更新'),
-          subtitle: const Text('从 GitHub Releases 检查并安装新版本'),
+          subtitle: const Text('从 Gitee / GitHub Releases 检查并安装新版本'),
           trailing: _checkingUpdate
               ? const SizedBox(
                   width: 18,
@@ -205,6 +289,14 @@ class _SystemSettingsViewState extends State<SystemSettingsView> {
                 )
               : const Icon(Icons.chevron_right),
           onTap: _checkForUpdate,
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.swap_vert),
+          title: const Text('更新源顺序'),
+          subtitle: Text(_sourcePreferenceLabel(_sourcePreference)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: _showSourcePreferenceDialog,
         ),
 
         const Divider(height: 1),

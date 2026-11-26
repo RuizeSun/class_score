@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:class_score/services/update_service.dart';
 
@@ -28,6 +30,224 @@ void main() {
     test('段数不一致按 0 补齐', () {
       expect(UpdateService.isNewerVersion('1.6', '1.5.4'), isTrue);
       expect(UpdateService.isNewerVersion('1.5', '1.5.0'), isFalse);
+    });
+  });
+
+  group('UpdateService.parseLatestReleaseAtom', () {
+    const currentVersion = '1.6.0';
+    const atom = '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<feed xmlns="http://www.w3.org/2005/Atom">\n'
+        '  <entry>\n'
+        '    <id>tag:github.com,2008:Repository/1/1.6.1</id>\n'
+        '    <link rel="alternate" type="text/html" '
+        'href="https://github.com/RuizeSun/class_score/releases/tag/1.6.1"/>\n'
+        '    <title>Release 1.6.1</title>\n'
+        '    <content type="html">&lt;p&gt;修复自动更新&lt;/p&gt;</content>\n'
+        '  </entry>\n'
+        '  <entry>\n'
+        '    <link rel="alternate" type="text/html" '
+        'href="https://github.com/RuizeSun/class_score/releases/tag/1.5.4"/>\n'
+        '    <title>Release 1.5.4</title>\n'
+        '  </entry>\n'
+        '</feed>';
+
+    tearDown(() => UpdateService.instance.textLoader = null);
+
+    test('取第一条 entry，备注去掉 HTML 并还原实体', () async {
+      // 解析顺带会取 .sha256 附件：注入 loader，避免测试依赖真实网络。
+      UpdateService.instance.textLoader = (uri) async => '';
+      final result = await UpdateService.parseLatestReleaseAtom(atom, currentVersion);
+      expect(result, isNotNull);
+      expect(result!.tagName, '1.6.1');
+      expect(result.latestVersion, '1.6.1');
+      expect(result.updateAvailable, isTrue);
+      expect(result.releaseNotes, '修复自动更新');
+      expect(
+        result.downloadUrl,
+        'https://github.com/RuizeSun/class_score/releases/download/1.6.1/release.zip',
+      );
+    });
+
+    test('空订阅源返回 null', () async {
+      expect(
+        await UpdateService.parseLatestReleaseAtom('<feed></feed>', currentVersion),
+        isNull,
+      );
+    });
+  });
+
+  group('UpdateService.checkForVersion', () {
+    const currentVersion = '1.6.0';
+    final atom = '<?xml version="1.0"?>\n<feed>'
+        '<entry><link rel="alternate" href="https://github.com/RuizeSun/class_score/releases/tag/1.6.1"/></entry>'
+        '</feed>';
+    final giteeManifest = '{"version":"1.6.2","tag":"1.6.2","notes":"来自 Gitee",'
+        '"download_url":"https://gitee.com/RuizeSun/class_score/releases/download/1.6.2/release.zip",'
+        '"sha256":"${'a' * 64}","size":123}';
+
+    tearDown(() {
+      UpdateService.instance.textLoader = null;
+      UpdateService.instance.settingReader = null;
+      UpdateService.instance.settingWriter = null;
+    });
+
+    test('api.github.com 被拦后回退到 github.com 订阅源', () async {
+      final requested = <String>[];
+      UpdateService.instance.textLoader = (uri) async {
+        requested.add(uri.host + uri.path);
+        if (uri.host == 'api.github.com') {
+          throw const SocketException('Connection reset by peer');
+        }
+        // Gitee 也不可用，逼它回退到 GitHub atom
+        if (uri.host == 'gitee.com') throw const SocketException('blocked');
+        return atom;
+      };
+
+      final result = await UpdateService.instance.checkForVersion(
+        currentVersion,
+        preference: UpdateSourcePreference.githubFirst,
+      );
+      expect(result.latestVersion, '1.6.1');
+      expect(result.updateAvailable, isTrue);
+      expect(requested.first, startsWith('api.github.com'));
+      expect(requested, contains('github.com/RuizeSun/class_score/releases.atom'));
+    });
+
+    test('Gitee 清单可用时优先使用，且不触发 GitHub 请求', () async {
+      final requested = <String>[];
+      UpdateService.instance.textLoader = (uri) async {
+        requested.add(uri.host + uri.path);
+        return giteeManifest;
+      };
+
+      final result = await UpdateService.instance.checkForVersion(currentVersion);
+      expect(result.latestVersion, '1.6.2');
+      expect(result.sourceLabel, 'Gitee');
+      expect(result.assetSizeBytes, 123);
+      expect(requested.length, 1);
+      expect(requested.single, contains('gitee.com/RuizeSun/class_score/raw/update/latest.json'));
+    });
+
+    test('两个源都失败时抛异常，并带上每个源的原因', () async {
+      UpdateService.instance.textLoader =
+          (uri) async => throw const SocketException('Connection reset by peer');
+
+      await expectLater(
+        UpdateService.instance.checkForVersion(currentVersion),
+        throwsA(
+          isA<UpdateCheckException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('Gitee'), contains('GitHub'), contains('网络连接失败')),
+          ),
+        ),
+      );
+    });
+
+    test('auto 偏好会优先上次成功的源', () async {
+      final stored = <String, String>{'update_last_good_provider': 'github'};
+      UpdateService.instance.settingReader = (key) async => stored[key];
+      UpdateService.instance.settingWriter =
+          (key, value) async => stored[key] = value;
+
+      final requested = <String>[];
+      UpdateService.instance.textLoader = (uri) async {
+        requested.add(uri.host);
+        throw const SocketException('down');
+      };
+
+      await expectLater(
+        UpdateService.instance.checkForVersion(currentVersion),
+        throwsA(isA<UpdateCheckException>()),
+      );
+      expect(requested.first, 'api.github.com');
+    });
+
+    test('成功一次后会记住来源，下次自动优先它', () async {
+      final stored = <String, String>{};
+      UpdateService.instance.settingReader = (key) async => stored[key];
+      UpdateService.instance.settingWriter =
+          (key, value) async => stored[key] = value;
+      UpdateService.instance.textLoader = (uri) async {
+        if (uri.host == 'gitee.com') throw const SocketException('blocked');
+        if (uri.host == 'api.github.com') throw const SocketException('blocked');
+        return atom;
+      };
+
+      await UpdateService.instance.checkForVersion(currentVersion);
+      expect(stored['update_last_good_provider'], 'github');
+    });
+  });
+
+  group('UpdateService.resolveSourceOrder', () {
+    test('固定偏好忽略历史', () {
+      expect(
+        UpdateService.resolveSourceOrder(
+            UpdateSourcePreference.giteeFirst, UpdateProvider.github),
+        [UpdateProvider.gitee, UpdateProvider.github],
+      );
+      expect(
+        UpdateService.resolveSourceOrder(
+            UpdateSourcePreference.githubFirst, UpdateProvider.gitee),
+        [UpdateProvider.github, UpdateProvider.gitee],
+      );
+    });
+
+    test('auto：无历史时 Gitee 优先，有历史时跟随历史', () {
+      expect(
+        UpdateService.resolveSourceOrder(UpdateSourcePreference.auto, null),
+        [UpdateProvider.gitee, UpdateProvider.github],
+      );
+      expect(
+        UpdateService.resolveSourceOrder(
+            UpdateSourcePreference.auto, UpdateProvider.github),
+        [UpdateProvider.github, UpdateProvider.gitee],
+      );
+      expect(
+        UpdateService.resolveSourceOrder(
+            UpdateSourcePreference.auto, UpdateProvider.gitee),
+        [UpdateProvider.gitee, UpdateProvider.github],
+      );
+    });
+  });
+
+  group('UpdateService.parseManifestJson', () {
+    const currentVersion = '1.6.0';
+
+    test('解析完整清单', () {
+      final sha = 'b' * 64;
+      final body = '{"version":"1.6.2","tag":"v1.6.2","notes":"修复",'
+          '"download_url":"https://gitee.com/x/y/releases/download/1.6.2/release.zip",'
+          '"sha256":"$sha","size":987654}';
+      final result = UpdateService.parseManifestJson(body, currentVersion);
+      expect(result, isNotNull);
+      expect(result!.latestVersion, '1.6.2');
+      expect(result.tagName, 'v1.6.2');
+      expect(result.releaseNotes, '修复');
+      expect(result.assetSizeBytes, 987654);
+      expect(result.expectedSha256, sha);
+      expect(result.updateAvailable, isTrue);
+      expect(result.sourceLabel, 'Gitee');
+    });
+
+    test('size 是字符串时也能解析；非法 sha256 丢弃', () {
+      final body = '{"version":"1.6.1","size":"42","sha256":"not-a-hash",'
+          '"download_url":"https://gitee.com/x/y/releases/download/1.6.1/release.zip"}';
+      final result = UpdateService.parseManifestJson(body, currentVersion);
+      expect(result, isNotNull);
+      expect(result!.assetSizeBytes, 42);
+      expect(result.expectedSha256, isEmpty);
+      expect(result.tagName, '1.6.1');
+    });
+
+    test('缺 version / download_url 时返回 null', () {
+      expect(UpdateService.parseManifestJson('{}', currentVersion), isNull);
+      expect(
+        UpdateService.parseManifestJson(
+            '{"version":"1.6.2"}', currentVersion),
+        isNull,
+      );
+      expect(UpdateService.parseManifestJson('not json', currentVersion), isNull);
     });
   });
 

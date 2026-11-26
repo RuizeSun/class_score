@@ -262,6 +262,13 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
     _desktop = desktop;
     _auth = auth;
 
+    // 更新检查的来源偏好 / 「上次可用源」存 app_settings：接线一次即可，
+    // 之后 UpdateService 自己读写（不接线则偏好只在本次运行内生效）。
+    UpdateService.instance.bindSettings(
+      read: (key) => DatabaseHelper.instance.getSetting(key),
+      write: (key, value) => DatabaseHelper.instance.setSetting(key, value),
+    );
+
     // 数据齐了就立刻离开加载页：其余同步接线等淡入动画跑完再做。
     setState(() => _dataReady = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -358,7 +365,7 @@ class _AppEntryState extends State<AppEntry> with WindowListener {
     if (!mounted) return;
     try {
       final update = await UpdateService.instance.checkForUpdate();
-      if (!mounted || update == null || !update.updateAvailable) return;
+      if (!mounted || !update.updateAvailable) return;
       await showUpdateAvailableDialog(context, update);
     } catch (_) {
       // 静默：自动检查失败不打扰用户

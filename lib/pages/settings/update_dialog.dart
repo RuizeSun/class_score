@@ -109,6 +109,15 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                 fontWeight: FontWeight.w600,
               ),
             ),
+            if (update.sourceLabel.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '来源：' + update.sourceLabel,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ),
             if (notes.isNotEmpty) ...[
               const SizedBox(height: 16),
               ConstrainedBox(

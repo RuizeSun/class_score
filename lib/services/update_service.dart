@@ -9,6 +9,27 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'backup_service.dart';
 
+/// 更新包 / 版本信息的来源站点。
+enum UpdateProvider {
+  /// Gitee：`raw` 分支清单 + Release 附件，国内直连、不消耗 API 配额。
+  gitee,
+
+  /// GitHub：REST API 与 releases.atom 两级。
+  github,
+}
+
+/// 检查更新时可选的来源偏好（设置页可选，默认自动）。
+enum UpdateSourcePreference {
+  /// 自动：优先上次成功的来源，另一个作为兜底（默认）。
+  auto,
+
+  /// 总是先试 Gitee，失败再试 GitHub。
+  giteeFirst,
+
+  /// 总是先试 GitHub，失败再试 Gitee。
+  githubFirst,
+}
+
 /// 一次更新检查的结果。
 class UpdateCheckResult {
   const UpdateCheckResult({
@@ -20,6 +41,7 @@ class UpdateCheckResult {
     required this.assetSizeBytes,
     required this.expectedSha256,
     required this.updateAvailable,
+    this.sourceLabel = '',
   });
 
   /// 本机安装的版本（pubspec version，不含 build 号）。
@@ -45,14 +67,41 @@ class UpdateCheckResult {
 
   /// 最新版本是否比当前版本新。
   final bool updateAvailable;
+
+  /// 这次结果来自哪个源（展示用，例如 “Gitee” / “GitHub”）。
+  final String sourceLabel;
 }
 
-/// 基于 GitHub Releases 的自动更新服务。
+/// 检查更新失败的原因（直接展示给用户）。
+///
+/// 以前所有分支都返回 null、界面统一提示「网络错误」，导致「到底是断网、
+/// 域名被拦、接口限流还是响应变了」完全看不出来。现在把每一步的真实原因
+/// 带出来，并在 [UpdateService.checkForUpdate] 里逐条汇总。
+class UpdateCheckException implements Exception {
+  const UpdateCheckException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// 基于 GitHub Releases（主）+ Gitee（国内镜像）的自动更新服务。
 ///
 /// 发版流程（见 .github/workflows/flutter.yml）：commit 首行 build: <版本> 推
 /// main 后，CI 用版本号打 tag 创建 Release，并上传 release.zip（内容是
-/// build/windows/x64/runner/Release 的全部文件）。本服务按同一约定取最新
-/// Release 并安装。
+/// build/windows/x64/runner/Release 的全部文件）；随后 Gitee 镜像 job 把同一
+/// 份产物发到 Gitee，并在 `update` 分支写 `latest.json` 清单。
+///
+/// 三个数据源，按用户偏好排序后逐个尝试：
+/// 1. Gitee `update` 分支的 `latest.json`（国内直连、不吃 API 限流）；
+/// 2. `api.github.com/.../releases/latest`（信息最全，可带 asset 大小）；
+/// 3. `github.com/.../releases.atom`（只有 tag 与备注，附件地址按命名规则推出）。
+///
+/// 为什么必须多源：`api.github.com`、`github.com`、`gitee.com` 是三台不同服务，
+/// 校园网 / 一体机常见「网页能开 github.com，api.github.com 被 RST 秒断」，
+/// 而匿名调 Gitee API 会被 `403 Rate Limit Exceeded` 限流——所以 Gitee 侧只
+/// 用 `raw` 的静态清单，绝不调 API。
 class UpdateService {
   UpdateService._();
 
@@ -60,38 +109,297 @@ class UpdateService {
 
   static const String repoOwner = 'RuizeSun';
   static const String repoName = 'class_score';
-  static const String latestReleaseUrl =
-      'https://api.github.com/repos/' + repoOwner + '/' + repoName + '/releases/latest';
 
-  /// 检查更新。
+  /// Gitee 仓库（镜像），owner/repo 与 GitHub 保持一致。
+  static const String giteeOwner = 'RuizeSun';
+  static const String giteeRepo = 'class_score';
+
+  static const String latestReleaseUrl =
+      'https://api.github.com/repos/$repoOwner/$repoName/releases/latest';
+  static const String releasesAtomUrl =
+      'https://github.com/$repoOwner/$repoName/releases.atom';
+  static const String releaseDownloadBase =
+      'https://github.com/$repoOwner/$repoName/releases/download';
+
+  /// Gitee 清单：`raw` 静态文件，匿名可读、不触发 API 限流。
+  static const String giteeManifestUrl =
+      'https://gitee.com/$giteeOwner/$giteeRepo/raw/update/latest.json';
+
+  /// 单次请求超时：一体机 / 校园网里被丢包时也不能让界面无限转圈。
+  static const Duration requestTimeout = Duration(seconds: 12);
+
+  /// 记录上一次成功的来源，`auto` 偏好会优先复用（避免每次都等失败的超时）。
+  static const String _lastGoodProviderKey = 'update_last_good_provider';
+
+  /// 用户手动指定的来源顺序。
+  static const String _sourcePreferenceKey = 'update_source_preference';
+
+  /// 可注入的文本取用函数：默认真实网络请求，测试注入假响应以验证回退顺序。
+  @visibleForTesting
+  Future<String> Function(Uri uri)? textLoader;
+
+  /// 读取 / 保存来源偏好与「上次可用源」的钩子；不注入则不持久化。
+  @visibleForTesting
+  Future<String?> Function(String key)? settingReader;
+  @visibleForTesting
+  Future<void> Function(String key, String value)? settingWriter;
+
+  /// 接线到 app_settings（启动时调用一次；不接线则偏好只在本次运行内生效）。
+  void bindSettings({
+    required Future<String?> Function(String key) read,
+    required Future<void> Function(String key, String value) write,
+  }) {
+    settingReader = read;
+    settingWriter = write;
+  }
+
+  /// 检查更新。任何一处失败都会抛 [UpdateCheckException] 并带上逐条原因，
+  /// 由调用方原样展示（不要再改回「吞掉异常 + 统一网络错误」）。
+  Future<UpdateCheckResult> checkForUpdate() async {
+    final currentVersion = await _currentVersion();
+    if (currentVersion.isEmpty) {
+      throw const UpdateCheckException('无法读取本机版本号');
+    }
+    final preference = await _readSourcePreference();
+    return checkForVersion(currentVersion, preference: preference);
+  }
+
+  /// [checkForUpdate] 的纯逻辑部分（版本号与偏好由调用方给），便于单测。
+  @visibleForTesting
+  Future<UpdateCheckResult> checkForVersion(
+    String currentVersion, {
+    UpdateSourcePreference preference = UpdateSourcePreference.auto,
+  }) async {
+    final lastGood = await _readLastGoodProvider();
+    final order = resolveSourceOrder(preference, lastGood);
+
+    final failures = <String>[];
+    for (final provider in order) {
+      try {
+        final result = provider == UpdateProvider.gitee
+            ? await _checkViaGitee(currentVersion)
+            : await _checkViaGithub(currentVersion);
+        await _writeLastGoodProvider(provider);
+        return result;
+      } catch (error) {
+        failures.add('${_providerLabel(provider)}：${_describe(error)}');
+      }
+    }
+    throw UpdateCheckException(
+      '检查更新失败，请检查网络后重试（已尝试 ${failures.length} 个数据源）'
+      '——${failures.join('；')}',
+    );
+  }
+
+  /// 计算实际尝试顺序。
   ///
-  /// 网络失败 / 接口异常 / 响应解析失败都返回 null，由调用方统一提示；
-  /// 拿到结果时用 [UpdateCheckResult.updateAvailable] 判断是否需要弹窗。
-  Future<UpdateCheckResult?> checkForUpdate() async {
-    String currentVersion;
+  /// - 固定偏好：按 `giteeFirst` / `githubFirst` 排；
+  /// - 自动：上次成功的源优先，其余兜底；没有历史则 Gitee 优先（国内环境更常见）。
+  @visibleForTesting
+  static List<UpdateProvider> resolveSourceOrder(
+    UpdateSourcePreference preference,
+    UpdateProvider? lastGood,
+  ) {
+    switch (preference) {
+      case UpdateSourcePreference.giteeFirst:
+        return const [UpdateProvider.gitee, UpdateProvider.github];
+      case UpdateSourcePreference.githubFirst:
+        return const [UpdateProvider.github, UpdateProvider.gitee];
+      case UpdateSourcePreference.auto:
+        if (lastGood == UpdateProvider.github) {
+          return const [UpdateProvider.github, UpdateProvider.gitee];
+        }
+        return const [UpdateProvider.gitee, UpdateProvider.github];
+    }
+  }
+
+  static String _providerLabel(UpdateProvider provider) =>
+      provider == UpdateProvider.gitee ? 'Gitee' : 'GitHub';
+
+  Future<String> _currentVersion() async {
     try {
       final info = await PackageInfo.fromPlatform();
-      currentVersion = info.version;
+      return info.version.trim();
     } catch (_) {
-      return null;
+      return '';
     }
-    if (currentVersion.isEmpty) return null;
+  }
 
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10);
+  /// Gitee 清单（`latest.json`，由 CI 写入 update 分支）。
+  Future<UpdateCheckResult> _checkViaGitee(String currentVersion) async {
+    // 清单有 max-age=60 缓存：加时间戳确保拿到刚发布的版本。
+    final url = '$giteeManifestUrl?_t=${DateTime.now().millisecondsSinceEpoch}';
+    final body = await _get(url);
+    final result = parseManifestJson(body, currentVersion);
+    if (result == null) {
+      throw const UpdateCheckException('清单无法解析（缺少 version？）');
+    }
+    return result;
+  }
+
+  /// GitHub：先 REST API，失败再退 atom。
+  Future<UpdateCheckResult> _checkViaGithub(String currentVersion) async {
     try {
-      final request = await client.getUrl(Uri.parse(latestReleaseUrl));
-      request.headers.set(HttpHeaders.acceptHeader, 'application/vnd.github+json');
+      final body =
+          await _get(latestReleaseUrl, accept: 'application/vnd.github+json');
+      final result = await parseLatestReleaseJson(body, currentVersion);
+      if (result == null) {
+        throw const UpdateCheckException('接口响应无法解析（没有 tag_name？）');
+      }
+      return result;
+    } catch (apiError) {
+      try {
+        final body = await _get(releasesAtomUrl);
+        final result = await parseLatestReleaseAtom(body, currentVersion);
+        if (result != null) return result;
+        throw const UpdateCheckException('订阅源无法解析（没有 entry？）');
+      } catch (atomError) {
+        throw UpdateCheckException(
+          '${_describe(apiError)}；订阅源也失败：${_describe(atomError)}',
+        );
+      }
+    }
+  }
+
+  /// 取回响应正文；非 200 与各类网络异常都转成带原因的 [UpdateCheckException]。
+  Future<String> _get(String url, {String? accept}) async {
+    final loader = textLoader;
+    if (loader != null) return loader(Uri.parse(url));
+
+    final client = HttpClient()..connectionTimeout = requestTimeout;
+    try {
+      final request = await client.getUrl(Uri.parse(url)).timeout(requestTimeout);
+      if (accept != null) {
+        request.headers.set(HttpHeaders.acceptHeader, accept);
+      }
       request.headers.set(HttpHeaders.userAgentHeader, 'class_score-updater');
-      final response = await request.close();
-      if (response.statusCode != HttpStatus.ok) return null;
-      final body = await response.transform(utf8.decoder).join();
-      return await parseLatestReleaseJson(body, currentVersion);
+      final response = await request.close().timeout(requestTimeout);
+      if (response.statusCode != HttpStatus.ok) {
+        throw UpdateCheckException(
+          'HTTP ${response.statusCode}${_httpHint(response.statusCode)}',
+        );
+      }
+      return await response.transform(utf8.decoder).join().timeout(requestTimeout);
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  static String _httpHint(int statusCode) {
+    if (statusCode == HttpStatus.forbidden || statusCode == HttpStatus.tooManyRequests) {
+      return '（接口限流或拒绝访问）';
+    }
+    if (statusCode == HttpStatus.notFound) {
+      return '（仓库、分支或文件不存在）';
+    }
+    return '';
+  }
+
+  /// 解析 Gitee `latest.json` 清单（由 CI 的镜像 job 生成）。
+  ///
+  /// 结构：
+  /// ```json
+  /// {"version":"1.6.2","tag":"1.6.2","notes":"...","download_url":"https://...",
+  ///  "sha256":"...","size":13549456,"published_at":"..."}
+  /// ```
+  /// 只认 `version` 与 `download_url`，其余可缺省；解析失败返回 null。
+  static UpdateCheckResult? parseManifestJson(
+    String body,
+    String currentVersion,
+  ) {
+    try {
+      final data = jsonDecode(body);
+      if (data is! Map<String, dynamic>) return null;
+
+      final rawVersion = (data['version'] as String?)?.trim() ?? '';
+      if (rawVersion.isEmpty) return null;
+      final downloadUrl = (data['download_url'] as String?)?.trim() ?? '';
+      if (downloadUrl.isEmpty) return null;
+
+      final tag = (data['tag'] as String?)?.trim() ?? rawVersion;
+      final latest = normalizeTagName(rawVersion);
+      // size 可能是数字也可能是字符串（不同手写/工具生成的清单都见过）
+      final sizeValue = data['size'];
+      final size = sizeValue is num
+          ? sizeValue.toInt()
+          : int.tryParse(sizeValue?.toString() ?? '') ?? 0;
+      final sha = (data['sha256'] as String?)?.trim().toLowerCase() ?? '';
+
+      return UpdateCheckResult(
+        currentVersion: currentVersion,
+        tagName: tag,
+        latestVersion: latest,
+        releaseNotes: data['notes'] as String? ?? '',
+        downloadUrl: downloadUrl,
+        assetSizeBytes: size,
+        // 清单里的哈希只接受合法 64 位十六进制，格式不对就当没有
+        expectedSha256: RegExp(r'^[0-9a-f]{64}$').hasMatch(sha) ? sha : '',
+        updateAvailable: isNewerVersion(latest, currentVersion),
+        sourceLabel: 'Gitee',
+      );
     } catch (_) {
       return null;
-    } finally {
-      client.close();
     }
+  }
+
+  Future<UpdateSourcePreference> _readSourcePreference() async {
+    final raw = await _readSetting(_sourcePreferenceKey);
+    for (final value in UpdateSourcePreference.values) {
+      if (value.name == raw) return value;
+    }
+    return UpdateSourcePreference.auto;
+  }
+
+  /// 读取用户选择的来源顺序（设置页展示用）。
+  Future<UpdateSourcePreference> readSourcePreference() =>
+      _readSourcePreference();
+
+  /// 保存用户选择的来源顺序。
+  Future<void> saveSourcePreference(UpdateSourcePreference preference) =>
+      _writeSetting(_sourcePreferenceKey, preference.name);
+
+  Future<UpdateProvider?> _readLastGoodProvider() async {
+    final raw = await _readSetting(_lastGoodProviderKey);
+    for (final value in UpdateProvider.values) {
+      if (value.name == raw) return value;
+    }
+    return null;
+  }
+
+  Future<void> _writeLastGoodProvider(UpdateProvider provider) async {
+    final current = await _readLastGoodProvider();
+    if (current == provider) return;
+    await _writeSetting(_lastGoodProviderKey, provider.name);
+  }
+
+  Future<String?> _readSetting(String key) async {
+    final reader = settingReader;
+    if (reader == null) return null;
+    try {
+      return await reader(key);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _writeSetting(String key, String value) async {
+    final writer = settingWriter;
+    if (writer == null) return;
+    try {
+      await writer(key, value);
+    } catch (_) {}
+  }
+
+  /// 把异常翻译成人能看懂的一句话（原始信息保留在括号里）。
+  static String _describe(Object error) {
+    if (error is UpdateCheckException) return error.message;
+    if (error is SocketException) {
+      final detail = error.osError?.message ?? error.message;
+      return '网络连接失败（$detail）';
+    }
+    if (error is TimeoutException) return '请求超时';
+    if (error is HandshakeException) return 'TLS 握手失败（${error.message}）';
+    return error.toString();
   }
 
   /// 下载并解析 release.zip.sha256 附件，返回小写十六进制哈希；失败返回空串。
@@ -99,19 +407,30 @@ class UpdateService {
   /// 兼容两种格式：裸哈希 / sha256sum 风格的「哈希  文件名」。任何一步失败都
   /// 当作没有校验文件处理（空串），由 [downloadRelease] 决定是否放行。
   static Future<String> fetchSha256Digest(String sha256Url) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    final loader = instance.textLoader;
     try {
-      final request = await client.getUrl(Uri.parse(sha256Url));
-      request.headers.set(HttpHeaders.userAgentHeader, 'class_score-updater');
-      final response = await request.close();
-      if (response.statusCode != HttpStatus.ok) return '';
-      final text = await response.transform(utf8.decoder).join();
+      final text = loader != null
+          ? await loader(Uri.parse(sha256Url))
+          : await _getText(sha256Url);
+      if (text == null) return '';
       final match = RegExp(r'[0-9a-fA-F]{64}').firstMatch(text);
       return match == null ? '' : match.group(0)!.toLowerCase();
     } catch (_) {
       return '';
+    }
+  }
+
+  /// 不带业务异常的取文辅助（校验文件取不到就当没有，不影响主流程）。
+  static Future<String?> _getText(String url) async {
+    final client = HttpClient()..connectionTimeout = requestTimeout;
+    try {
+      final request = await client.getUrl(Uri.parse(url)).timeout(requestTimeout);
+      request.headers.set(HttpHeaders.userAgentHeader, 'class_score-updater');
+      final response = await request.close().timeout(requestTimeout);
+      if (response.statusCode != HttpStatus.ok) return null;
+      return await response.transform(utf8.decoder).join().timeout(requestTimeout);
     } finally {
-      client.close();
+      client.close(force: true);
     }
   }
 
@@ -163,11 +482,61 @@ class UpdateService {
         assetSizeBytes: assetSize,
         expectedSha256: expectedSha256,
         updateAvailable: isNewerVersion(latest, currentVersion),
+        sourceLabel: 'GitHub',
       );
     } catch (_) {
       return null;
     }
   }
+
+  /// 解析 `releases.atom` 订阅源（api.github.com 不可用时的备用数据源）。
+  ///
+  /// atom 里没有附件清单，只能按 Release 命名约定推出：
+  /// `releases/download/<tag>/release.zip`。因此拿不到附件大小，校验文件仍按
+  /// 同一约定去取（取不到就跳过校验）。解析失败返回 null。
+  static Future<UpdateCheckResult?> parseLatestReleaseAtom(
+    String body,
+    String currentVersion,
+  ) async {
+    try {
+      final entries = RegExp(r'<entry>([\s\S]*?)</entry>').allMatches(body);
+      for (final entry in entries) {
+        final xml = entry.group(1) ?? '';
+        final link = RegExp(r'<link[^>]*href="([^"]+)"').firstMatch(xml);
+        final href = link?.group(1) ?? '';
+        final tag = href.split('/').where((part) => part.isNotEmpty).lastOrNull;
+        if (tag == null || tag.isEmpty) continue;
+
+        final content = RegExp(r'<content[^>]*>([\s\S]*?)</content>').firstMatch(xml);
+        final notes = _unescapeXml(content?.group(1) ?? '').trim();
+        final downloadUrl = '$releaseDownloadBase/$tag/release.zip';
+        final latest = normalizeTagName(tag);
+        return UpdateCheckResult(
+          currentVersion: currentVersion,
+          tagName: tag,
+          latestVersion: latest,
+          releaseNotes: notes,
+          downloadUrl: downloadUrl,
+          assetSizeBytes: 0,
+          expectedSha256: await fetchSha256Digest('$downloadUrl.sha256'),
+          updateAvailable: isNewerVersion(latest, currentVersion),
+          sourceLabel: 'GitHub',
+        );
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// atom 的 `<content type="html">` 是转义过的：还原常用实体，去掉标签。
+  static String _unescapeXml(String value) => value
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&amp;', '&')
+      .replaceAll(RegExp(r'<[^>]*>'), ' ');
 
   /// v1.6.0 / V1.6.0 / 1.6.0 -> 1.6.0。
   static String normalizeTagName(String tag) {
