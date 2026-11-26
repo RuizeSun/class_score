@@ -44,7 +44,35 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
 - 状态管理：provider（main.dart:86 MultiProvider，7 个 ChangeNotifier）。
 - 数据库：sqflite_common_ffi（database_helper.dart:32），非移动端 sqflite。
 - UI/数据：fl_chart、csv、excel、file_picker；窗口：window_manager、desktop_multi_window、win32、screen_retriever；杂项：package_info_plus、path_provider。
-- 网络：仅天气（weather_service.dart，Open-Meteo，免 API Key，失败回退缓存）；其余功能全部本地。
+- 网络：天气（weather_service.dart，Open-Meteo，免 API Key，失败回退缓存）+ 检查更新
+  （update_service.dart，Gitee 镜像 + GitHub Releases）；其余功能全部本地。
+- **检查更新必须多数据源**（2026-11-26）：`gitee.com` / `api.github.com` / `github.com`
+  是三台不同服务器，校园网 / 一体机上常见「浏览器能开 github.com，api.github.com 被
+  RST 秒断」。`checkForVersion` 按偏好排序逐个尝试：Gitee 清单 → GitHub REST API →
+  GitHub `releases.atom`；全失败才抛 `UpdateCheckException`，并把每个源的真实原因
+  （HTTP 码 / SocketException / 超时）一起带到界面。**勿**改回「异常一律吞成 null +
+  统一提示网络错误」，那样线上出错无法定位。
+- **客户端绝不调 Gitee API**（2026-11-26 实测）：匿名请求直接
+  `403 Forbidden (Rate Limit Exceeded)`，冷置后重试仍 403。所以 Gitee 侧只提供
+  - 清单：`https://gitee.com/{owner}/{repo}/raw/update/latest.json`（raw，匿名可读，
+    `Cache-Control: max-age=60`，客户端加 `?_t=` 破缓存）；
+  - 附件：`https://gitee.com/{owner}/{repo}/releases/download/{tag}/release.zip`
+    （匿名 200，实测 50MB 附件直下没问题）。
+  注意 Gitee **没有** GitHub 那种 `releases/latest/download/...` 滚动路径（实测 404），
+  所以清单里必须写死带 tag 的绝对 URL。
+- **更新源顺序**存 `app_settings` 的 `update_source_preference`（auto / giteeFirst /
+  githubFirst，设置页「更新源顺序」可选）；`auto` 会读 `update_last_good_provider`
+  优先上次成功的源，避免每次都先等一个必然失败的超时。两个 key 由
+  `main.dart` 的 `UpdateService.instance.bindSettings(...)` 接到 `DatabaseHelper`，
+  不接线则偏好只在本次运行内生效。
+- **Gitee 镜像在 CI**：`.github/workflows/flutter.yml` 的 `mirror-gitee` job →
+  `scripts/mirror-to-gitee.ps1`（推 main + tag、建 Release、传 release.zip 与
+  `.sha256`、写 `update` 孤儿分支的 latest.json、最后匿名复验）。需要 GitHub secrets
+  `GITEE_TOKEN`（私人令牌勾 projects）与可选 `GITEE_REPO`。该 job `continue-on-error`：
+  **Gitee 挂了不能把 GitHub 发版判成失败**。
+- 脚本 `scripts/mirror-to-gitee.ps1` **必须保持纯 ASCII**：PowerShell 5.1 读无 BOM 的
+  脚本按 ANSI(GBK) 解码，中文注释会吃掉换行让脚本静默失效（1.6.0 的更新脚本踩过）。
+  同理 latest.json 用 `UTF8Encoding($false)` 写成无 BOM，否则 Dart `jsonDecode` 报错。
 - 持久化：全部走 SQLite（库 + app_settings 表），无 SharedPreferences。
 
 ## 性能红线（P0，2026-09-30 修，勿回退）
