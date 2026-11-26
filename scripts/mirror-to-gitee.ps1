@@ -111,6 +111,17 @@ Write-Info 'main synced'
 # "refs/tags//tags/1.6.2" and git fails with "invalid refspec" (hit on 1.6.2).
 $remoteTags = git ls-remote --tags gitee "refs/tags/${tag}"
 if ([string]::IsNullOrWhiteSpace(($remoteTags -join ''))) {
+    # A backfill run (workflow_dispatch) starts from a fresh clone that has no
+    # tag at all, and the commit may not even be on the checked-out branch.
+    # Try the local tag first, then fetch it from GitHub by name.
+    $localTag = git tag -l "${tag}"
+    if ([string]::IsNullOrWhiteSpace(($localTag -join ''))) {
+        Write-Info "tag $tag not in local clone, fetching from GitHub"
+        git fetch --quiet origin "refs/tags/${tag}:refs/tags/${tag}"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Tag $tag not found locally nor on GitHub; cannot mirror (check the version number)"
+        }
+    }
     git push --quiet gitee "refs/tags/${tag}:refs/tags/${tag}"
     if ($LASTEXITCODE -ne 0) { throw "Failed to push tag $tag to Gitee" }
     Write-Info "tag $tag pushed"
@@ -123,8 +134,11 @@ Write-Section 'Create Gitee Release'
 $apiBase = "https://gitee.com/api/v5/repos/$owner/$repoName"
 $headers = @{ 'Content-Type' = 'application/json;charset=UTF-8' }
 
+# access_token goes in the query string, not the JSON body: the docs define it
+# as a query/form parameter, and a token smuggled into a JSON body is not
+# reliably parsed. Probed and confirmed both query and Authorization header are
+# recognised by Gitee (invalid values return 401 rather than being ignored).
 $releaseBody = @{
-    access_token     = $token
     tag_name         = $tag
     name             = "Release $version"
     body             = "Automated release for version $version"
@@ -132,16 +146,26 @@ $releaseBody = @{
 } | ConvertTo-Json -Compress
 
 try {
-    $release = Invoke-RestMethod -Method Post -Uri "$apiBase/releases" -Headers $headers -Body $releaseBody
+    $release = Invoke-RestMethod -Method Post -Uri "$apiBase/releases?access_token=$token" -Headers $headers -Body $releaseBody
 } catch {
     $detail = $_.ErrorDetails.Message
+    # Distinguish "already exists" (expected on re-runs) from real failures such
+    # as a bad token. Without this, an invalid token merely reports "not found"
+    # and hides the actual cause.
+    if ($detail -match '401|Unauthorized|token') {
+        throw "Gitee rejected the token (check GITEE_TOKEN has the projects scope): $detail"
+    }
     Write-Info "Create Release failed (probably exists): $detail"
     $existing = Invoke-RestMethod -Uri "$apiBase/releases?access_token=$token&per_page=50"
-    $release = $existing | Where-Object { $_.tag_name -eq $tag } | Select-Object -First 1
+    $release = $existing | Where-Object {
+        $_.PSObject.Properties['tag_name'] -and $_.tag_name -eq $tag
+    } | Select-Object -First 1
     if ($null -eq $release) { throw "Release $tag not created and not found: $detail" }
     Write-Info "reusing Release id=$($release.id)"
 }
-$releaseId = $release.id
+$releaseId = $null
+if ($release.PSObject.Properties['id']) { $releaseId = $release.id }
+if ($null -eq $releaseId) { throw 'Gitee returned a Release without an id' }
 Write-Info "Release id=$releaseId"
 
 # ---------- 5. Upload assets (skip when present) ----------
@@ -152,7 +176,13 @@ try {
 } catch {
     Write-Info "reading existing assets failed (treat as none): $($_.Exception.Message)"
 }
-$existingNames = @($existingAttach | ForEach-Object { $_.name })
+# Property access must be defensive: under Set-StrictMode -Version Latest,
+# touching a missing property throws instead of yielding $null.
+$existingNames = @(
+    $existingAttach | ForEach-Object {
+        if ($_.PSObject.Properties['name']) { $_.name }
+    }
+)
 
 foreach ($file in @($zipPath, $shaPath)) {
     $name = Split-Path -Leaf $file
@@ -212,10 +242,12 @@ Write-Section 'Verify manifest and asset anonymously'
 try {
     $rawUrl = "https://gitee.com/$owner/$repoName/raw/update/latest.json"
     $manifestCheck = Invoke-RestMethod -Uri $rawUrl -TimeoutSec 30
-    if ($manifestCheck.version -ne $version) {
-        throw "manifest version mismatch: expected $version, got $($manifestCheck.version)"
+    $remoteVersion = $null
+    if ($manifestCheck.PSObject.Properties['version']) { $remoteVersion = $manifestCheck.version }
+    if ($remoteVersion -ne $version) {
+        throw "manifest version mismatch: expected $version, got $remoteVersion"
     }
-    Write-Info "manifest readable anonymously: version=$($manifestCheck.version)"
+    Write-Info "manifest readable anonymously: version=$remoteVersion"
 
     $head = Invoke-WebRequest -Uri $downloadUrl -Method Head -UseBasicParsing -TimeoutSec 30
     Write-Info "asset reachable anonymously: HTTP $($head.StatusCode)"
