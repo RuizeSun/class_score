@@ -4,7 +4,9 @@
 
 - 生成时间：2026-09-26（2026-09-30：P0 性能修复）
 - commit：HEAD 08a3afc（P0 三轮，未 push）；1.5.1 = 04e18ba
-- last_verified：2026-11-23 1.5.4 低配帧率优化后（`fvm flutter test` 210 全过、
+- last_verified：2026-11-26 低配机第二轮帧率优化后（`fvm flutter test` 224 全过、
+  `fvm flutter analyze` 63 条既有 info / warning、无 error；`build windows --release` 通过）；
+  上一轮 2026-11-23 1.5.4（`fvm flutter test` 210 全过、
   `fvm flutter analyze` 43 条既有 info、无新增；`fvm flutter build windows --release` 通过；
   驱动器枚举已用「新旧实现结果逐一对齐」的临时测试验证等价）
 - Flutter SDK：**fvm 3.47.9**（见下方「稳定性和数据安全红线」）
@@ -24,7 +26,7 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
 - lib/services/ — 窗口/托盘/天气/备份/导入等服务
 - lib/widgets/ — 通用组件 + desktop_schedule/ 浮窗 UI
 - windows/runner/ — 原生 C++（desktop_bar_channel.cpp、desktop_ball_window.cpp、tray_icon.cpp、app_quit.cpp）
-- test/ — 210 个测试（含 backup_service / database_recovery / database_helper 的 DB 用例，用 DatabaseHelper.dbDirOverride 指到临时目录）；.github/workflows/flutter.yml — CI（Flutter 版本已钉死 3.47.9）
+- test/ — 224 个测试（含 backup_service / database_recovery / database_helper 的 DB 用例，用 DatabaseHelper.dbDirOverride 指到临时目录）；.github/workflows/flutter.yml — CI（Flutter 版本已钉死 3.47.9）
 
 ## 核心链路
 
@@ -60,6 +62,17 @@ Flutter (Windows) 班级量化评分桌面应用：学生/分组/评分项/评�
   后者把进度写进布局约束，每秒重排整条课表（独立引擎+分层窗口，必卡）。
 - **U 盘枚举走 Win32**（`GetLogicalDrives`+`GetDriveType`），不要改回逐个
   `Directory.exists()` 探 26 个盘符（每 5 秒在主 isolate 跑，慢盘上卡渲染）。
+- **U 盘密钥比对读内存、不查库**（2026-11-26）：`_hasKeyOnDrive` 用
+  `_usbKeys`（增删改都经 `loadUsbKeys` 重读，与库始终同步），
+  并且 `_startUsbScan` 在「一个密钥都没登记」时整拍直接 return。
+  每 5 秒 × 每个盘符一次 SQLite 往返 + 两次文件系统调用，是周期性卡顿来源。
+- **`_reloadAfterScoreMutation` 只 notify 一次**（2026-11-26）：`loadRecords` /
+  `loadStatistics` 都带 `notify` 参数，这里传 `notify: false` 再统一通知。
+  仪表盘直接监听 ScoreProvider、每次通知跑六条查询，两次通知＝十二次查询。
+- **评分页用 `context.select` 订阅，不要 `watch` 整个 ScoreProvider**
+  （2026-11-26）：本页只依赖「周期 + 允许分值范围规则」（`_ScorePageRules`），
+  而 ScoreProvider 每次增删改都 notify。watch 整个 Provider 会让整张评分页
+  （全班学生卡 + 十几个玻璃控件）每记一分重建一次。
 
 ## 稳定性和数据安全红线（2026-11-23 修，勿回退）
 

@@ -25,7 +25,7 @@ class _MutableScoreProvider extends ScoreProvider {
   List<Map<String, dynamic>> get groupTotalScores => const [];
 
   @override
-  Future<void> loadStatistics({int? groupId}) async {}
+  Future<void> loadStatistics({int? groupId, bool notify = true}) async {}
 
   /// 模拟一次「评分记录变动 → 统计报表重新加载」。
   void applyStatistics(List<Map<String, dynamic>> students) {

@@ -51,9 +51,9 @@ class _FakeScoreProvider extends ScoreProvider {
   int? get filterGroupId => _filterGroupId;
 
   @override
-  Future<void> loadStatistics({int? groupId}) async {
+  Future<void> loadStatistics({int? groupId, bool notify = true}) async {
     _filterGroupId = groupId;
-    notifyListeners();
+    if (notify) notifyListeners();
   }
 
   @override
@@ -65,6 +65,7 @@ class _FakeScoreProvider extends ScoreProvider {
     int? targetId,
     int? groupId,
     bool resetFilters = false,
+    bool notify = true,
   }) async {
     loadCalls.add((
       targetType: targetType,

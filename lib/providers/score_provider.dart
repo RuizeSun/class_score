@@ -168,11 +168,15 @@ class ScoreProvider extends ChangeNotifier {
 
   /// 加载评分记录。支持按 targetType + targetId 筛选，也支持按 groupId 筛选（查小组内所有成员记录）。
   /// 如果不传任何参数，则使用上次 loadRecords 的筛选条件重新加载。
+  ///
+  /// [notify] = false 时只刷新内存数据、不发通知：供
+  /// [_reloadAfterScoreMutation] 把「记录 + 统计」两次查询合并成一次通知用。
   Future<void> loadRecords({
     String? targetType,
     int? targetId,
     int? groupId,
     bool resetFilters = false,
+    bool notify = true,
   }) async {
     if (resetFilters) {
       _lastRecordTargetType = null;
@@ -212,7 +216,7 @@ class ScoreProvider extends ChangeNotifier {
     }
     _recordsWithName = maps;
     _records = maps.map((m) => ScoreRecord.fromMap(m)).toList();
-    notifyListeners();
+    if (notify) notifyListeners();
   }
 
   Future<void> addScoreRecord({
@@ -596,7 +600,8 @@ class ScoreProvider extends ChangeNotifier {
   }
 
   // Statistics
-  Future<void> loadStatistics({int? groupId}) async {
+  /// [notify] = false 只刷新内存数据、不发通知（见 [_reloadAfterScoreMutation]）。
+  Future<void> loadStatistics({int? groupId, bool notify = true}) async {
     final rawGroupScores = await DatabaseHelper.instance.getGroupTotalScores(
       period: _currentPeriod,
     );
@@ -620,7 +625,7 @@ class ScoreProvider extends ChangeNotifier {
       period: _currentPeriod,
     );
     _filterGroupId = groupId;
-    notifyListeners();
+    if (notify) notifyListeners();
   }
 
   /// 评分记录发生变化后，同时刷新记录列表与统计报表。
@@ -628,9 +633,16 @@ class ScoreProvider extends ChangeNotifier {
   /// 查询页左栏榜单读取的是 *_TotalScores，右栏读取的是 recordsWithName；
   /// 因此新增、删除、编辑、恢复记录等操作不能只调用 loadRecords，
   /// 否则已经打开过的查询页左栏会显示旧名次。
+  ///
+  /// **只发一次通知**：以前这里的两次 await 各自 notify。仪表盘（首页）是
+  /// 直接 addListener 监听本 Provider 的，两次通知就是两轮完整的仪表盘重载
+  /// ——每轮六条查询（今日课表 / 今日记录 / 最近记录 / 小组 / 学生 / 分布），
+  /// 低配一体机上刚记完一次分就要连跑十二次 SQLite 查询。现在先把两份数据都
+  /// 查完，再统一通知一次。
   Future<void> _reloadAfterScoreMutation() async {
-    await loadRecords();
-    await loadStatistics(groupId: _filterGroupId);
+    await loadRecords(notify: false);
+    await loadStatistics(groupId: _filterGroupId, notify: false);
+    notifyListeners();
   }
 
   // ---- 计分规则配置 ----

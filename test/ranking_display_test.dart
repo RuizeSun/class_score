@@ -39,7 +39,7 @@ class _FakeScoreProvider extends ScoreProvider {
   bool get competitionRanking => _competitionRanking;
 
   @override
-  Future<void> loadStatistics({int? groupId}) async {}
+  Future<void> loadStatistics({int? groupId, bool notify = true}) async {}
 }
 
 class _FakeGroupProvider extends GroupProvider {

@@ -16,6 +16,11 @@ import '../../widgets/glass_inputs.dart';
 import '../../widgets/student_name_text.dart';
 import 'ai_roster/ai_roster_capture_page.dart';
 
+/// 评分页真正依赖的 [ScoreProvider] 字段（见 [_ScoreInputPageState.build] 里的
+/// `select`）：这四个值任何一项变化都会影响本页渲染，其余（记录列表、统计、
+/// 计分规则里的其它项）都与本页无关，不该触发重建。
+typedef _ScorePageRules = ({int period, String mode, double min, double max});
+
 class ScoreInputPage extends StatefulWidget {
   const ScoreInputPage({super.key});
 
@@ -353,16 +358,19 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
   }
 
   /// 根据允许分值范围规则，将分值钳制到合法范围内。
-  double _clampQuickScore(double value) {
-    final p = context.read<ScoreProvider>();
-    switch (p.scoreRangeMode) {
+  ///
+  /// [rules] 为空时按「无限制」处理（[initState] 里首次调用时页面还没拿到
+  /// Provider 的有效值）。
+  double _clampQuickScore(double value, [_ScorePageRules? rules]) {
+    final effective = rules ?? _quickScoreRules();
+    switch (effective.mode) {
       case 'only_add':
         return value < 0 ? 0 : value;
       case 'only_deduct':
         return value > 0 ? 0 : value;
       case 'custom':
-        final lo = p.scoreRangeMin;
-        final hi = p.scoreRangeMax;
+        final lo = effective.min;
+        final hi = effective.max;
         if (lo <= hi) return value.clamp(lo, hi).toDouble();
         return value;
       case 'unlimited':
@@ -371,16 +379,30 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
     }
   }
 
-  /// 判断某个预设分值按钮在允许分值范围规则下是否显示。
-  bool _presetAllowed(double value) {
+  /// 从 Provider 现取一次分值范围规则（仅在 `setState` 之外的同步回调里用）。
+  _ScorePageRules _quickScoreRules() {
     final p = context.read<ScoreProvider>();
-    switch (p.scoreRangeMode) {
+    return (
+      period: p.currentPeriod,
+      mode: p.scoreRangeMode,
+      min: p.scoreRangeMin,
+      max: p.scoreRangeMax,
+    );
+  }
+
+  /// 判断某个预设分值按钮在允许分值范围规则下是否显示。
+  ///
+  /// 规则由 [build] 通过 `context.select` 取好传进来（[_ScorePageRules]）：
+  /// 这样「快速评分预设项」与页面的重建条件使用同一份数据，规则一改立刻重排，
+  /// 而不需要在这里再 `read` 一次 Provider。
+  static bool _presetAllowed(double value, _ScorePageRules rules) {
+    switch (rules.mode) {
       case 'only_add':
         return value > 0;
       case 'only_deduct':
         return value < 0;
       case 'custom':
-        return value >= p.scoreRangeMin && value <= p.scoreRangeMax;
+        return value >= rules.min && value <= rules.max;
       case 'unlimited':
       default:
         return true;
@@ -428,9 +450,25 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
     );
   }
 
+  /// 与 [ScoreProvider.isScoreAllowed] 同一套判据，改用本页已订阅的
+  /// [_ScorePageRules]，避免在 build 路径里再 `read` 一次 Provider。
+  static bool _isScoreAllowed(double score, _ScorePageRules rules) {
+    switch (rules.mode) {
+      case 'only_add':
+        return score >= 0;
+      case 'only_deduct':
+        return score <= 0;
+      case 'custom':
+        return score >= rules.min && score <= rules.max;
+      case 'unlimited':
+      default:
+        return true;
+    }
+  }
+
   /// 快速评分：分值加减 + 预设按钮
-  Widget _buildQuickScoreControls() {
-    final displayValue = _clampQuickScore(_quickScore);
+  Widget _buildQuickScoreControls(_ScorePageRules rules) {
+    final displayValue = _clampQuickScore(_quickScore, rules);
     final isPositive = displayValue >= 0;
     final sign = isPositive ? '+' : '-';
     final absText = (displayValue.abs() % 1 == 0)
@@ -440,11 +478,12 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
     const presetValues = [-3.0, -2.0, -1.0, 1.0, 2.0, 3.0];
 
     // 根据允许分值范围决定显示哪些快捷按钮
-    final p = context.read<ScoreProvider>();
-    final visiblePresets = presetValues.where(_presetAllowed).toList();
+    final visiblePresets = presetValues
+        .where((value) => _presetAllowed(value, rules))
+        .toList();
     // 加减按钮根据当前值判断是否可用：按下后得到的分值必须仍在允许范围内
-    final minusEnabled = p.isScoreAllowed(_quickScore - 1);
-    final plusEnabled = p.isScoreAllowed(_quickScore + 1);
+    final minusEnabled = _isScoreAllowed(_quickScore - 1, rules);
+    final plusEnabled = _isScoreAllowed(_quickScore + 1, rules);
 
     Widget stepperButton(IconData icon, VoidCallback? onTap, Color color) {
       return GlassIconAction(
@@ -567,9 +606,22 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
     // 已选择的学生数
     final selectedCount = _selectedStudentIds.length;
 
-    // 当前周期
-    final currentPeriod = context.watch<ScoreProvider>().currentPeriod;
-
+    // 当前周期 + 允许分值范围规则。
+    //
+    // 用 select 只订阅这几个真正参与本页渲染的字段：评分页常驻在 PageView 里，
+    // 而 ScoreProvider 每次评分 / 删除 / 编辑都会 notify（还会连带刷新记录与
+    // 统计）。用 watch 订阅整个 Provider，等于每记一分就把整张评分页（小组
+    // 下拉、全班学生卡、预设项下拉、输入框、十几颗玻璃按钮）全部重建一遍。
+    // 这里只有「周期」或「分值范围规则」（决定快速评分的预设项与加减按钮是否
+    // 可用）变化时才需要重建。
+    final scoreRules = context.select<ScoreProvider, _ScorePageRules>(
+      (provider) => (
+        period: provider.currentPeriod,
+        mode: provider.scoreRangeMode,
+        min: provider.scoreRangeMin,
+        max: provider.scoreRangeMax,
+      ),
+    );
     return Scaffold(
       appBar: AppBar(toolbarHeight: 0),
       body: Stack(
@@ -899,7 +951,7 @@ class _ScoreInputPageState extends State<ScoreInputPage> {
                   ),
                 ] else ...[
                   // ===== 快速评分模式 =====
-                  _buildQuickScoreControls(),
+                  _buildQuickScoreControls(scoreRules),
                 ],
                 const SizedBox(height: 24),
               ],

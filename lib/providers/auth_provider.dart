@@ -546,14 +546,21 @@ class AuthProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// 某个盘符上是否放着有效的密钥文件。
+  ///
+  /// 比对用的是内存里的 [_usbKeys]，而不是每次再查一遍数据库：USB 扫描每
+  /// 5 秒跑一次，每个候选盘符都要走这一趟——低配一体机上「SQLite 往返 +
+  /// 机械盘 / 慢速 U 盘上的两次文件系统调用」叠在一起，会周期性地把主
+  /// isolate 卡住几十毫秒，滚动就一顿一顿。#[_usbKeys] 与数据库始终同步
+  /// （增删改都经 [loadUsbKeys] 重读），因此判定结果与查库完全等价。
   Future<bool> _hasKeyOnDrive(String drivePath) async {
+    if (_usbKeys.isEmpty) return false;
     try {
       final keyFile = File('$drivePath\\$keyFileName');
       if (await keyFile.exists()) {
         final content = await keyFile.readAsString();
         final trimmed = content.trim();
-        final keys = await DatabaseHelper.instance.getUsbKeys();
-        for (final key in keys) {
+        for (final key in _usbKeys) {
           if (key['token'] == trimmed) {
             return true;
           }
@@ -660,6 +667,11 @@ class AuthProvider extends ChangeNotifier {
   void _startUsbScan() {
     _usbScanTimer?.cancel();
     _usbScanTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      // 没有登记过任何密钥文件时，这一拍必然什么都找不到（[_hasKeyOnDrive]
+      // 在 [_usbKeys] 为空时直接返回 false），可直接跳过整轮扫描：枚举盘符
+      // 与逐个盘符探测都不必跑。仅在「已被 U 盘解锁」时仍要按原逻辑复查，
+      // 否则拔掉密钥不会被立即重新上锁。
+      if (_usbKeys.isEmpty && !_unlockedByUsb) return;
       if (!_isUnlocked) {
         await scanUsbForKey();
       } else {
