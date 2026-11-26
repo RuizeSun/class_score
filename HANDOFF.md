@@ -3,12 +3,17 @@
 ## 元信息
 
 - 生成时间：2026-09-26（2026-09-30：P0 性能修复）
-- commit：1.6.1 = 942c675（已 push、已发版）；1.5.1 = 04e18ba
-- last_verified：2026-11-26 1.6.1 已发布（tag 942c675，assets release.zip +
-  release.zip.sha256 均上传，CI 构建全绿）。本轮为低配机第二轮帧率优化
-  （`fvm flutter test` 224 全过、
-  `fvm flutter analyze` 63 条既有 info / warning、无 error；`build windows --release` 通过）；
-  上一轮 2026-11-23 1.5.4（`fvm flutter test` 210 全过、
+- commit：1.6.2 = 本地待发（多源更新 + Gitee 镜像）；1.6.1 = 942c675（已 push、已发版）；
+  1.5.1 = 04e18ba
+- last_verified：2026-11-26 1.6.2 筹备中（`fvm flutter test` 236 全过、
+  `fvm flutter analyze` 62 条既有 info / warning、无 error；`build windows --release` 通过）。
+  本轮内容：检查更新改为 Gitee/GitHub 多源回退（失败不再统一提示网络错误），
+  CI 发版后镜像到 Gitee 并写 `update` 分支 latest.json；Gitee 侧需先建仓库与
+  secrets（见「关键依赖 / 网络」）。
+  上一轮 2026-11-26 1.6.1（tag 942c675，assets release.zip + release.zip.sha256
+  均上传，CI 构建全绿；低配机第二轮帧率优化，`fvm flutter test` 224 全过、
+  63 条既有 info / warning、无 error；`build windows --release` 通过）；
+  更早 2026-11-23 1.5.4（`fvm flutter test` 210 全过、
   `fvm flutter analyze` 43 条既有 info、无新增；`fvm flutter build windows --release` 通过；
   驱动器枚举已用「新旧实现结果逐一对齐」的临时测试验证等价）
 - Flutter SDK：**fvm 3.47.9**（见下方「稳定性和数据安全红线」）
